@@ -44,7 +44,7 @@ Runtime-клієнт підключається через driver adapter `@pris
 
 ### 2.2. Generator і datasource
 
-- `provider = "prisma-client"` (новий генератор): `output` обов'язковий, а `moduleFormat = "cjs"` потрібен, бо NestJS збирається в CommonJS.
+- `provider = "prisma-client"` (новий генератор): `output` обов'язковий — `apps/api/src/platform/prisma/generated` (на цей шлях спирається ESLint-правило 4, `04-architecture.md` §4.1); `moduleFormat = "esm"`, бо api — ESM (M0-02).
 - `previewFeatures = ["partialIndexes"]` (Prisma ≥ 7.4) вмикає `where:` в `@@index`/`@@unique`. Без цього прапорця partial-індекси довелося б тримати в raw SQL, і Migrate бачив би їх як drift. Версію Prisma пінимо на `7.x ≥ 7.4` (див. `04-architecture.md` §7).
 - Trigram-індекси оголошуються як `@@index([col(ops: raw("gin_trgm_ops"))], type: Gin)`. Документація Prisma не наводить прикладу саме з `gin_trgm_ops`, тому синтаксис перевіряється першою міграцією та `migrate diff` у CI (§9).
 
@@ -96,8 +96,8 @@ R0-схема — це блоки §4.1 та §4.2 **без позначених
 ```prisma
 generator client {
   provider        = "prisma-client"
-  output          = "../src/generated/prisma"
-  moduleFormat    = "cjs"
+  output          = "../src/platform/prisma/generated"
+  moduleFormat    = "esm"
   previewFeatures = ["partialIndexes"]
 }
 
@@ -106,6 +106,8 @@ datasource db {
 }
 
 // ---------- R0 ----------
+// Enums тут записано в один рядок для стислості; Prisma такий синтаксис НЕ приймає (P1012, M0-03) —
+// у schema.prisma кожне значення на окремому рядку.
 enum Role               { USER ADMIN }
 enum WorkMode           { REMOTE HYBRID ONSITE }
 enum EmploymentType     { FULL_TIME PART_TIME CONTRACT FREELANCE INTERNSHIP }
@@ -326,7 +328,7 @@ model Job {
   firstSeenAt       DateTime         @default(now()) @db.Timestamptz(3)
   lastSeenAt        DateTime         @default(now()) @db.Timestamptz(3)
   closedAt          DateTime?        @db.Timestamptz(3)
-  searchVector      Unsupported("tsvector")? @map("search_vector") // R1 · GENERATED STORED (§7.3)
+  searchVector      Unsupported("tsvector")? @default(dbgenerated()) @map("search_vector") // R1 · GENERATED STORED (§7.3); default — проти drift
   createdAt         DateTime         @default(now()) @db.Timestamptz(3)
   updatedAt         DateTime         @updatedAt @db.Timestamptz(3)
 
@@ -1156,7 +1158,7 @@ ALTER TABLE "Job" ADD COLUMN "search_vector" tsvector GENERATED ALWAYS AS (
 -- GIN-індекс job_search_gin оголошено в schema.prisma (@@index type: Gin) — тут не дублюється.
 ```
 
-Поле в схемі не має `@default(dbgenerated())`: з таким default Migrate намагається виконати `DROP DEFAULT` на generated column.
+Поле в схемі **має** `@default(dbgenerated())` (без аргументу): Migrate читає generation expression як column default, і без цього атрибута `migrate diff` бачить drift (`ALTER COLUMN "search_vector" DROP DEFAULT`). З ним — `No difference detected`, а `--create-only` генерує звичайний `tsvector`, який замінюється на рядок вище (перевірено M0-03, Prisma 7.10.1 / PG 18).
 
 ### 7.4. CHECK constraints (Prisma їх не моделює і не вважає drift)
 

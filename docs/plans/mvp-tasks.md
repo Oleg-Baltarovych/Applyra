@@ -111,6 +111,8 @@
   - Перша міграція вмикає migrations-стадію `ci.yml` (M0-05 п. 3); `user` factory для M0-07a.
   - Prisma Extension: запит до user-scoped моделі без `userId` у `where` → warning у dev, fail у тестах.
   - Migrate one-off через `MAINTENANCE_DATABASE_URL`; runtime — `DATABASE_URL` (`applyra_app`).
+  - (M0-03) Enums у `schema.prisma` — по значенню на рядок (однорядковий запис з 05 §4.1 не валідний). Partial unique / trigram / GIN оголошуються лише в схемі (Prisma генерує їх сам); raw SQL на початку міграції — `SET lock_timeout`/`statement_timeout`, extensions і `f_unaccent` **перед** CREATE TABLE/INDEX; у кінці — CHECK з 05 §7.4. Testcontainers template DB: спершу `infra/postgres/init/10-roles.sql`, потім `migrate deploy` (міграції посилаються на `applyra_app`). `migrate dev` під `applyra_maintenance` потребує `SHADOW_DATABASE_URL` (роль без CREATEDB). Після кожного `migrate deploy` (local, Testcontainers template, CI, deploy) під maintenance: `REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON "_prisma_migrations" FROM applyra_app;` (таблицю створює сам Prisma під час deploy, тому не init-скрипт і не міграція; повторний deploy після revoke працює — M0-03) + інтеграційний тест: `applyra_app` отримує permission denied на UPDATE/DELETE `_prisma_migrations`. Generator: `output = "../src/platform/prisma/generated"`, `moduleFormat = "esm"` (05 §2.2).
+  - ACL guard (інтеграційний тест): таблиці, на яких `applyra_app` має UPDATE/DELETE, збігаються з allowlist (`AuditLog` і `_prisma_migrations` виключені).
 
 ### M0-09 · HTTP platform hardening
 - FR: FR-AUTH-03 · Area: api, contracts, security · Est: 2.5h · Depends: M0-02, M0-04, M0-08 · Flow: /feature
@@ -158,7 +160,7 @@
 - FR: — · Area: ci, infra, security · Est: 3h · Depends: M0-05, M0-12, M0-13 · Flow: /feature
 - AC:
   - Dockerfiles (створюються тут): `apps/api` — один multi-stage image, non-root, entrypoints `main` / `worker`; `caddy`. Вмикають build-стадію `ci.yml` (M0-05 п. 4).
-  - `deploy-prod.yml` на push `main` (GitHub Environment `production`): image у GHCR (`sha-*`, pinned digest) → `/opt/applyra/.env` з Environment secrets → `compose run --rm migrate` → restart api → `wrangler pages deploy` з `_headers` → health-check smoke. У M5-20 замінюється на `deploy-staging.yml` + `release.yml`.
+  - `deploy-prod.yml` на push `main` (GitHub Environment `production`): image у GHCR (`sha-*`, pinned digest) → `/opt/applyra/.env` з Environment secrets → `compose run --rm migrate` (`migrate deploy` + `REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON "_prisma_migrations" FROM applyra_app;` під `applyra_maintenance`, M0-08) → restart api → `wrangler pages deploy` з `_headers` → health-check smoke. У M5-20 замінюється на `deploy-staging.yml` + `release.yml`.
   - `compose.yml` + `compose.prod.yml`: caddy, api, postgres, `redis` (`valkey/valkey:9`), backup-cron; мережі `edge`/`internal`/`outbound`.
   - Spike CSP: `_headers` `09-security-privacy.md` §9.1 реально віддається Pages на custom domain (curl-check у workflow); інакше fallback — Caddy static.
   - Prod «hello»: sign-in Google → `/applications` (порожньо).
@@ -844,6 +846,7 @@
 ### M5-17 · WAL-G continuous archiving
 - FR: — · Area: infra · Est: 3h · Depends: M0-15 (prod-хост існує з R0) · Flow: /feature · **optional**
 - AC:
+  - Роль `backup`: `ALTER ROLE backup REPLICATION` + `pg_hba.conf` обмежує replication-підключення хостом backup (до M5-17 роль `NOREPLICATION`, `infra/postgres/init/10-roles.sql`).
   - WAL-G (libsodium), base backup щодня, `archive_timeout = 60s`, retain 14 днів; textfile-метрики свіжості. Без нього RPO лишається 24 год (явно в release notes).
 
 ### M5-18 · Restore-test workflow
