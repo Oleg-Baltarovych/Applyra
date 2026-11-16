@@ -21,16 +21,37 @@ const block = (reason) => {
 
 const SECRETS_HINT = 'Secrets files are off-limits. Use .env.example and ask the user to update their local .env.';
 
-// Bash: block commands that reference a .env file (anything but .env.example).
+// Bash: block commands that reference a .env file (anything but .env.example), including glob/brace forms
+// such as `.env*`, `.env?`, `.env{,.local}`, `.e[n]v`. This is a best-effort guard against accidental reads,
+// not a sandbox: the permission deny rules in settings.json and keeping real secrets out of reach are the
+// primary controls.
 if (tool === 'Bash') {
   const command = String(input?.tool_input?.command ?? '');
-  if (/(?:^|[\s'"=<>|;&(/\\])\.env(?:\.(?!example\b)[\w-]+)*(?=$|[\s'"<>|;&)])/.test(command)) {
+  const plain = /(?:^|[\s'"=<>|;&(/\\`])\.env(?:\.(?!example\b)[\w-]+)*(?=$|[\s'"<>|;&)`*?[{,])/;
+  // Any dot-file token that starts with `e` or a glob char and contains glob syntax could expand to .env*.
+  const tokens = command.match(/(?:^|[\s'"=<>|;&(/\\`])\.[^\s'"<>|;&)`/\\]*/g) ?? [];
+  const globbed = tokens.some((t) => {
+    const tok = t.replace(/^[^.]*/, '');
+    return /^\.[e*?[{]/.test(tok) && /[*?[{]/.test(tok);
+  });
+  if (plain.test(command) || globbed) {
     block(`command references a .env file. ${SECRETS_HINT}`);
   }
   process.exit(0);
 }
 
-const filePath = input?.tool_input?.file_path;
+// Grep can print file contents; check its explicit target path / glob too.
+const ti = input?.tool_input ?? {};
+if (tool === 'Grep') {
+  for (const target of [ti.path, ti.glob]) {
+    if (typeof target === 'string' && /(^|[\\/])\.env(?!\.example$)(\.[^\\/]*|\*)?$/.test(target)) {
+      block(`Grep target "${target}" is a secrets file. ${SECRETS_HINT}`);
+    }
+  }
+  process.exit(0);
+}
+
+const filePath = ti.file_path ?? ti.notebook_path;
 if (!filePath) process.exit(0);
 
 const rel = path.relative(root, filePath).split(path.sep).join('/');
