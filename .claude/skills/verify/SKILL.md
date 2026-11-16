@@ -1,7 +1,6 @@
 ---
 name: verify
 description: Definition-of-Done gate — run checks for affected packages and walk the Definition-of-Done checklist from docs/spec/02-releases.md.
-disable-model-invocation: true
 ---
 1. Find the affected workspace packages from the changed files (`git diff --name-only main...HEAD` + uncommitted).
 2. Run `pnpm turbo run lint typecheck test --filter=...[main]` (fallback: `pnpm --filter <pkg> lint typecheck test` for each package). Quote failures verbatim. Do not "fix" by weakening or skipping tests.

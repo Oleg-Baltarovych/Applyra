@@ -12,7 +12,7 @@ Portfolio-grade, solo developer. Source of truth: `docs/spec/*.md` (split spec v
 
 ## Stack (fixed; versions in `docs/spec/04-architecture.md`)
 pnpm workspaces + Turborepo · TypeScript strict (`noUncheckedIndexedAccess`) · `apps/web` React + Vite + TanStack Query + Tailwind/shadcn ·
-`apps/api` NestJS (HTTP `main.ts` + BullMQ `worker.ts`, one codebase) · Prisma 7 + PostgreSQL 18 · Redis · `packages/contracts` Zod schemas shared FE/BE ·
+`apps/api` NestJS (HTTP `main.ts` + BullMQ `worker.ts`, one codebase) · Prisma 7 + PostgreSQL 18 · Redis-compatible Valkey 9 (compose service `redis`) · `packages/contracts` Zod schemas shared FE/BE ·
 Better Auth · Vitest, Supertest, Testcontainers, Playwright, MSW.
 
 ## Commands
