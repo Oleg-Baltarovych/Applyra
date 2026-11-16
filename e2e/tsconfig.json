@@ -1,0 +1,10 @@
+{
+  "extends": "@applyra/config/tsconfig.base.json",
+  "compilerOptions": {
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "lib": ["es2024", "dom"],
+    "noEmit": true
+  },
+  "include": ["**/*.ts"]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@applyra/api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Applyra API (NestJS arrives in M0-02). Shared backend code lives only in src/platform/.",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@applyra/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@applyra/config": "workspace:*",
+    "eslint": "^10.15.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.12"
+  }
+}

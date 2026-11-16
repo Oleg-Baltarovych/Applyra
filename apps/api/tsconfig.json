@@ -1,0 +1,9 @@
+{
+  "extends": "@applyra/config/tsconfig.base.json",
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "noEmit": true
+  },
+  "include": ["src", "test"]
+}

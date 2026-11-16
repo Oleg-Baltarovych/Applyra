@@ -2,26 +2,26 @@
 
 > Living map for AI agents and humans. Goal: orient in a new session without re-reading code or the whole spec.
 > Keep it terse and current. Update in the same commit that changes structure, modules, commands, or decisions.
-> Last updated: 2026-11-16
+> Last updated: 2026-11-16 (M0-01)
 
 ## 1. Status
-- Phase: **pre-M0** — repository holds the spec (v2.1, `docs/spec/`), ADRs and AI tooling config. No application code yet.
-- Done: AI tooling (see `docs/AI-WORKFLOW.md`); spec review (`docs/SPEC-REVIEW.md`) → split spec v2.1 + ADR 000–021; MVP plan (`docs/plans/mvp.md`, `docs/plans/mvp-tasks.md`); pre-coding consistency pass over spec/ADRs.
-- Next: GitHub milestones/issues → M0-01 (M0 scaffold: monorepo, CI, compose, auth, deploy "hello" to the R0 environment on the future prod host; spike: NestJS 12 / BullMQ 6 / nestjs-zod / Better Auth compatibility).
+- Phase: **M0** — monorepo scaffold done (M0-01); no application code yet.
+- Done: AI tooling (see `docs/AI-WORKFLOW.md`); spec review (`docs/SPEC-REVIEW.md`) → split spec v2.1 + ADR 000–021; MVP plan (`docs/plans/mvp.md`, `docs/plans/mvp-tasks.md`); pre-coding consistency pass over spec/ADRs; M0-01 monorepo scaffold (pnpm 11 + Turborepo 2 + TS 6.0 + ESLint 10 boundaries).
+- Next: M0-02 / M0-03 spikes, M0-05 CI (rest of M0 scaffold: monorepo, CI, compose, auth, deploy "hello" to the R0 environment on the future prod host; spike: NestJS 12 / BullMQ 6 / nestjs-zod / Better Auth compatibility).
 - Current release target: **R0 "Tracker for myself"** (`docs/spec/02-releases.md`).
 
 ## 2. Repo map
-Planned layout (confirm at scaffold, then mark ✅):
+Layout ✅ (M0-01; web/api are bare TS packages until M0-12/M0-02):
 ```
 apps/
-  web/                 React 19 + Vite SPA, React Router 8 data mode (feature folders: src/features/<feature>/)
-  api/                 NestJS: src/main.ts (HTTP) + src/worker.ts (BullMQ, from R1)
+  web/                 @applyra/web — React 19 + Vite SPA, React Router 8 data mode (feature folders: src/features/<feature>/)
+  api/                 @applyra/api — NestJS: src/main.ts (HTTP) + src/worker.ts (BullMQ, from R1)
     src/modules/<name>/  index.ts (public API) · *.controller.ts · *.service.ts · *.repository.ts (only Prisma access) · *.domain.ts
     prisma/            schema.prisma (source of truth for columns once it exists) · migrations/ (applied = immutable)
 packages/
-  contracts/           Zod 4 schemas + inferred types shared by web and api
-  config/              shared tsconfig / eslint / prettier (if needed)
-e2e/                   Playwright: seed.spec.ts, specs/ (test plans)
+  contracts/           @applyra/contracts — Zod 4 schemas + inferred types (tsup → dist ESM + d.ts; built before other tasks)
+  config/              @applyra/config — tsconfig.base.json · eslint.base.js (boundaries rules 1–8, 04 §4.1) · test/boundaries.test.ts + fixtures/
+e2e/                   @applyra/e2e — Playwright 1.65.1 (pinned): playwright.config.ts, seed.spec.ts, specs/ (test plans)
 docs/
   spec/00…12-*.md (spec v2.1) · adr/ (000–021 + README index) · plans/ · CONTEXT.md · AI-WORKFLOW.md · SPEC-REVIEW.md (history)
 .claude/
@@ -30,7 +30,8 @@ docs/
   skills/  flow commands (feature, plan, implement, review, verify, ship, bugfix, e2e, security-audit, sync-context)
            procedures (new-endpoint, prisma-migration, adr, ai-task) · shadcn (vendored, skills-lock.json)
   hooks/   guard-paths.mjs (blocks .env / applied migrations) · format.mjs (prettier on edited file)
-.mcp.json              playwright-test MCP (works once @playwright/test is installed)
+root                   package.json (scripts → turbo) · pnpm-workspace.yaml (allowBuilds) · turbo.json · eslint.config.js (re-exports @applyra/config/eslint) · .prettierrc.json
+.mcp.json              playwright-test MCP → node e2e/node_modules/@playwright/test/cli.js (local pinned version)
 ```
 
 ## 3. Modules (`docs/spec/04-architecture.md` §3)
@@ -63,13 +64,22 @@ Status legend: — not started · 🚧 in progress · ✅ done (link key files w
 _(append one line per non-obvious discovery: what, where, why)_
 - `05-data-model.md` is ~1250 lines (schema code): never read it whole — `grep -n "model <Name>"` and read that block. After scaffold `schema.prisma` is the source of truth and 05 keeps principles only.
 - To verify at scaffold (written from docs, not yet compiled): partial `@@unique(where:)` preview syntax, `ops: raw("gin_trgm_ops")`, GIN on `Unsupported("tsvector")`, NestJS 12 peer deps of nestjs-zod / `@thallesp/nestjs-better-auth`, `@nestjs/bullmq` with BullMQ 6.
-- pnpm is not installed globally yet — enable via `corepack enable` at scaffold.
+- pnpm via corepack on Windows: `corepack enable` fails with EPERM when Node is in Program Files → `corepack enable --install-directory "%APPDATA%
+pm" pnpm` (a dir on PATH). Version comes from `packageManager`.
+- pnpm 11: `allowBuilds` map in `pnpm-workspace.yaml` (`onlyBuiltDependencies` removed); `strictDepBuilds` defaults to true → install fails on unreviewed build scripts. `minimumReleaseAge: 1440` set explicitly → strict: a <24 h-old version fails resolution (with the implicit default pnpm silently auto-writes `minimumReleaseAgeExclude`). Pin an older version instead (did so for eslint-plugin-boundaries ~7.4.3).
+- TS 6.0: `types` defaults to `[]` — base sets it explicitly; add `"types": ["node"]` per package when Node APIs are used. typescript-eslint 8.72 supports TS <6.1 (blocks TS 7).
+- ESLint 10 resolves the root `eslint.config.js` from each file, so packages just run `eslint .`. Flat-config `files`/`ignores` are root-relative; boundaries element patterns match right-to-left (that's how the fixture mirror under packages/config/test/fixtures/boundaries/ is classified).
+- eslint-plugin-boundaries 7: use `boundaries/dependencies` (policies, `checkAllOrigins` for npm/`node:*`, `checkInternals` for same-module rules); `element-types`/`external`/`entry-point` are legacy. import-x `no-cycle` needs `import-x/parsers` + `import-x/extensions` for .ts or it silently finds nothing; boundaries resolves only via the legacy `import/resolver` key (without it local imports are unresolved and every local rule silently passes). Policies: last match wins; each message ends with `(rule N)` (asserted by the test).
+- Rule 4: Prisma generated client must be emitted under `apps/api/src/platform/prisma/generated/` (M0-08) — the lint rule targets that path. Services may import only `platform/prisma/transaction.ts` (real one in M0-08; now a fixture stand-in).
+- M0-02 (Nest): apps/api needs `experimentalDecorators` + `emitDecoratorMetadata` and `"types": ["node"]`; Vitest needs the SWC plugin for decorator metadata; DI-injected classes must be value imports (not `import type`) under `isolatedModules`. api is CJS/`nodenext` now — moving to ESM means `.js` extensions on relative imports. Verify api runs against built `@applyra/contracts` (ESM-only dist).
+- M0-07a: turbo strict env mode strips undeclared env vars — declare non-secret vars in the task `env`, secrets via `passThroughEnv`; never `globalPassThroughEnv: ["*"]`.
+- M0-05: CI must run `pnpm format:check` (Prettier ignores docs/ and .claude/). `lint` has no `^build` dependency (rules are not type-aware).
 - Windows dev machine: hooks are Node scripts (no bash/jq). Git Bash heredocs with quotes break — write scripts to files.
 - Project agents/skills load only when the Claude Code session starts in the `Applyra` folder.
 - `.claude/hooks/guard-paths.mjs` blocks Read/Edit/Write of `.env*` (except `.env.example`) and any Bash command mentioning a `.env` file — false positives possible, rephrase or ask the user; migration files are immutable once tracked by git (untracked `--create-only` migrations may be edited).
 - `/review` and `/verify` are model-invocable on purpose (called from `/feature`, `/implement`, `/bugfix`, `/ship`).
 - BullMQ custom `jobId` must not contain `:` or be all digits — outbox uses `<eventId>_<consumer>` (04 §5.2).
-- Playwright agents were generated with Playwright 1.65.1; after a major upgrade re-run `npx playwright init-agents --loop=claude`, then re-apply the short descriptions and `e2e/` paths.
+- `.mcp.json` change takes effect after a Claude Code session restart. Playwright agents were generated with Playwright 1.65.1; after a major upgrade re-run `npx playwright init-agents --loop=claude`, then re-apply the short descriptions and `e2e/` paths.
 
 ## 7. Spec index (`docs/spec/`)
 Read `00-overview.md` once, then only the file you need; grep `^## ` for its sections.

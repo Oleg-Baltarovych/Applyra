@@ -1,0 +1,9 @@
+pnpm-lock.yaml
+dist/
+coverage/
+.turbo/
+docs/
+.claude/
+skills-lock.json
+playwright-report/
+test-results/

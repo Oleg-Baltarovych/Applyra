@@ -1,12 +1,12 @@
 name: Task
 description: A unit of work from the plan / backlog (one PR)
-labels: ["task"]
+labels: ['task']
 body:
   - type: input
     id: fr
     attributes:
       label: FR IDs / spec reference
-      placeholder: "FR-APP-03 · docs/spec/03-functional.md"
+      placeholder: 'FR-APP-03 · docs/spec/03-functional.md'
     validations:
       required: true
   - type: textarea
