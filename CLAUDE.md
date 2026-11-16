@@ -22,6 +22,7 @@ Better Auth · Vitest, Supertest, Testcontainers, Playwright, MSW.
 > Keep only non-obvious ones. Packages: `@applyra/{web,api,contracts,config,e2e}`.
 
 - `pnpm lint && pnpm typecheck && pnpm test` — must be green before reporting a task done (scope with `--filter <pkg>`)
+- CI (`.github/workflows/ci.yml`) also runs `pnpm format:check`, `pnpm audit --audit-level=high`, gitleaks, actionlint; `pnpm test` in apps/api enforces the `*.domain.ts` ≥ 90% coverage gate. Local docker equivalents: `docs/CONTEXT.md` §6 (M0-05)
 - `pnpm build` · `pnpm dev` (turbo; for now only the `contracts` tsup watcher — web/api dev arrive in M0-02/M0-12)
 - `pnpm format:check` — Prettier (docs/ and .claude/ are ignored)
 - `pnpm --filter @applyra/config test` — boundary-rule test (lints `packages/config/test/fixtures/boundaries/`)

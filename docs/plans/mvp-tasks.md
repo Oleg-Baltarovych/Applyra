@@ -80,7 +80,7 @@
     2. integration (Testcontainers, включно з IDOR gate) — вмикає M0-07a;
     3. migrations (drift, squawk, clean apply, якщо змінено `prisma/`) — вмикає M0-08 (перша міграція);
     4. deploy-ready: build images multi-arch + `compose config` + actionlint — вмикає M0-14; `terraform.yml` — M0-17.
-  - `permissions: contents: read` top-level; branch protection на `main` з обов'язковими checks.
+  - `permissions: contents: read` top-level. Branch protection на `main` з обов'язковими checks — **відкладено** (рішення автора 2026-11-17: репозиторій лишається приватним, а на безкоштовному плані GitHub захист гілок для приватних репо недоступний); вмикається, коли репо стане публічним або з'явиться платний план — перелік required checks фіксується в `docs/CONTEXT.md`.
 - Notes: `11-testing.md` §9 (колонка R0), `09-security-privacy.md` §14.
 
 ### M0-06 · Supply chain gates
