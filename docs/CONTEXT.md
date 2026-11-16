@@ -2,12 +2,12 @@
 
 > Living map for AI agents and humans. Goal: orient in a new session without re-reading code or the whole spec.
 > Keep it terse and current. Update in the same commit that changes structure, modules, commands, or decisions.
-> Last updated: 2026-11-16 (M0-02)
+> Last updated: 2026-11-16 (M0-03)
 
 ## 1. Status
 - Phase: **M0** — monorepo scaffold (M0-01) + api stack spike (M0-02): Nest 11 bootstrap, Better Auth wiring, `/health/live`.
-- Done: AI tooling (see `docs/AI-WORKFLOW.md`); spec review (`docs/SPEC-REVIEW.md`) → split spec v2.1 + ADR 000–021; MVP plan (`docs/plans/mvp.md`, `docs/plans/mvp-tasks.md`); pre-coding consistency pass over spec/ADRs; M0-01 monorepo scaffold (pnpm 11 + Turborepo 2 + TS 6.0 + ESLint 10 boundaries); M0-02 spike (NestJS 11 fallback, ESM api; BullMQ 6 + `@nestjs/bullmq` verified on Valkey 9, deps removed until R1 / M3-01).
-- Next: M0-03 (Prisma 7 spike), M0-04 (compose + env config), M0-05 (CI), then M0-07a → M0-08 → M0-09 → M0-10 (`docs/plans/mvp-tasks.md`).
+- Done: AI tooling (see `docs/AI-WORKFLOW.md`); spec review (`docs/SPEC-REVIEW.md`) → split spec v2.1 + ADR 000–021; MVP plan (`docs/plans/mvp.md`, `docs/plans/mvp-tasks.md`); pre-coding consistency pass over spec/ADRs; M0-01 monorepo scaffold (pnpm 11 + Turborepo 2 + TS 6.0 + ESLint 10 boundaries); M0-03 Prisma 7 + PG 18 roles spike (`infra/postgres/init/10-roles.sql`); M0-02 spike (NestJS 11 fallback, ESM api; BullMQ 6 + `@nestjs/bullmq` verified on Valkey 9, deps removed until R1 / M3-01).
+- Next: M0-04 (compose + env config), M0-05 (CI), then M0-07a → M0-08 → M0-09 → M0-10 (`docs/plans/mvp-tasks.md`).
 - Current release target: **R0 "Tracker for myself"** (`docs/spec/02-releases.md`).
 
 ## 2. Repo map
@@ -23,6 +23,7 @@ packages/
   contracts/           @applyra/contracts — Zod 4 schemas + inferred types (tsup → dist ESM + d.ts; built before other tasks)
   config/              @applyra/config — tsconfig.base.json · eslint.base.js (boundaries rules 1–8, 04 §4.1) · test/boundaries.test.ts + fixtures/
 e2e/                   @applyra/e2e — Playwright 1.65.1 (pinned): playwright.config.ts, seed.spec.ts, specs/ (test plans)
+infra/postgres/        init/10-roles.sql (DB roles, M0-03; Compose mounts init/ → /docker-entrypoint-initdb.d) · README.md
 docs/
   spec/00…12-*.md (spec v2.1) · adr/ (000–021 + README index) · plans/ · CONTEXT.md · AI-WORKFLOW.md · SPEC-REVIEW.md (history)
 .claude/
@@ -67,7 +68,13 @@ Status legend: — not started · 🚧 in progress · ✅ done (link key files w
 ## 6. Gotchas / learned the hard way
 _(append one line per non-obvious discovery: what, where, why)_
 - `05-data-model.md` is ~1250 lines (schema code): never read it whole — `grep -n "model <Name>"` and read that block. After scaffold `schema.prisma` is the source of truth and 05 keeps principles only.
-- To verify at scaffold (written from docs, not yet compiled): partial `@@unique(where:)` preview syntax, `ops: raw("gin_trgm_ops")`, GIN on `Unsupported("tsvector")`.
+- M0-03 Prisma 7.10.1 on PG 18 (pin 7.10.x; npm `latest` tag is 8.0.0-rc — install `prisma@7` explicitly): preview flag `previewFeatures = ["partialIndexes"]`. Prisma generates, and `migrate diff --from-migrations … --to-schema … --exit-code` reports no drift for: partial `@@unique([...], where: raw("visibility = 'PRIVATE'"), map:)` → `CREATE UNIQUE INDEX … WHERE (visibility = 'PRIVATE')`; `@@index([col(ops: raw("gin_trgm_ops"))], type: Gin)`; `@@index([searchVector], type: Gin)` on `Unsupported("tsvector")`; CHECK constraints (raw, invisible to diff). Later `--create-only` migrations don't touch any of them.
+- M0-03 generated column: `searchVector Unsupported("tsvector")? @default(dbgenerated()) @map("search_vector")` — WITHOUT `@default(dbgenerated())` diff reports drift `ALTER COLUMN "search_vector" DROP DEFAULT` (Prisma reads the generation expression as a default). Replace the generated `"search_vector" tsvector` line with the `GENERATED ALWAYS AS (…) STORED` one (05 §7.3).
+- M0-03 stays raw SQL: `SET lock_timeout/statement_timeout`, `CREATE EXTENSION pg_trgm/unaccent`, `f_unaccent` — prepend to the migration (Prisma emits the trgm index but not the extension); CHECKs appended at the end. `postgresqlExtensions` preview not used.
+- M0-03 schema syntax: one-line enums (`enum Role { USER ADMIN }`, as printed in 05 §4.1) fail validation (P1012) — one value per line. `@default(dbgenerated("uuidv7()")) @db.Uuid` → `DEFAULT uuidv7()` (v7 confirmed via `uuid_extract_version`); `@db.Timestamptz(3)` → `TIMESTAMPTZ(3)`. Better Auth passes its own app-side v7 id, which just overrides the DB default — no conflict; the DB default serves raw SQL/seed inserts.
+- M0-03 roles: `infra/postgres/init/10-roles.sql` (M0-04 mounts `infra/postgres/init` → `/docker-entrypoint-initdb.d:ro`; passwords from env `APPLYRA_{APP,MAINTENANCE,BACKUP,METRICS}_PASSWORD` read by psql `\getenv`, ≥ 16 chars, pairwise distinct, fail-fast exit 3; idempotent = rotation; a re-run also revokes hand-granted `pg_read_all_data`/`pg_write_all_data`/`pg_monitor` from app and `pg_write_all_data` from backup/metrics). Log redaction: session `SET log_statement='none'`, `log_min_error_statement='panic'`, `log_min_duration_statement=-1`, `password_encryption='scram-sha-256'` + psql `VERBOSITY terse` (psql's `LINE 1: …` error echo lands in `docker logs`) — verified with server `log_statement=all` + a forced error carrying a password: 0 plaintext hits; verifiers `SCRAM-SHA-256$`. `backup` is `NOREPLICATION` until WAL-G (M5-17). `applyra_maintenance` owns DB + `public` (trusted extensions OK; no CREATEDB → `migrate dev`/`diff` need `SHADOW_DATABASE_URL` on a CREATEDB/superuser role); `applyra_app` gets DML via default privileges, DDL/TRUNCATE/TEMP denied (verified). Migrations reference `applyra_app` (AuditLog REVOKE, verified incl. shadow DB) → Testcontainers must run the roles script before `migrate deploy` (M0-07a). No `GRANT … ON ALL TABLES` in the script on purpose (a re-run would re-grant AuditLog UPDATE/DELETE).
+- M0-03 `_prisma_migrations`: Prisma creates it on the first deploy as maintenance → default privileges give the app DML. Every `migrate deploy` (local, Testcontainers template, CI, deploy job) is followed by `REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON "_prisma_migrations" FROM applyra_app;` as maintenance (M0-08, M0-14); later deploys still work after the revoke (verified). Migrations must run as `applyra_maintenance` — default privileges are `FOR ROLE applyra_maintenance`; objects created by another role give the app nothing.
+- Hook: a Bash command with a dot-glob such as `.*{…}` (e.g. a grep regex) is blocked as a possible `.env` reference — put such commands in a script file.
 - pnpm via corepack on Windows: `corepack enable` fails with EPERM when Node is in Program Files → `corepack enable --install-directory "%APPDATA%\npm" pnpm` (a dir on PATH). Version comes from `packageManager`.
 - pnpm 11: `allowBuilds` map in `pnpm-workspace.yaml` (`onlyBuiltDependencies` removed); `strictDepBuilds` defaults to true → install fails on unreviewed build scripts. `minimumReleaseAge: 1440` set explicitly → strict: a <24 h-old version fails resolution (with the implicit default pnpm silently auto-writes `minimumReleaseAgeExclude`). Pin an older version instead (did so for eslint-plugin-boundaries ~7.4.3).
 - TS 6.0: `types` defaults to `[]` — base sets it explicitly; add `"types": ["node"]` per package when Node APIs are used. typescript-eslint 8.72 supports TS <6.1 (blocks TS 7).
