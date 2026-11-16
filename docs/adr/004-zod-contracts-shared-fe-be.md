@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-11-16
+- Amended: 2026-11-16 — M0-02: nestjs-zod 5.6 peers only `@nestjs/common` ^10 || ^11 (Nest 12 support open upstream: issue #471, PR #515), so the API runs NestJS 11.x; global `ZodValidationPipe` + `ZodSerializerInterceptor` verified with `bodyParser: false` (body parsers restored by the Better Auth adapter)
 
 ## Context
 - The same shapes are validated in React forms (React Hook Form), in NestJS request handling, and in AI structured output.

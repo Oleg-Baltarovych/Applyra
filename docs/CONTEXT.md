@@ -2,20 +2,21 @@
 
 > Living map for AI agents and humans. Goal: orient in a new session without re-reading code or the whole spec.
 > Keep it terse and current. Update in the same commit that changes structure, modules, commands, or decisions.
-> Last updated: 2026-11-16 (M0-01)
+> Last updated: 2026-11-16 (M0-02)
 
 ## 1. Status
-- Phase: **M0** — monorepo scaffold done (M0-01); no application code yet.
-- Done: AI tooling (see `docs/AI-WORKFLOW.md`); spec review (`docs/SPEC-REVIEW.md`) → split spec v2.1 + ADR 000–021; MVP plan (`docs/plans/mvp.md`, `docs/plans/mvp-tasks.md`); pre-coding consistency pass over spec/ADRs; M0-01 monorepo scaffold (pnpm 11 + Turborepo 2 + TS 6.0 + ESLint 10 boundaries).
-- Next: M0-02 / M0-03 spikes, M0-05 CI (rest of M0 scaffold: monorepo, CI, compose, auth, deploy "hello" to the R0 environment on the future prod host; spike: NestJS 12 / BullMQ 6 / nestjs-zod / Better Auth compatibility).
+- Phase: **M0** — monorepo scaffold (M0-01) + api stack spike (M0-02): Nest 11 bootstrap, Better Auth wiring, `/health/live`.
+- Done: AI tooling (see `docs/AI-WORKFLOW.md`); spec review (`docs/SPEC-REVIEW.md`) → split spec v2.1 + ADR 000–021; MVP plan (`docs/plans/mvp.md`, `docs/plans/mvp-tasks.md`); pre-coding consistency pass over spec/ADRs; M0-01 monorepo scaffold (pnpm 11 + Turborepo 2 + TS 6.0 + ESLint 10 boundaries); M0-02 spike (NestJS 11 fallback, ESM api; BullMQ 6 + `@nestjs/bullmq` verified on Valkey 9, deps removed until R1 / M3-01).
+- Next: M0-03 (Prisma 7 spike), M0-04 (compose + env config), M0-05 (CI), then M0-07a → M0-08 → M0-09 → M0-10 (`docs/plans/mvp-tasks.md`).
 - Current release target: **R0 "Tracker for myself"** (`docs/spec/02-releases.md`).
 
 ## 2. Repo map
-Layout ✅ (M0-01; web/api are bare TS packages until M0-12/M0-02):
+Layout ✅ (M0-01; web is a bare TS package until M0-12; api bootstrapped in M0-02):
 ```
 apps/
   web/                 @applyra/web — React 19 + Vite SPA, React Router 8 data mode (feature folders: src/features/<feature>/)
-  api/                 @applyra/api — NestJS: src/main.ts (HTTP) + src/worker.ts (BullMQ, from R1)
+  api/                 @applyra/api — NestJS 11, ESM: src/main.ts (HTTP, `bodyParser: false`) · src/app.module.ts (`AppModule.forRoot(config)`) + src/worker.ts (BullMQ, from R1)
+                       `pnpm --filter @applyra/api build` (tsc -p tsconfig.build.json → dist/) · `start` (node dist/main.js, :3000)
     src/modules/<name>/  index.ts (public API) · *.controller.ts · *.service.ts · *.repository.ts (only Prisma access) · *.domain.ts
     prisma/            schema.prisma (source of truth for columns once it exists) · migrations/ (applied = immutable)
 packages/
@@ -37,7 +38,9 @@ root                   package.json (scripts → turbo) · pnpm-workspace.yaml (
 ## 3. Modules (`docs/spec/04-architecture.md` §3)
 | Module | Release | Status |
 |---|---|---|
-| auth, users, jobs, applications, reminders, import-export | R0 | — |
+| auth | R0 | 🚧 M0-02: `modules/auth/` — `auth.config.ts` (`createAuth`), `auth.module.ts`, `signup-allowlist.domain.ts`; memory adapter until M0-08 |
+| health (`/health/live`; ready in M0-09) | R0 | 🚧 `modules/health/` |
+| users, jobs, applications, reminders, import-export | R0 | — |
 | notifications, profile, skills, documents, analytics, ai (extract-job), outbox, audit | R1 | — |
 | ingestion (incl. dedup, FX), matching | R2 | — |
 | ai (other tasks, embeddings) | R3 | — |
@@ -46,6 +49,7 @@ Status legend: — not started · 🚧 in progress · ✅ done (link key files w
 ## 4. Key decisions (details in `docs/adr/README.md`)
 - Modular monolith + worker entrypoint (001); pnpm + Turborepo (002); Postgres FTS + trigram (003); Zod contracts FE/BE (004).
 - R0 side effects synchronous in the same transaction; outbox + BullMQ from R1 (006).
+- NestJS **11.x** (12 blocked by nestjs-zod peers, M0-02); api is ESM (`"type": "module"`, `nodenext`, `.js` relative imports).
 - Better Auth, R0 = Google OAuth only, UUID v7 ids (007); `app.`/`api.` same-site, `__Host-` cookies (008).
 - PostgreSQL 18 + native `uuidv7()` (012); Prisma 7 + raw SQL features, drift check in CI (016).
 - Hetzner VPS + Compose + Caddy + Terraform; SPA on Cloudflare Pages custom domain (011). R0: no staging — one environment on the future prod host (real data, allowlist = author); synthetic staging from R1 (M5-20).
@@ -63,15 +67,25 @@ Status legend: — not started · 🚧 in progress · ✅ done (link key files w
 ## 6. Gotchas / learned the hard way
 _(append one line per non-obvious discovery: what, where, why)_
 - `05-data-model.md` is ~1250 lines (schema code): never read it whole — `grep -n "model <Name>"` and read that block. After scaffold `schema.prisma` is the source of truth and 05 keeps principles only.
-- To verify at scaffold (written from docs, not yet compiled): partial `@@unique(where:)` preview syntax, `ops: raw("gin_trgm_ops")`, GIN on `Unsupported("tsvector")`, NestJS 12 peer deps of nestjs-zod / `@thallesp/nestjs-better-auth`, `@nestjs/bullmq` with BullMQ 6.
-- pnpm via corepack on Windows: `corepack enable` fails with EPERM when Node is in Program Files → `corepack enable --install-directory "%APPDATA%
-pm" pnpm` (a dir on PATH). Version comes from `packageManager`.
+- To verify at scaffold (written from docs, not yet compiled): partial `@@unique(where:)` preview syntax, `ops: raw("gin_trgm_ops")`, GIN on `Unsupported("tsvector")`.
+- pnpm via corepack on Windows: `corepack enable` fails with EPERM when Node is in Program Files → `corepack enable --install-directory "%APPDATA%\npm" pnpm` (a dir on PATH). Version comes from `packageManager`.
 - pnpm 11: `allowBuilds` map in `pnpm-workspace.yaml` (`onlyBuiltDependencies` removed); `strictDepBuilds` defaults to true → install fails on unreviewed build scripts. `minimumReleaseAge: 1440` set explicitly → strict: a <24 h-old version fails resolution (with the implicit default pnpm silently auto-writes `minimumReleaseAgeExclude`). Pin an older version instead (did so for eslint-plugin-boundaries ~7.4.3).
 - TS 6.0: `types` defaults to `[]` — base sets it explicitly; add `"types": ["node"]` per package when Node APIs are used. typescript-eslint 8.72 supports TS <6.1 (blocks TS 7).
 - ESLint 10 resolves the root `eslint.config.js` from each file, so packages just run `eslint .`. Flat-config `files`/`ignores` are root-relative; boundaries element patterns match right-to-left (that's how the fixture mirror under packages/config/test/fixtures/boundaries/ is classified).
 - eslint-plugin-boundaries 7: use `boundaries/dependencies` (policies, `checkAllOrigins` for npm/`node:*`, `checkInternals` for same-module rules); `element-types`/`external`/`entry-point` are legacy. import-x `no-cycle` needs `import-x/parsers` + `import-x/extensions` for .ts or it silently finds nothing; boundaries resolves only via the legacy `import/resolver` key (without it local imports are unresolved and every local rule silently passes). Policies: last match wins; each message ends with `(rule N)` (asserted by the test).
 - Rule 4: Prisma generated client must be emitted under `apps/api/src/platform/prisma/generated/` (M0-08) — the lint rule targets that path. Services may import only `platform/prisma/transaction.ts` (real one in M0-08; now a fixture stand-in).
-- M0-02 (Nest): apps/api needs `experimentalDecorators` + `emitDecoratorMetadata` and `"types": ["node"]`; Vitest needs the SWC plugin for decorator metadata; DI-injected classes must be value imports (not `import type`) under `isolatedModules`. api is CJS/`nodenext` now — moving to ESM means `.js` extensions on relative imports. Verify api runs against built `@applyra/contracts` (ESM-only dist).
+- M0-02 versions: Nest 11.2.10 · nestjs-zod 5.6.0 · better-auth 1.7.25 · @thallesp/nestjs-better-auth 2.8.0 · zod 4.6 · (R1) bullmq 6.7.6 + @nestjs/bullmq 12.0.2 + ioredis 6. `pnpm peers check` clean, no overrides.
+- M0-02 Nest 12: nestjs-zod 5.6.0 (2026-11-08) still peers `@nestjs/common` 10–11 (upstream #471 / PR #515 open) → stay on 11; recheck on each nestjs-zod release. thallesp and @nestjs/bullmq already accept 12.
+- M0-02 module format: api is ESM (`"type": "module"`, `nodenext`) — Nest 12, Better Auth, the thallesp adapter and contracts are ESM-only; Nest 11 (CJS) imports fine from ESM. Relative imports need `.js`. ESM + `emitDecoratorMetadata`: a circular import between DI classes is a TDZ error, not `undefined` — use `forwardRef` or break the cycle.
+- M0-02 tooling: apps/api tsconfig has `experimentalDecorators` + `emitDecoratorMetadata` + `"types": ["node"]`; DI-injected classes and Zod DTOs must be value imports (not `import type`). Vitest needs **no SWC plugin**: Vite 8's Oxc reads both flags from tsconfig and emits `design:paramtypes` (verified by toggling the flag). ESLint: `no-extraneous-class` allows decorated classes in apps/api.
+- M0-02 Better Auth: allowlist hook must `throw new APIError('FORBIDDEN', { code: 'SIGNUP_CLOSED' })` — OAuth callback redirects to `errorURL?error=SIGNUP_CLOSED`, programmatic → 403 `{ code, message }`; `return false` → generic `unable_to_create_user`. Hook runs on user create only (existing users sign in — tested). `input: false` fields: dropped on sign-up (200, role stays USER), rejected on `update-user` (400).
+- M0-02 thallesp adapter: `forRoot` registers `APP_GUARD` globally + mounts handler as middleware; with `bodyParser: false` it re-adds express json/urlencoded for non-`/api/auth` routes (needs `express` as a direct dep — it `require`s it). Guard 401 body is Nest's default `{ message, statusCode }` until the M0-09 filter maps it to `UNAUTHENTICATED`.
+- M0-02 secrets: Better Auth secret = `options.secrets` ?? env `BETTER_AUTH_SECRETS` (array, wins over `options.secret`!), else `options.secret` || env `BETTER_AUTH_SECRET` || `AUTH_SECRET` || public `DEFAULT_SECRET` (`better-auth-secret-12345678901234567890`); outside production the default only warns, in tests validation is skipped (`context/create-context.mjs`). Hence `createAuth` requires `secret` ≥ 32 chars and throws; M0-04 must also reject a set `BETTER_AUTH_SECRETS` unless we adopt rotation deliberately.
+- M0-02 AuthModule seam: `AuthModule.forRootAsync({ imports, inject, useFactory → AuthConfig })`; `createAuth(config)` stays a pure factory. `AuthConfig` requires `secret`, `baseURL`, `trustedOrigins`. main.ts reads `PORT`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `WEB_ORIGIN` from process env with fail-fast (`TODO(M0-04)`); memory adapter `TODO(M0-08)`.
+- M0-02 → M0-09: Better Auth error bodies are `{ code, message }` (guard 401, 403 `SIGNUP_CLOSED`, 400 validation) and Nest's guard 401 is `{ message, statusCode }` — map both to the 06-api error shape. The thallesp adapter enables app-wide CORS from an array `trustedOrigins` with methods GET/POST/PUT/DELETE only (no PATCH) — set `disableTrustedOriginsCors: true` and own CORS in M0-09. Set explicit body-parser size limits (adapter `bodyParser.json.limit`) there too.
+- M0-02 → M0-10: before any non-Google provider is enabled (R1 email + password), the allowlist hook must also require `emailVerified === true`. Land with M0-10: cookies `__Host-` + Secure + SameSite=Lax, `session.expiresIn`/`updateAge`/`freshAge`, Better Auth rate limit on the Redis store, and `OriginGuard` (403 `CSRF_ORIGIN`) before the first mutating non-auth route.
+- Never copy the test-only `emailAndPassword: { enabled: true }` from `apps/api/test/auth-bootstrap.test.ts` into real config (R0 = Google only).
+- M0-02 BullMQ 6: Redis driver is an optional peer — install `ioredis` (or pass a node-redis client). Queue names must not contain `:` (throws); custom `jobId` must not contain `:` or be an integer; job names and scheduler ids may contain `:` (scheduler jobs get id `repeat:<schedulerId>:<ts>`). Convention (applied across docs): one kebab-case queue per owning module + job name, e.g. queue `matching` / job `match-job`, queue `email` / job `send`; scheduler ids `<queue>:<job>[:<key>]` — full list in `04-architecture.md` §5.4. `upsertJobScheduler` twice with the same id → one scheduler; `@Processor`/`WorkerHost` runs scheduled jobs on Valkey 9.
 - M0-07a: turbo strict env mode strips undeclared env vars — declare non-secret vars in the task `env`, secrets via `passThroughEnv`; never `globalPassThroughEnv: ["*"]`.
 - M0-05: CI must run `pnpm format:check` (Prettier ignores docs/ and .claude/). `lint` has no `^build` dependency (rules are not type-aware).
 - Windows dev machine: hooks are Node scripts (no bash/jq). Git Bash heredocs with quotes break — write scripts to files.
