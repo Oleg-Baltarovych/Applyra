@@ -2,7 +2,7 @@
 paths:
   - "apps/web/**/*.{ts,tsx,css}"
 ---
-# Frontend (React + Vite) rules — SPEC §13, §22
+# Frontend (React + Vite) rules — `docs/spec/10-frontend-ux.md`
 
 - Feature folders: `src/features/<feature>/{api,components,hooks,routes}`. Shared UI in `src/components/ui` (shadcn primitives — change only tokens/variants).
 - Server state only via TanStack Query (query keys from a per-feature `keys.ts` factory). Zustand only for UI state (filters, panels, palette).

@@ -5,9 +5,9 @@ argument-hint: "<METHOD> <path> — short purpose"
 ---
 # New endpoint: $ARGUMENTS
 
-1. **Spec check.** Find the endpoint in SPEC §10.2 (`grep -n "^### 10.2" docs/SPEC.md`) and the related functional section in §5. If it is not in SPEC, stop and ask.
+1. **Spec check.** Find the endpoint in `docs/spec/06-api.md` and its FR in `03-functional.md`. If it is not in the spec, stop and ask.
 2. **Contract** (`packages/contracts`): request/query/response Zod schemas + inferred types. Reuse existing enums. Cursor pagination returns `{ items, nextCursor }`.
-3. **Test first** (domain + integration): write failing tests — domain rule unit tests, then Supertest integration: happy path, validation error (400 with SPEC §10.1 shape), unauthenticated (401), IDOR (user B → user A's resource → 404). Run them and confirm they fail for the right reason.
+3. **Test first** (domain + integration): write failing tests — domain rule unit tests, then Supertest integration: happy path, validation error (400 with the `06-api.md` error shape), unauthenticated (401), IDOR (user B → user A's resource → 404). Run them and confirm they fail for the right reason.
 4. **Domain**: pure rules in `<module>.domain.ts`.
 5. **Repository**: user-scoped `findOwned*`/`updateOwned*`; related writes inside one transaction; outbox event if there is an async cross-module effect.
 6. **Service**: orchestration only; idempotency via `Idempotency-Key` if the mutation is retryable.

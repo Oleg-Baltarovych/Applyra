@@ -3,7 +3,7 @@ paths:
   - "apps/api/prisma/**"
   - "**/*.repository.ts"
 ---
-# Prisma & database rules — SPEC §8, §11.2, §15.4
+# Prisma & database rules — `docs/spec/05-data-model.md`, `12-infra-ops.md`
 
 - Never edit an existing folder in `prisma/migrations/` (a hook blocks it). Schema change → `prisma migrate dev --name <snake_case>` → new migration. Use `/prisma-migration`.
 - Raw SQL that the Prisma schema cannot express (FTS `search_vector`, GIN/trigram indexes, partial unique indexes, CHECK constraints, extensions) is appended by hand to the generated migration SQL, with a comment.

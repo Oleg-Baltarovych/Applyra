@@ -1,0 +1,31 @@
+name: Task
+description: A unit of work from the plan / backlog (one PR)
+labels: ["task"]
+body:
+  - type: input
+    id: fr
+    attributes:
+      label: FR IDs / spec reference
+      placeholder: "FR-APP-03 · docs/spec/03-functional.md"
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What and why, 1–3 lines.
+    validations:
+      required: true
+  - type: textarea
+    id: ac
+    attributes:
+      label: Acceptance criteria
+      description: Testable, one per line.
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes (design, security, out of scope)

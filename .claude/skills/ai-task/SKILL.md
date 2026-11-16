@@ -5,7 +5,7 @@ argument-hint: "<task-name> — purpose"
 ---
 # AI task: $ARGUMENTS
 
-1. Read SPEC §12.1–12.5 (`grep -n "^### 12" docs/SPEC.md`) and the feature in §5.10.
+1. Read `docs/spec/07-ai.md` and the FR-AI requirement in `03-functional.md`.
 2. Schemas in `packages/contracts` (or `ai/tasks/<name>.schema.ts` if internal): input + output. Output includes evidence fields where the model makes claims (e.g. quote from the vacancy text). No URL/HTML fields unless required.
 3. Task file `ai/tasks/<name>.task.ts`:
    - `name`, `promptVersion: 'YYYY-MM-DD'`, `tier: 'fast' | 'smart'`, `limits: { maxOutputTokens, timeoutMs, retries: 1 }`.

@@ -1,0 +1,304 @@
+# Безпека та приватність
+
+> Applyra spec v2.1 · Зона: threat model, security controls, приватність і retention · Пов'язані: `02-releases.md`, `03-functional.md`, `04-architecture.md`, `05-data-model.md`, `06-api.md`, `07-ai.md`, `08-ingestion-matching.md`, `11-testing.md`, `12-infra-ops.md`
+
+Теги релізу: **[R0]** … **[R3]** — реліз, у якому контроль має бути реалізований і покритий тестом (див. `02-releases.md`). Контроль без тегу діє з R0.
+
+## 1. Threat model (summary)
+
+### 1.1. Активи
+
+| Актив | Чутливість | Де живе |
+|---|---|---|
+| CV / документи (PDF/DOCX + `parsedText`) | висока (PII, історія роботи) | S3 (R2), Postgres `DocumentVersion` |
+| Applications, notes, timeline, зарплатні очікування | висока (комерційно чутливо для користувача) | Postgres |
+| Контакти рекрутерів (персональні дані третіх осіб) | висока | Postgres `Contact` |
+| Сесії, OAuth-акаунти, Telegram chat id | висока | Postgres (Better Auth tables), Redis (rate limits) |
+| AI-бюджет, ключі провайдерів, секрети | середня–висока (гроші) | env / GitHub Environments |
+| Доступність сервісу | середня | VPS |
+
+### 1.2. Актори
+
+| Актор | Можливості |
+|---|---|
+| Анонімний відвідувач | публічні сторінки, sign-in, «Try demo» |
+| Demo-користувач | ефемерний акаунт з обмеженнями (§11) |
+| Автентифікований користувач (зловмисний) | валідна сесія, підбирає чужі id, шле шкідливі URL/файли/CSV |
+| Сторонній контент | HTML вакансій, тексти рекрутерів, відповіді джерел ingestion — може містити XSS / prompt injection |
+| Атакувальник supply chain | шкідливий npm-пакет, compromised GitHub Action |
+| Адмін (автор) | `role = ADMIN`, доступ до Bull Board / Grafana (§13) |
+
+### 1.3. Топ-загрози
+
+| # | Загроза | Контроль | Тест |
+|---|---|---|---|
+| T1 | BOLA/IDOR — читання чужих заявок, CV | §2 | IDOR suite (`11-testing.md` §4) |
+| T2 | SSRF через URL capture → metadata, Postgres, Redis | §5 | SSRF fixtures (`11-testing.md` §5) |
+| T3 | Шкідливий документ (zip bomb, XXE, CVE pdfjs) | §6 | upload fixtures |
+| T4 | Stored XSS через HTML вакансії / нотатки | §7, §9 | sanitizer tests + CSP header test |
+| T5 | CSRF / session hijacking | §3, §4 | auth integration tests |
+| T6 | Account takeover (credential stuffing, linking) | §4 | auth integration tests |
+| T7 | Витік PII через логи, Sentry, бекапи, LLM | §10, §12 | redaction unit test |
+| T8 | Зловживання demo (AI-бюджет, спам, XSS між відвідувачами) | §11 | demo integration tests |
+| T9 | Supply chain / витік CI-секретів | §14 | CI policy checks |
+| T10 | Prompt injection з вакансій/повідомлень | див. `07-ai.md` (розділ «Prompt injection») | AI contract tests |
+
+## 2. Authorization та IDOR
+
+- Кожен приватний endpoint — за глобальним auth guard; публічні маркуються явно `@Public()`. Неавторизований запит → 401.
+- Доступ до user-owned даних — **тільки** через `findOwned*` / `listOwned*` хелпери репозиторіїв (`where: { id, userId }`).
+- Чужий або неіснуючий ресурс → **404 `NOT_FOUND`**, ніколи 403 (не розкриваємо факт існування). Роль без доступу (admin-routes) → теж 404. 403 — тільки `CSRF_ORIGIN`, `FRESH_SESSION_REQUIRED`, `DEMO_FEATURE_DISABLED`, `SIGNUP_CLOSED` (каталог — `06-api.md` §3.1).
+- **Job access predicate** (A-09) — єдиний helper `canAccessJob(user, job)`:
+  `job.visibility = 'PUBLIC'` **або** `job.ownerId = user.id`. Приватна чужа вакансія → 404. Мутації `Job` — тільки власник (catalog jobs — тільки ingestion/admin).
+- Вхідні схеми (Zod, `.strict()`) не містять `userId`, `ownerId`, `role`, `deletedAt` — mass assignment неможливий. Відповіді проходять response-схему (`@ZodResponse`) — зайві поля відрізаються.
+- Prisma Client Extension у dev/test: warning (у тестах — fail) на запит до user-scoped моделі без `userId` у `where`.
+- UUID v7 id не вважаються секретом.
+- IDOR suite генерується з таблиці routes (T-02) — див. `11-testing.md` §4.
+
+## 3. Домени, cookies, CSRF, CORS (S-04, рішення 4)
+
+| Контроль | Значення |
+|---|---|
+| Домени | SPA `https://app.<domain>`, API `https://api.<domain>` — same-site (див. `12-infra-ops.md` §3). Staging — окремий registrable domain |
+| Session cookie | `__Host-applyra.session` (Better Auth `advanced.cookiePrefix`), `HttpOnly; Secure; SameSite=Lax; Path=/`, без `Domain` |
+| Інші cookies | тільки Better Auth (state/PKCE для OAuth), той самий префікс `__Host-` |
+| Origin check | Better Auth `trustedOrigins = [APP_ORIGIN]` для `/api/auth/*`; власний `OriginGuard` для решти мутацій: `POST/PUT/PATCH/DELETE` без `Origin` або з `Origin ∉ allowlist` → 403 `CSRF_ORIGIN` |
+| Content-Type | мутації приймають тільки `application/json` → інакше 415. Виняток — явний `@AcceptsMultipart()` (CSV import), Origin check однаково діє |
+| CORS | `Access-Control-Allow-Origin: https://app.<domain>` (точний збіг, без wildcard), `Allow-Credentials: true`, `Allow-Methods: GET,POST,PUT,PATCH,DELETE`, `Allow-Headers: Content-Type, Idempotency-Key`, `Max-Age: 600` |
+| GET безпечні | GET ніколи не змінює стан (lint-правило на контролерах) |
+
+## 4. Автентифікація та сесії (S-05, S-06, S-07)
+
+### 4.1. Методи
+
+| Метод | Реліз |
+|---|---|
+| Google OAuth (OIDC, PKCE) | [R0] |
+| Sign-up allowlist (`AUTH_SIGNUP_ALLOWLIST` — список email; решта → 403 `SIGNUP_CLOSED`) | [R0] |
+| Email + password, email verification, reset password | [R1] |
+| Invite-only / публічна реєстрація | [R1] — див. `02-releases.md` |
+| TOTP (Better Auth `twoFactor`) — обов'язковий для `ADMIN` | [R1] |
+
+### 4.2. Сесії
+
+| Параметр | Значення |
+|---|---|
+| Idle TTL | 7 днів (Better Auth `session.expiresIn = 7d`, sliding) |
+| Absolute TTL | 30 днів від `session.createdAt` — перевірка в auth guard, далі re-login |
+| Rotation | токен оновлюється не частіше 1/добу (`updateAge = 1d`) і завжди після sign-in, зміни пароля, підвищення привілеїв (TOTP) |
+| Fresh session | `freshAge = 10 хв`: delete account, data export, зміна email/пароля, unlink Google, вимкнення TOTP — інакше 403 `FRESH_SESSION_REQUIRED` → UI просить re-auth |
+| Revoke | зміна/reset пароля → `revokeOtherSessions`; «Sign out everywhere» у Settings; видалення акаунта → всі сесії |
+| OAuth-токени | Google access/refresh токени не потрібні після логіну — не зберігаються або `encryptOAuthTokens: true` |
+
+### 4.3. Паролі та enumeration [R1]
+
+- Довжина 12–128, без правил складу; перевірка HIBP (k-anonymity, Better Auth `haveIBeenPwned`) на sign-up і зміні.
+- Хешування — дефолт Better Auth (scrypt); жодної власної криптографії.
+- Enumeration-safe: sign-in → завжди `INVALID_CREDENTIALS`; sign-up і reset → однакова відповідь «якщо акаунт існує, ми надіслали лист»; час відповіді вирівнюється (dummy-hash).
+- Rate limit (Redis): sign-in 5/хв на (IP, email) і 30/год на IP; reset 3/год на email; sign-up 10/год на IP; перевищення → 429 + `auth_failures_total`/`rate_limit_hits_total` (див. `12-infra-ops.md` §10).
+
+### 4.4. Google account linking (S-07)
+
+Better Auth `accountLinking: { enabled: true, trustedProviders: [] }`. Linking Google до наявного email-акаунта — тільки якщо `email_verified = true` у Google ID token **і** локальний email підтверджений. Інакше → 409 `ACCOUNT_LINK_REQUIRES_VERIFICATION` (увійти паролем і прив'язати з Settings).
+
+## 5. URL capture — SSRF (S-01, S-02, S-03) [R1]
+
+URL capture переїхав у R1 (див. `02-releases.md`). Fetcher — окремий контейнер `safe-fetcher` (див. `08-ingestion-matching.md` для парсингу).
+
+| Контроль | Правило |
+|---|---|
+| Парсинг URL | WHATWG `URL`; тільки `http:`/`https:`; порт 80/443 (явний інший → reject); без userinfo (`user:pass@`) |
+| IP-літерали | нормалізуються `ipaddr.js` (`ipaddr.parse`, включно з decimal `2130706433`, octal `0177.0.0.1`, hex `0x7f.1`, короткі форми `127.1`) до перевірки |
+| Allow-only | дозволено тільки `range() === 'unicast'` (IPv4) / `'unicast'` (IPv6). IPv4-mapped IPv6 (`::ffff:a.b.c.d`) → розпакувати `toIPv4Address()` і перевірити як IPv4 |
+| Заблоковано явно (тест-фікстури) | `0.0.0.0/8`, `10/8`, `100.64/10` (CGNAT), `127/8`, `169.254/16` (metadata), `172.16/12`, `192.168/16`, `192.0.0/24`, `198.18/15`, multicast/reserved; `::/128`, `::1`, `fc00::/7`, `fe80::/10`, `64:ff9b::/96` і `64:ff9b:1::/48` (NAT64), `2002::/16` (6to4), `2001::/32` (Teredo) |
+| DNS rebinding | DNS резолвиться **один раз**; з'єднання — з уже перевіреним IP через custom `lookup` в undici `Agent({ connect: { lookup } })`; `servername`/`Host` = оригінальне ім'я. Якщо будь-яка A/AAAA-адреса заблокована → reject |
+| Redirects | `redirect: 'manual'`, ≤ 3; на кожному кроці заново: scheme, порт, DNS + IP-перевірка; заборона `https → http` downgrade |
+| Розмір | ≤ 2 MB **після** розпакування (лічильник на decoded stream, abort при перевищенні); `Content-Length` > 2 MB → reject одразу |
+| Тип | тільки `text/html` / `application/xhtml+xml` |
+| Час | connect 3 с, total 5 с |
+| Запит | без cookies, без auth, ідентифікований `User-Agent: ApplyraBot/<version> (+https://app.<domain>/bot)` |
+| Rate limit | 30/год на користувача, 5 паралельних глобально |
+| Політика доменів | LinkedIn — тільки paste; решта — за robots/ToS (P-18, див. `08-ingestion-matching.md`) |
+| Мережева ізоляція | `safe-fetcher` у мережі `egress` (тільки інтернет) + `fetch-rpc` (тільки з worker); не бачить `postgres`/`redis`/`minio` (не резолвляться); без DB/Redis credentials. Host firewall (`DOCKER-USER`) дропає трафік з `egress` subnet до RFC 1918, `100.64/10`, `169.254/16` (див. `12-infra-ops.md` §3) |
+| Результат | метрика `capture_fetch_total{result}` включно з `blocked_ssrf` |
+
+## 6. Документи та uploads (S-08) [R1]
+
+| Крок | Контроль |
+|---|---|
+| 1. Init | `POST /documents/uploads` → `DocumentVersion(status=PENDING)`, key `quarantine/<userId>/<uuid>`; **presigned PUT** (рішення: Cloudflare R2 не підтримує presigned POST policy) з підписаними `Content-Length` (= заявлений `sizeBytes`, 1..5 242 880) і `Content-Type ∈ {application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document}`, TTL 5 хв. Запит з іншим розміром/типом storage відхиляє (підпис не збігається) |
+| 2. Confirm | `POST /documents/uploads/:versionId/complete` → `HEAD` (розмір = заявлений, ≤ 5 MB) → job `document.validate` |
+| 3. Validate | magic bytes (`file-type`) збігаються з MIME; DOCX без макросів (`.docm` content types → reject); зашифровані PDF → reject |
+| 4. Parse (sandbox) | child process (`fork`, `--max-old-space-size=256`), timeout 20 с → SIGKILL; без мережі й credentials (env очищений). DOCX: ≤ 1 000 zip entries, decompressed ≤ 50 MB, ratio ≤ 100, XML без DTD/external entities. PDF: pdfjs `isEvalSupported: false`, `disableFontFace: true`, ≤ 50 сторінок. `parsedText` ≤ 200 000 символів |
+| 5. Promote | успіх → copy у `documents/<userId>/<uuid>`, delete quarantine, `DocumentVersion.status=READY`; невдача → `status=REJECTED` + delete object |
+| Download | тільки `READY`, signed GET ≤ 5 хв, `Content-Disposition: attachment`, `filename` генерується з санітизованого імені |
+| Lifecycle | quarantine prefix — S3 lifecycle expire 1 день |
+| Malware scan | ClamAV — R1 Could |
+
+Ліміти імпорту CSV: ≤ 1 MB, ≤ 5 000 рядків [R0].
+
+## 7. Untrusted HTML (S-09)
+
+- Санітизація **на запис** (`sanitize-html`), у БД зберігається тільки sanitized HTML; frontend рендерить тільки через `SafeHtml` (див. `10-frontend-ux.md` §9).
+- Allowlist: теги `p br ul ol li strong b em i u h2 h3 h4 blockquote code pre a hr table thead tbody tr th td`; атрибути — тільки `a[href]`; schemes `http https mailto`; `transformTags.a` форсує `rel="noopener noreferrer nofollow ugc" target="_blank"`. Заборонено: `img` (жодних remote images — AI-01), `style`, `class`, `id`, `on*`, `iframe`, `form`, `svg`. `disallowedTagsMode: 'discard'`. Вихід ≤ 100 KB.
+- Notes і поля користувача — plain text (markdown не рендериться як HTML у R0–R1).
+- AI-вивід — тільки через схему, без HTML/URL-полів, де вони не потрібні (див. `07-ai.md`).
+
+## 8. CSV export / import (S-10)
+
+- Formula injection: клітинка, що починається з `=`, `+`, `-`, `@`, `\t`, `\r` (а також fullwidth `＝ ＋ － ＠`), отримує префікс `'`. Застосовується до всіх string-полів експорту [R0].
+- Quoting за RFC 4180; кодування UTF-8 з BOM (Excel).
+- Import: ліміти §6; значення ніколи не виконуються, тільки мапляться (див. `03-functional.md` FR-IMP).
+
+## 9. Security headers і CSP (S-11)
+
+### 9.1. SPA (`app.<domain>`, Cloudflare Pages `_headers`; fallback — Caddy)
+
+| Header | Значення |
+|---|---|
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://api.<domain> https://*.ingest.de.sentry.io; frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests; report-to csp-endpoint` |
+| `Reporting-Endpoints` | `csp-endpoint="<Sentry CSP report URL>"` |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains` (preload — після 1 міс стабільної роботи) |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()` |
+| `Cross-Origin-Opener-Policy` | `same-origin` |
+| `X-Frame-Options` | `DENY` (legacy-дубль `frame-ancestors`) |
+| Cache | `index.html` → `no-cache`; `/assets/*` (hashed) → `public, max-age=31536000, immutable` |
+
+`script-src` без `'unsafe-inline'`/`'unsafe-eval'`: жодних inline-скриптів у `index.html` (див. `10-frontend-ux.md` §9). **Рішення:** `style-src 'self' 'unsafe-inline'` прийнято (runtime-стилі Radix/sonner); `script-src` лишається strict. Turnstile-хости потрібні тільки для demo (§11).
+
+### 9.2. API (`api.<domain>`, Nest + helmet)
+
+`Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` · `Cache-Control: no-store` на всіх приватних відповідях · HSTS, `nosniff`, `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-site` · без `X-Powered-By` · помилки без stack trace (формат — `06-api.md`).
+
+Тест: точні значення headers — integration + nightly на staging (див. `11-testing.md` §5).
+
+## 10. Логи та redaction
+
+pino `redact` (censor `[REDACTED]`), єдиний список у `apps/api/src/common/logging/redact.ts`, покритий unit-тестом:
+
+| Категорія | Шляхи |
+|---|---|
+| Секрети | `password`, `newPassword`, `currentPassword`, `token`, `accessToken`, `refreshToken`, `idToken`, `secret`, `code` (OAuth), `totp` |
+| Headers | `req.headers.authorization`, `req.headers.cookie`, `res.headers["set-cookie"]`, `x-api-key` |
+| Контент користувача | `parsedText`, `notes`, `note`, `description`, `coverLetter`, `message`, `body.text`, промпти й AI-виводи (ніколи не логуються) |
+| PII | `email` → маска `o***@domain`; `phone`; `contact.*`; `telegramChatId`; IP → обрізаний /24 (/48 IPv6) |
+| URL | query-string presigned URLs (`X-Amz-*`) обрізається |
+
+Шифрування на рівні застосунку: Telegram chat id, токени інтеграцій — AES-256-GCM, ключ `APP_ENCRYPTION_KEY` з key id (ротація без перешифрування старих записів одразу).
+
+## 11. Demo-режим (S-15, рішення 7) [R1]
+
+| Контроль | Правило |
+|---|---|
+| Модель | «Try demo» створює ефемерного `User` (`role = USER`, `demoExpiresAt = now + 24 год`; demo ⇔ `demoExpiresAt IS NOT NULL`) із синтетичним seed; у кожного відвідувача свої дані |
+| TTL | 24 год від створення → hard-delete job (той самий pipeline, що delete account) |
+| Anti-abuse | Cloudflare Turnstile (server-side verify) перед створенням; ≤ 3 demo/добу на IP; глобально ≤ 200 активних demo |
+| Вимкнено | uploads, URL capture, email/Telegram, зміна email/пароля, linking, export з файлами, invite |
+| AI | stub-provider за замовчуванням; якщо увімкнено — ≤ 5 запусків на demo-користувача і глобальний денний cap у USD (див. `07-ai.md`) |
+| Ізоляція | той самий authZ, що й для реальних; demo не бачить жодних не-demo даних |
+| Сесія | TTL сесії = TTL користувача |
+
+## 12. Приватність, сховища і retention (S-12, S-13)
+
+### 12.1. Сховища даних
+
+| Сховище | Дані | Retention | Метод видалення | Покрито delete account |
+|---|---|---|---|---|
+| Postgres | усі доменні дані користувача | до видалення | soft delete (`deletedAt`) → hard-delete job ≤ 24 год; FK `Cascade` (див. `05-data-model.md`) | так |
+| S3 documents | CV-файли, усі `DocumentVersion` | до видалення | `DeleteObjects` за prefix `documents/<userId>/` + `quarantine/<userId>/`, включно з noncurrent versions, якщо bucket versioning увімкнено | так |
+| S3 exports | `DataExport` zip | посилання 24 год, об'єкт — lifecycle 48 год | lifecycle + явне видалення в delete pipeline | так |
+| Redis / BullMQ | job payloads (тільки id, без PII), rate-limit лічильники | completed 24 год, failed 7 днів | `removeOnComplete/Fail` за віком; ключі `*:<userId>` видаляються pipeline | так |
+| Backups (WAL-G, pg_dump) | повна копія БД | 14 днів, далі expire (lifecycle) | автоматичне закінчення; після restore — повторне застосування tombstones | ні — зникає ≤ 14 днів (зазначено в privacy policy) |
+| Логи (docker json-file) | метадані запитів, redacted | 14 днів (ротація) | ротація | ні — тільки userId, без контенту |
+| Sentry | помилки, `user.id` без email/IP (`sendDefaultPii: false`, `beforeSend` scrub) | 30 днів | retention Sentry; за запитом — delete by user id | частково (ручний запит) |
+| `AiRun`, `AiUsageDaily` | task, model, tokens, cost, input hash (без сирого тексту) | 90 днів | cron + Cascade | так |
+| LLM provider | промпти/виводи під час виклику | залежить від вибору провайдера, вирішується в M4 (no-training API; zero/обмежена retention — follow-up ADR 017) | не контролюється — мінімізація контексту (`07-ai.md`) | ні (зазначено) |
+| Email provider | адреса + тема листа | за політикою провайдера | — | ні (зазначено) |
+| `AuditLog` | події §13 | 90 днів | cron; при delete account `userId → NULL`, IP анонімізується | анонімізується |
+
+**Tombstones:** `DeletedUserTombstone` (тільки `id` + `deletedAt`, `05-data-model.md`) зберігається 30 днів; restore-процедура після відновлення бекапу повторно видаляє цих користувачів (див. `12-infra-ops.md` §5).
+
+### 12.2. Правова основа і контакти рекрутерів
+
+| Дані | Основа (GDPR Art. 6) | Мінімізація |
+|---|---|---|
+| Дані користувача | 6(1)(b) — виконання договору (сервіс) | тільки потрібні поля |
+| Контакти рекрутерів (третіх осіб) | 6(1)(f) — законний інтерес користувача вести свій пошук | ім'я, роль, компанія, робочий email/LinkedIn URL, нотатки; без спецкатегорій; видаляються разом із заявкою/акаунтом; користувач може видалити контакт будь-коли |
+
+- Контакти **виключені з AI-контексту за замовчуванням**; включення — явний per-task opt-in у AI settings (див. `07-ai.md`).
+- Privacy policy (коротка, чесна, з таблицею §12.1) — до відкриття реєстрації для інших людей [R1].
+- Export (FR-PRIV) включає контакти, бо їх ввів користувач.
+
+## 13. Audit log та адміністрування (S-14, S-19) [R1]
+
+**AuditLog** — append-only: runtime-роль `applyra_app` має тільки `INSERT`/`SELECT`; retention і анонімізацію виконує `applyra_maintenance` (`05-data-model.md` §7.5, `12-infra-ops.md` §4). Retention 90 днів.
+
+Назви = значення enum `AuditAction` (`05-data-model.md` §4.1), цей перелік — джерело.
+
+| Подія (`AuditAction`) | Деталі |
+|---|---|
+| `SIGN_IN_SUCCEEDED` / `SIGN_IN_FAILED` | метод, IP (/24), user agent |
+| `SIGN_OUT`, `SESSION_REVOKED`, `SESSIONS_REVOKED` (усі) | |
+| `PASSWORD_CHANGED`, `PASSWORD_RESET_REQUESTED`, `PASSWORD_RESET_COMPLETED` | |
+| `ACCOUNT_LINKED` / `ACCOUNT_UNLINKED`, `EMAIL_CHANGED`, `TOTP_ENABLED` / `TOTP_DISABLED` | |
+| `DATA_EXPORT_REQUESTED` / `DATA_EXPORT_DOWNLOADED`, `ACCOUNT_DELETE_REQUESTED` / `ACCOUNT_DELETED` | |
+| `DOCUMENT_DOWNLOADED`, `DOCUMENT_DELETED` | documentVersionId |
+| `IMPORT_COMMITTED` | кількість рядків |
+| `AI_SETTINGS_CHANGED`, `TELEGRAM_CONNECTED` / `TELEGRAM_DISCONNECTED` (R2) | |
+| `ADMIN_ACCESS`, `ADMIN_ACTION`, `ROLE_CHANGED` | route, target |
+| `DEMO_CREATED` | без IP у явному вигляді |
+
+**Admin (S-19):** `User.role ∈ {USER, ADMIN}` (demo — `USER` з `demoExpiresAt`). Admin-endpoints — `@Roles('ADMIN')` + TOTP + fresh session; не-admin отримує 404. Bull Board, Grafana, Prometheus **не публікуються через Caddy**: доступ тільки через Tailscale (див. `12-infra-ops.md` §3); Bull Board додатково за admin-guard.
+
+## 14. Supply chain і CI-секрети (S-16, S-17)
+
+| Контроль | Правило |
+|---|---|
+| Renovate | щотижня, grouped; `minimumReleaseAge: 3 days`; оновлює і digests GitHub Actions |
+| Аудит залежностей | `pnpm audit --audit-level=high` + `osv-scanner` на PR (fail на high/critical без ignore з датою) |
+| SAST | CodeQL (`javascript-typescript`) на PR і щотижня |
+| Секрети в коді | gitleaks — pre-commit і CI |
+| Install scripts | pnpm (версія — `04-architecture.md` §7) блокує lifecycle scripts; allowlist `pnpm.onlyBuiltDependencies` (`prisma`, `@prisma/engines`, `esbuild`, …) у `pnpm-workspace.yaml`; `--frozen-lockfile` |
+| Actions | pinned на повний commit SHA (+ коментар з версією); тільки verified/офіційні або перевірені |
+| Permissions | top-level `permissions: contents: read`; ширші — per job (`packages: write` для build, `security-events: write` для CodeQL) |
+| Environments | `staging`, `production` (required reviewer = автор, тільки теги `v*`), `backup-restore`; секрети тільки в Environment, не в repo-level |
+| OIDC | де провайдер підтримує (Tailscale для deploy-доступу, GHCR через `GITHUB_TOKEN`); інакше короткоживучі scoped токени (R2 token на один bucket) |
+| PR з форків | без секретів (`pull_request`, не `pull_request_target`) |
+| Images | base images pinned digest; non-root user; `npm`/`pnpm` відсутні в runtime image |
+
+## 15. OWASP API Security Top 10 (2023) — мапінг
+
+| Ризик | Контроль | Тест (`11-testing.md`) |
+|---|---|---|
+| API1 Broken Object Level Authorization | §2 `findOwned*`, `canAccessJob`, 404 | генерований IDOR suite (§4) [R0] |
+| API2 Broken Authentication | §4 Better Auth, TTL, rotation, rate limits, HIBP, linking rule | auth integration tests [R0/R1] |
+| API3 Broken Object Property Level Authorization | `.strict()` input без `userId/role`, response-схеми | contract tests (§5) [R0] |
+| API4 Unrestricted Resource Consumption | rate limits, ліміти розмірів (§5, §6, §8), `limit ≤ 100`, AI budgets | limit tests + k6 [R1] |
+| API5 Broken Function Level Authorization | global guard, явний `@Public()`, `@Roles('ADMIN')` | route-table test: не-`@Public` без guard → fail; admin routes для USER → 404 [R0] |
+| API6 Unrestricted Access to Sensitive Business Flows | sign-up allowlist, Turnstile для demo, capture/import ліміти | rate-limit tests [R1] |
+| API7 Server Side Request Forgery | §5 | SSRF fixtures [R1] |
+| API8 Security Misconfiguration | §3 CORS, §9 headers, помилки без stack, prod без debug | header tests [R0] |
+| API9 Improper Inventory Management | OpenAPI з contracts, `/api/v1`, route table = OpenAPI, staging ізольований | contract test route table ↔ OpenAPI [R1] |
+| API10 Unsafe Consumption of APIs | Zod-валідація відповідей джерел ingestion і LLM, timeouts | adapter contract tests на фікстурах [R2]; AI contract tests [R3] |
+
+## Зміни відносно v2.0
+
+- S-01/S-02 — SSRF: перевірений IP через undici `lookup`, `ipaddr.js` allow-only unicast, повний список діапазонів, ізольована egress-мережа.
+- S-03 — перевірки на кожному redirect, без https→http, 2 MB після розпакування; capture перенесено в R1.
+- S-04 / рішення 4 — `app.`+`api.` same-site, `__Host-` cookies, Origin check, тільки JSON-мутації, CORS allowlist.
+- S-05 — idle/absolute TTL, rotation, fresh session ≤ 10 хв, revoke на зміні пароля.
+- S-06 — enumeration-safe відповіді, паролі ≥ 12 + HIBP, sign-up allowlist у R0 (R0 — тільки Google, P-10).
+- S-07 — linking Google тільки при `email_verified` з обох сторін.
+- S-08 — sandbox парсингу, ліміти, presigned PUT з підписаними `Content-Length`/`Content-Type` (R2 без POST policy), карантин (`DocumentVersion.status`).
+- S-09 — `sanitize-html` з явним allowlist, без images (AI-01).
+- S-10 — захист від CSV formula injection, ліміти імпорту.
+- S-11 — точні CSP і security headers для SPA та API; `style-src 'unsafe-inline'` прийнято, скрипти strict.
+- S-12/S-13 — таблиця сховищ з retention і методом видалення, tombstones (`DeletedUserTombstone`), правова основа для контактів, контакти поза AI-контекстом.
+- S-14 — перелік подій AuditLog, 90 днів, append-only.
+- S-15 / рішення 7 — ефемерні demo-користувачі (TTL 24 год, Turnstile, обмеження).
+- S-16/S-17 — supply chain і CI-секрети.
+- S-19 — `role` (`USER`/`ADMIN`; demo через `demoExpiresAt`), admin + TOTP, внутрішні UI тільки через Tailscale.
+- A-09 — Job access predicate для приватних вакансій.
+- Нове — мапінг OWASP API Top 10 (2023) і теги релізів на контролях.

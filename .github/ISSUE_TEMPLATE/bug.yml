@@ -1,0 +1,27 @@
+name: Bug
+description: Something does not work as specified
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens vs. what should happen
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+    validations:
+      required: true
+  - type: input
+    id: fr
+    attributes:
+      label: Related FR ID / spec
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error output (no PII or secrets)
+      render: text

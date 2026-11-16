@@ -2,7 +2,7 @@
 paths:
   - "apps/api/src/modules/ai/**"
 ---
-# AI module rules — SPEC §12
+# AI module rules — `docs/spec/07-ai.md`
 
 - New AI capability = `ai/tasks/<name>.task.ts` via `defineTask` with Zod input/output, `promptVersion` (date string), tier `fast|smart`, limits (`maxOutputTokens`, `timeoutMs`, `retries`). Use `/ai-task`.
 - Concrete model names live in config mapped from the tier, never in task files.

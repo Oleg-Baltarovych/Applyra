@@ -1,5 +1,10 @@
 # Applyra
 
-your job search, under control: job aggregation, application CRM, explainable match score and AI assistant.
+Your job search, under control: job capture, application CRM, reminders, explainable match score and an AI assistant.
 
-> Status: early stage - specification only. See [docs/SPEC.md](docs/SPEC.md).
+> Status: design phase — specification, architecture decisions and MVP plan. No application code yet.
+
+- Overview: [docs/spec/00-overview.md](docs/spec/00-overview.md)
+- Architecture decisions: [docs/adr/](docs/adr/README.md)
+- MVP plan: [docs/plans/mvp.md](docs/plans/mvp.md)
+- AI-assisted workflow: [docs/AI-WORKFLOW.md](docs/AI-WORKFLOW.md)

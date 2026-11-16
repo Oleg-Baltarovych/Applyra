@@ -5,7 +5,7 @@ argument-hint: "<migration_name_snake_case> — what changes"
 ---
 # Prisma migration: $ARGUMENTS
 
-1. Read the model in SPEC §8.2 (`grep -n "model <Name>" docs/SPEC.md`) and principles §8.1. Do not invent fields that contradict SPEC.
+1. Read the model in `docs/spec/05-data-model.md` (`grep -n "model <Name>"`) and its principles section. Do not invent fields that contradict it; once `apps/api/prisma/schema.prisma` exists it is the source of truth for columns.
 2. Check backward compatibility: is any column dropped/renamed/made NOT NULL that deployed code reads? If yes, split into expand → migrate → contract migrations and explain the plan before continuing.
 3. Edit `apps/api/prisma/schema.prisma` (UUID v7 ids, `@db.Timestamptz`, `userId` + index on user-owned models).
 4. Generate: `pnpm --filter api exec prisma migrate dev --name <name> --create-only` (ask the user before running; it touches the local DB).
