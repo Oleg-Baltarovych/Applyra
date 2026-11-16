@@ -1,0 +1,13 @@
+# Semgrep CE ignore list (ADR 023). A custom file REPLACES Semgrep's default template, so tests
+# (`test/`, `*.spec.ts`) are scanned on purpose; build output and deps are listed explicitly.
+# Every entry needs a reason. Inline `nosemgrep: <rule-id>` also needs a justification comment.
+:include .gitignore
+
+node_modules/
+dist/
+build/
+coverage/
+*.min.js
+
+# ESLint boundaries fixtures: deliberate rule violations asserted by packages/config tests.
+packages/config/test/fixtures/

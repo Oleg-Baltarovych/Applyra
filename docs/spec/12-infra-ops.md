@@ -160,7 +160,7 @@
 | `terraform.yml` | PR зі змінами `infra/terraform/**` | `terraform fmt -check -recursive`, `init -backend=false` + `validate` (без credentials) |
 | `deploy-prod.yml` | **тільки `workflow_dispatch`** (Environment `production`, без секретів до hosting) | кроки §8.2 для одного prod-хоста; у R0/R1 не запускається — лише lint (actionlint) у `ci.yml` |
 | `nightly.yml` | cron | `pnpm audit`, header check проти `compose.ci.yml`; R1+: k6 + Lighthouse проти `compose.ci.yml` (орієнтир, не NFR-вимірювання), AI evals (manual/nightly) |
-| `codeql.yml` | PR + weekly | CodeQL |
+| `sast.yml` | PR + weekly | Semgrep CE (community rulesets, `--metrics=off`, finding → fail); CodeQL (`codeql.yml`) — коли репо стане публічним (ADR 023) |
 
 **When hosting** (`Later — when hosting`):
 
