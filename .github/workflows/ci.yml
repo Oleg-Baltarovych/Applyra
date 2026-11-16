@@ -7,12 +7,18 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Weekly: new advisories / leaked-secret rules hit an unchanged lockfile and history. Only the
+  # supply-chain jobs run (secrets, audit, deps); SAST has its own schedule in sast.yml.
+  schedule:
+    - cron: '17 5 * * 1' # Mondays 05:17 UTC
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # event_name in the key: a scheduled run on main is never queued behind / replaced by a push run.
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   # PRs: a new push supersedes the running check. main: let every commit finish.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
@@ -20,6 +26,7 @@ jobs:
   # ── Stage 1: static checks, unit, supply chain ────────────────────────────────────────────────
   lint:
     name: lint
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -34,6 +41,7 @@ jobs:
 
   typecheck:
     name: typecheck
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -45,6 +53,7 @@ jobs:
 
   unit:
     name: unit
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -72,7 +81,11 @@ jobs:
       - name: gitleaks (full history)
         run: |
           set -o pipefail
-          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro"             -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/repo             ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f             git /repo --redact --verbose --no-color --exit-code 1 2>&1 | tee "$RUNNER_TEMP/gitleaks.log"
+          docker run --rm --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/repo \
+            ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            git /repo --redact --verbose --no-color --exit-code 1 2>&1 | tee "$RUNNER_TEMP/gitleaks.log"
           if grep -q ' ERR ' "$RUNNER_TEMP/gitleaks.log"; then
             echo "::error::gitleaks could not read the git history (see ERR lines above)"
             exit 1
@@ -91,12 +104,39 @@ jobs:
           install: 'false' # pnpm audit reads pnpm-lock.yaml only
       - run: pnpm audit --audit-level=high
 
-  # TODO(M0-06): CodeQL (PR + weekly, own workflow) and osv-scanner jobs — R0 supply-chain gates.
+  deps:
+    name: deps (osv-scanner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # osv-scanner CLI in its official image, pinned by digest: same docker pattern as gitleaks, same
+      # command locally. Not the reusable google/osv-scanner-action workflow: it is built around a SARIF
+      # upload to code scanning (unavailable on this private repo) and adds another action to pin.
+      # No severity threshold: any known vulnerability fails. Ignores only in osv-scanner.toml with
+      # reason + effectiveUntil (policy: docs/CONTEXT.md §6). Exit 1 = vulns, 127/128 = error/no packages.
+      # Fail closed: a lockfile parsed into 0 packages must not pass.
+      - name: osv-scanner (pnpm-lock.yaml)
+        run: |
+          set -o pipefail
+          docker run --rm --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" -v "$PWD:/src:ro" \
+            ghcr.io/google/osv-scanner:v2.7.1@sha256:a70ffffc2bfd33482953e5d6b64c6fcdb30239717a07b0f0d3ab2859ce3e4cde \
+            scan source --config=/src/osv-scanner.toml --lockfile=/src/pnpm-lock.yaml 2>&1 | tee "$RUNNER_TEMP/osv.log"
+          if ! grep -Eq 'found [1-9][0-9]* packages' "$RUNNER_TEMP/osv.log"; then
+            echo "::error::osv-scanner extracted no packages from pnpm-lock.yaml"
+            exit 1
+          fi
+
+  # SAST (Semgrep CE; CodeQL once the repo is public — ADR 023) lives in sast.yml: own weekly schedule.
 
   # ── Stage 4 (partial, early): workflow lint ───────────────────────────────────────────────────
   # Listed under deploy-ready (M0-14) in the AC; it is cheap, so it runs from M0-05 on.
   actionlint:
     name: actionlint
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -104,10 +144,11 @@ jobs:
         with:
           persist-credentials: false
       - name: actionlint (bundles shellcheck)
-        run: >-
-          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" -w /repo
-          rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
-          -color
+        run: |
+          docker run --rm --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" -w /repo \
+            rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            -color
 
   # ── Stage 2 — TODO(M0-07a): `integration` job — `pnpm --filter @applyra/api test:integration`
   #    (apps/api/test/integration/**, Vitest + Testcontainers: Postgres 18, Valkey 9), incl. the IDOR gate

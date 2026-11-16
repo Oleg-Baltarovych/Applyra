@@ -1,0 +1,20 @@
+# osv-scanner ignores (CI job `deps (osv-scanner)`). Policy = pnpm audit (docs/CONTEXT.md §6):
+# every entry has the advisory id, a reason and `effectiveUntil` (expiry); on expiry the ignore stops
+# applying and the gate fails again. Remove the entry as soon as a fix lands. Never widen it.
+# Prefer `[[PackageOverrides]]` pinned to name + version + ecosystem over a global `[[IgnoredVulns]]`
+# (which would hide the advisory on every package/version). Trade-off: it hides all vulns of that exact
+# version until expiry — keep the expiry short.
+
+[[PackageOverrides]]
+# GHSA-g3hv-75wg-m249 (CVE-2026-118764): minimatch ReDoS via globparts amplification, moderate, fixed 11.0.1.
+# Single path (checked 2026-11-17, `pnpm why minimatch`): 10.2.6 only via @typescript-eslint/typescript-estree
+# 8.72.2 (`minimatch ^10.2.2`) — dev-time lint tooling, globs from our own config, never user input; the
+# other copy is 11.0.8 (not affected). Fix: typescript-eslint + @typescript-eslint/parser >= 8.73.0
+# (`minimatch ^11.0.1`), published 2026-11-16, blocked by pnpm `minimumReleaseAge` on 2026-11-17 → bump,
+# then delete this entry.
+name = "minimatch"
+version = "10.2.6"
+ecosystem = "npm"
+vulnerability.ignore = true
+effectiveUntil = 2026-12-01
+reason = "GHSA-g3hv-75wg-m249: dev-only lint dependency; fix = typescript-eslint >= 8.73.0 once past minimumReleaseAge"

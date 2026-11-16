@@ -261,11 +261,11 @@ pino `redact` (censor `[REDACTED]`), єдиний список у `apps/api/src/
 |---|---|
 | Renovate | щотижня, grouped; `minimumReleaseAge: 3 days`; оновлює і digests GitHub Actions |
 | Аудит залежностей | `pnpm audit --audit-level=high` + `osv-scanner` на PR (fail на high/critical без ignore з датою) |
-| SAST | CodeQL (`javascript-typescript`) на PR і щотижня |
+| SAST | Semgrep CE (open-source CLI, community rulesets, без login, `--metrics=off`; finding → fail) на PR і щотижня; CodeQL (`javascript-typescript`) — коли репо стане публічним (для приватних репо не безкоштовний, ADR 023) |
 | Секрети в коді | gitleaks — pre-commit і CI |
 | Install scripts | pnpm (версія — `04-architecture.md` §7) блокує lifecycle scripts; allowlist `pnpm.onlyBuiltDependencies` (`prisma`, `@prisma/engines`, `esbuild`, …) у `pnpm-workspace.yaml`; `--frozen-lockfile` |
 | Actions | pinned на повний commit SHA (+ коментар з версією); тільки verified/офіційні або перевірені |
-| Permissions | top-level `permissions: contents: read`; ширші — per job (`packages: write` для build, `security-events: write` для CodeQL) |
+| Permissions | top-level `permissions: contents: read`; ширші — per job (`packages: write` для build, `security-events: write` для CodeQL, коли буде доданий — ADR 023) |
 | Environments | `production` (required reviewer = автор; `deploy-prod.yml` — dispatch-only до hosting), when hosting — + `staging`, `backup-restore`, тільки теги `v*` для prod при staging-flow; секрети тільки в Environment, не в repo-level; у R0/R1 deploy-секретів немає (ADR 022) |
 | OIDC | де провайдер підтримує (Tailscale для deploy-доступу, GHCR через `GITHUB_TOKEN`); інакше короткоживучі scoped токени (R2 token на один bucket) |
 | PR з форків | без секретів (`pull_request`, не `pull_request_target`) |

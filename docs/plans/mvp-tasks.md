@@ -86,7 +86,7 @@
 ### M0-06 · Supply chain gates
 - FR: — · Area: ci, security · Est: 1h · Depends: M0-05 · Flow: direct
 - AC:
-  - CodeQL (PR + weekly) і osv-scanner у CI як required checks — R0 gate разом із `pnpm audit` і gitleaks (`11-testing.md` §9).
+  - Semgrep CE (SAST) і osv-scanner у CI (PR + weekly) як required checks (коли branch protection увімкнено) — R0 gate разом із `pnpm audit` і gitleaks; CodeQL — коли репо стане публічним (ADR 023) (`11-testing.md` §9).
 
 ### M0-06b · Renovate + Actions SHA pinning
 - FR: — · Area: ci, security · Est: 0.5h · Depends: M0-06 · Flow: direct · **optional**
