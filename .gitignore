@@ -31,3 +31,20 @@ Thumbs.db
 .claude/settings.local.json
 CLAUDE.local.md
 .claude/agent-memory-local/
+
+# Test artifacts
+playwright-report/
+test-results/
+*.tsbuildinfo
+playwright/.auth/
+e2e/.auth/
+blob-report/
+.playwright-mcp/
+
+# Keys & local registry auth
+*.pem
+*.key
+.npmrc.local
+
+# Packed tarballs
+*.tgz

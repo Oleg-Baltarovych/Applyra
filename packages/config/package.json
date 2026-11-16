@@ -1,0 +1,35 @@
+{
+  "name": "@applyra/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared tsconfig base and ESLint flat config (boundaries rules from docs/spec/04-architecture.md §4.1).",
+  "exports": {
+    "./eslint": "./eslint.base.js",
+    "./tsconfig.base.json": "./tsconfig.base.json"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@eslint/js": "^10.0.1",
+    "@typescript-eslint/parser": "^8.72.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-import-resolver-typescript": "^4.4.5",
+    "eslint-plugin-boundaries": "~7.4.3",
+    "eslint-plugin-import-x": "^4.18.1",
+    "globals": "^17.14.0",
+    "typescript-eslint": "^8.72.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "eslint": "^10.15.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.12"
+  },
+  "peerDependencies": {
+    "eslint": "^10.0.0"
+  }
+}

@@ -1,0 +1,15 @@
+packages:
+  - apps/*
+  - packages/*
+  - e2e
+
+# Supply-chain control (deliberate): never install a version published less than 24 h ago (minutes; = pnpm 11 default).
+# Setting it explicitly also makes minimumReleaseAgeStrict default to true: a too-fresh version fails resolution
+# instead of being silently auto-excluded. Prefer pinning an older version; to exempt one temporarily, add
+# `minimumReleaseAgeExclude: ['<name>@<exact version>']` with a comment + removal date, and delete it afterwards.
+minimumReleaseAge: 1440
+
+# pnpm 11: dependency build scripts are denied unless approved here (`onlyBuiltDependencies` was removed in v11).
+# strictDepBuilds (default true) fails `pnpm install` on any unreviewed build script.
+allowBuilds:
+  esbuild: true # postinstall verifies the platform binary; used by tsup (packages/contracts)
