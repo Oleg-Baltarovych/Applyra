@@ -191,6 +191,11 @@ export default defineConfig(
       ],
     },
   },
+  // Nest modules are decorated classes with no members (or only a static forRoot).
+  {
+    files: withFixture('apps/api/**/*.ts'),
+    rules: { '@typescript-eslint/no-extraneous-class': ['error', { allowWithDecorator: true }] },
+  },
   // Rule 6: no import cycles between (or inside) backend modules.
   {
     files: withFixture('apps/api/src/modules/**/*.ts'),
