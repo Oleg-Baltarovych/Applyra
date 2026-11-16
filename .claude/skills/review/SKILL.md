@@ -1,7 +1,6 @@
 ---
 name: review
 description: Review current changes with only the reviewers relevant to the touched paths, in parallel.
-disable-model-invocation: true
 argument-hint: "[base ref, default: main]"
 ---
 1. Collect the changed files: `git diff --name-only ${ARGUMENTS:-main}...HEAD` plus `git diff --name-only` and `git ls-files --others --exclude-standard`. If nothing changed, say so and stop.
@@ -9,7 +8,7 @@ argument-hint: "[base ref, default: main]"
    | Touched paths | Agent |
    |---|---|
    | `apps/api/**`, `packages/contracts/**`, `**/*.repository.ts`, `prisma/**` | `code-reviewer` |
-   | controllers, `modules/{auth,jobs,documents,ai}/**`, `common/**`, files with `fetch`/upload/sanitize, `.github/workflows/**`, Docker/Caddy configs | `security-reviewer` |
+   | controllers, `modules/{auth,jobs,documents,ai}/**`, `apps/api/src/platform/**`, files with `fetch`/upload/sanitize, `.github/workflows/**`, Docker/Caddy configs | `security-reviewer` |
    | `apps/web/**` | `ui-reviewer` |
    | test files only | `code-reviewer` (test-quality focus) |
    Skip any agent with no files. Docs-only changes: no agents — just check `docs/CONTEXT.md` is consistent.

@@ -4,7 +4,7 @@ paths:
   - "apps/api/src/modules/jobs/**"
   - "apps/api/src/modules/documents/**"
   - "apps/api/src/modules/ai/**"
-  - "apps/api/src/common/**"
+  - "apps/api/src/platform/**"
   - "**/*.controller.ts"
   - "**/*fetch*.ts"
 ---

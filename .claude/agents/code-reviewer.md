@@ -10,8 +10,8 @@ You review code for Applyra, a NestJS modular monolith + React SPA sharing Zod c
 Scope: the files or diff the caller names. Read `docs/CONTEXT.md` first for orientation; consult the matching `.claude/rules/*.md`. Read spec files only when a rule references them.
 
 Check:
-1. Boundaries: cross-module imports only via `modules/<name>/index.ts`; Prisma only in repositories/services; controllers HTTP-only; business rules in pure `*.domain.ts`.
-2. Consistency: related writes in one transaction; async cross-module effects via outbox in the same transaction; consumers/jobs idempotent.
+1. Boundaries: cross-module imports only via `modules/<name>/index.ts`; Prisma only in `*.repository.ts`; controllers HTTP-only; business rules in pure `*.domain.ts`.
+2. Consistency: related writes in one transaction; cross-module effects synchronous in the same transaction in R0, via outbox in the same transaction from R1 (ADR 006) — do not demand outbox in R0 code; consumers/jobs idempotent.
 3. Contracts: schemas come from `packages/contracts`, no re-declared DTOs, both sides updated on change.
 4. Types: no `any`, `@ts-ignore`, unsafe casts or `!` without justification; illegal states unrepresentable.
 5. Simplicity: smallest change that solves the problem, no speculative abstraction, no dead code, no duplicated decision logic.

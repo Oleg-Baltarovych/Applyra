@@ -9,7 +9,7 @@ argument-hint: "<METHOD> <path> — short purpose"
 2. **Contract** (`packages/contracts`): request/query/response Zod schemas + inferred types. Reuse existing enums. Cursor pagination returns `{ items, nextCursor }`.
 3. **Test first** (domain + integration): write failing tests — domain rule unit tests, then Supertest integration: happy path, validation error (400 with the `06-api.md` error shape), unauthenticated (401), IDOR (user B → user A's resource → 404). Run them and confirm they fail for the right reason.
 4. **Domain**: pure rules in `<module>.domain.ts`.
-5. **Repository**: user-scoped `findOwned*`/`updateOwned*`; related writes inside one transaction; outbox event if there is an async cross-module effect.
+5. **Repository**: user-scoped `findOwned*`/`updateOwned*`; related writes inside one transaction; cross-module effect: synchronous in the same transaction in R0, outbox event in the same transaction from R1 (ADR 006).
 6. **Service**: orchestration only; idempotency via `Idempotency-Key` if the mutation is retryable.
 7. **Controller**: route under `/api/v1`, auth guard, `@CurrentUser`, `nestjs-zod` DTO from contracts, maps to the response schema.
 8. **Module public API**: export only what other modules need from `index.ts`.
