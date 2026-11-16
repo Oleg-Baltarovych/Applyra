@@ -127,7 +127,7 @@
 - FR: FR-AUTH-01, FR-AUTH-02, FR-AUTH-03, FR-AUTH-04 · Area: api, security · Est: 3h · Depends: M0-08, M0-09 · Flow: /feature
 - AC:
   - Google OAuth (PKCE) через Better Auth; sign-out інвалідує сесію на сервері.
-  - Email поза `AUTH_SIGNUP_ALLOWLIST` → `403 SIGNUP_CLOSED`, акаунт не створено; існуючий користувач входить без перевірки.
+  - Email поза `AUTH_SIGNUP_ALLOWLIST` → акаунт не створено; існуючий користувач входить без перевірки. Hook кидає `APIError('FORBIDDEN', { code: 'SIGNUP_CLOSED' })` (M0-02): програмний виклик → `403 { code: SIGNUP_CLOSED }`, OAuth callback → redirect на `errorCallbackURL` (`/sign-in`) з `?error=SIGNUP_CLOSED` (не 403 — M0-12 показує «Access is invite-only» за цим параметром); integration перевіряє `302` + `Location`.
   - Idle 7 д / absolute 30 д (перевірка в guard), rotation при вході; cookie `__Host-applyra.session; HttpOnly; Secure; SameSite=Lax`.
   - Integration з mocked Google token endpoint; запит без сесії → 401; helper сесії user A/B (M0-07a) працює через реальний auth-шлях.
 - Notes: результат M0-02; ADR 007/008. `POST /api/auth/revoke-sessions` — R1 (M3-09).
@@ -139,10 +139,10 @@
   - Невалідна IANA-зона → 400 `VALIDATION_ERROR`; `UserSettings` створюється при першому вході; `@IdorExempt` з причиною.
 
 ### M0-12 · Web foundation + sign-in + Settings
-- FR: FR-AUTH-01, FR-PROF-01 · Area: web · Est: 3h · Depends: M0-11 · Flow: /feature
+- FR: FR-AUTH-01, FR-AUTH-02, FR-PROF-01 · Area: web · Est: 3h · Depends: M0-11 · Flow: /feature
 - AC:
   - Vite 8 + React Router 8 data mode + TanStack Query + Tailwind 4/shadcn, токени `10-frontend-ux.md` §8 (contrast check у тестах); typed API client з contracts.
-  - `/sign-in` (Google), захищені маршрути, shell з навігацією `Applications · Today · Settings`, `*` → 404, loading/error стани.
+  - `/sign-in` (Google; `signIn.social` з `errorCallbackURL: '/sign-in'`): `?error=SIGNUP_CLOSED` → «Access is invite-only», інший `?error=` → загальне повідомлення без сирого коду (`10-frontend-ux.md` §2.1); component-тест на обидва випадки. Захищені маршрути, shell з навігацією `Applications · Today · Settings`, `*` → 404, loading/error стани.
   - Перший вхід: timezone з `Intl` зберігається без питань; `/settings/preferences` редагує timezone/пороги/hotkeys; форматування через `Intl`.
   - `index.html` без inline-скриптів (CSP).
 
@@ -411,15 +411,15 @@
 ### M3-01 · Worker entrypoint
 - FR: — · Area: worker, infra · Est: 2h · Depends: M0-02, M2-11 · Flow: /feature
 - AC:
-  - `worker.ts` (`createApplicationContext(WorkerModule)`), BullMQ wiring за результатом M0-02; `*.worker-module.ts` конвенція.
+  - `worker.ts` (`createApplicationContext(WorkerModule)`), BullMQ wiring за результатом M0-02 (`@nestjs/bullmq` 12 + `bullmq` 6 + `ioredis` 6 — у BullMQ 6 драйвер став optional peer); іменування черг/jobs/scheduler-ів за `04-architecture.md` §5.4 (назва черги без `:`, один processor на чергу з диспатчем за `job.name`); `*.worker-module.ts` конвенція.
   - Graceful shutdown ≤ 30 с; `/health` на :9465 + heartbeat; worker-контейнер у compose і deploy (SIGTERM → close → новий).
   - Integration: processor ідемпотентний за `jobId`.
 
 ### M3-02 · Transactional outbox
 - FR: — · Area: worker, db · Est: 3h · Depends: M3-01 · Flow: /feature
 - AC:
-  - `OutboxEvent` міграція + partial index; `OutboxWriter.append(tx, …)`; relay claim (`FOR UPDATE SKIP LOCKED`, коротка tx) → publish (`jobId = <eventId>_<consumer>` — BullMQ забороняє `:` у custom jobId) → mark/backoff; dead після 10.
-  - Integration: crash між publish і mark → без дубля; Redis down → події накопичуються й доганяються; `outbox:cleanup` 7 днів.
+  - `OutboxEvent` міграція + partial index; `OutboxWriter.append(tx, …)`; relay claim (`FOR UPDATE SKIP LOCKED`, коротка tx) → publish (`jobId = <eventId>_<consumer>`, `consumer` = `<queue>-<job>` — BullMQ забороняє `:` у custom jobId) → mark/backoff; dead після 10.
+  - Integration: crash між publish і mark → без дубля; Redis down → події накопичуються й доганяються; scheduler `outbox:cleanup` (job `outbox/cleanup`) 7 днів.
 - Notes: `04-architecture.md` §5.2, ADR 006.
 
 ### M3-02b · Outbox producers in R0 code
@@ -444,7 +444,7 @@
 ### M3-04 · Email infrastructure
 - FR: FR-NOTIF-02 · Area: api, worker · Est: 2h · Depends: M3-01 · Flow: /feature
 - AC:
-  - `EmailSender` (Mailpit локально, provider adapter для prod, з M5-20 — і staging), черга `email:send` з ідемпотентним `jobId`; шаблони (text + HTML).
+  - `EmailSender` (Mailpit локально, provider adapter для prod, з M5-20 — і staging), черга `email`, job `send` з ідемпотентним `jobId` (без `:`, `04-architecture.md` §5.4); шаблони (text + HTML).
   - Вибір Resend vs Postmark зафіксовано (рядок в ADR 011 або новий ADR).
 
 ### M3-05 · Email + password sign-up / sign-in + verification
@@ -535,13 +535,13 @@
 ### M3-18 · Reminder delivery + quiet hours
 - FR: FR-REM-05, FR-REM-06, FR-PROF-02 · Area: worker, api · Est: 3h · Depends: M3-17 · Flow: /feature
 - AC:
-  - Scheduler `reminders:scan-due` щохвилини; `ReminderDelivery` unique (reminder, dueAt, channel): retry не дублює, snooze дозволяє нову доставку.
+  - Scheduler `reminders:scan-due` (job `reminders/scan-due`) щохвилини; `ReminderDelivery` unique (reminder, dueAt, channel): retry не дублює, snooze дозволяє нову доставку.
   - Quiet hours у `UserSettings` (default 22:00–08:00, вимикаються) відкладають доставку; списки Today не залежать (unit з DST).
 
 ### M3-19 · Outbox consumers → in-app
 - FR: FR-NOTIF-01 · Area: worker · Est: 1h · Depends: M3-17, M3-02b · Flow: /feature
 - AC:
-  - `ApplicationStatusChanged`, `ImportCommitted` → notifications; consumer читає поточний стан, видалений агрегат → no-op.
+  - `ApplicationStatusChanged`, `ImportCommitted` → notifications (jobs `notifications/status-changed`, `notifications/import-committed`, `04-architecture.md` §5.4); consumer читає поточний стан, видалений агрегат → no-op.
 
 **E04 Capture**
 
@@ -557,7 +557,7 @@
 ### M3-21 · Capture API: domain policy + JSON-LD → JobDraft
 - FR: FR-JOB-07, FR-JOB-09 · Area: api, contracts · Est: 3.5h · Depends: M3-20, M1-04 · Flow: /feature
 - AC:
-  - `POST /jobs/capture` (IK, no-demo, 30/год): API ставить BullMQ job `capture` зі стабільним `jobId` і чекає результат ≤ 6 с; fetch робить лише worker (ADR 021); тайм-аут → `504 CAPTURE_TIMEOUT` (`06-api.md` §3.1, ADR 021). Integration: повтор із тим самим IK не ставить другий job.
+  - `POST /jobs/capture` (IK, no-demo, 30/год): API ставить BullMQ job `capture/capture` зі стабільним `jobId` (`capture-<sha256>`) і чекає результат ≤ 6 с; fetch робить лише worker (ADR 021); тайм-аут → `504 CAPTURE_TIMEOUT` (`06-api.md` §3.1, ADR 021). Integration: повтор із тим самим IK не ставить другий job.
   - LinkedIn paste-only, `robots.txt` для UA, denylist конфігом → «Paste the job text instead».
   - JSON-LD `JobPosting` mapper (фікстури) → `JobDraft` з `source` + confidence на поле; нічого не зберігається.
   - Недоступна сторінка → `422 CAPTURE_UNAVAILABLE` без повторів; captured — завжди PRIVATE.
@@ -676,7 +676,7 @@
 - AC:
   - Якщо spike M0-16 не виконано: спершу перевірити presigned PUT у R2 з підписаними `Content-Length`/`Content-Type` (інший розмір/тип → відмова; R2 і MinIO); не працює → fallback upload через API з лімітом (ADR 010).
   - `Document`, `DocumentVersion` (status PENDING/READY/REJECTED); storage client (MinIO/R2), quarantine lifecycle 1 день.
-  - `POST /documents/uploads` (no-demo) → presigned PUT ≤ 5 хв з підписаними length/type; `.../complete` → HEAD (розмір = заявлений) → outbox `DocumentUploaded` у тій самій транзакції (`04-architecture.md` §5.3) → consumer ставить job `document.validate` (stable `jobId` = versionId).
+  - `POST /documents/uploads` (no-demo) → presigned PUT ≤ 5 хв з підписаними length/type; `.../complete` → HEAD (розмір = заявлений) → outbox `DocumentUploaded` у тій самій транзакції (`04-architecture.md` §5.3) → consumer `documents/validate` (`04-architecture.md` §5.4; outbox `jobId` = `<eventId>_documents-validate`, ідемпотентний за `versionId`: не-`PENDING` версія → no-op).
   - `/health/ready` + storage HEAD (кеш 30 с); IDOR.
 
 ### M4-15 · Validate + parse sandbox
@@ -774,9 +774,9 @@
 ### M5-06 · Email reminders, daily digest, unsubscribe
 - FR: FR-NOTIF-02, FR-NOTIF-03, FR-NOTIF-04, FR-NOTIF-01, FR-REM-06 · Area: worker, api · Est: 4h · Depends: M3-04, M3-18 · Flow: /feature
 - AC:
-  - `notifications:digest` о 08:00 локального часу, лише якщо є зміст; матриця тип × канал × mode.
+  - Scheduler `notifications:digest` (job `notifications/digest`) о 08:00 локального часу, лише якщо є зміст; матриця тип × канал × mode.
   - Quiet hours відкладають email (unit з DST); one-click unsubscribe на тип (signed token, `List-Unsubscribe`).
-  - Щоденний scan stale → `STALE_APPLICATION` in-app (gap G-05).
+  - Щоденний scan stale (scheduler `notifications:scan-stale`) → `STALE_APPLICATION` in-app (gap G-05).
 
 ### M5-07 · Web: notification preferences
 - FR: FR-NOTIF-02, FR-PROF-02 · Area: web · Est: 1.5h · Depends: M5-06 · Flow: direct
@@ -788,20 +788,20 @@
 ### M5-08 · Full async export (zip)
 - FR: FR-PRIV-01, FR-AUTH-10 · Area: api, worker · Est: 3.5h · Depends: M3-09, M4-16 · Flow: /feature
 - AC:
-  - `POST /me/export` (fresh, no-demo, 3/добу, один активний) → `202`; consumer збирає JSON (усе, включно з контактами) + CV у zip у S3; `EXPORT_READY` нотифікація.
+  - `POST /me/export` (fresh, no-demo, 3/добу, один активний) → `202`; consumer `export/build-zip` збирає JSON (усе, включно з контактами) + CV у zip у S3; `EXPORT_READY` нотифікація.
   - `GET /me/exports/:id` → signed URL ≤ 5 хв; після 24 год недоступно (`EXPIRED`); audit `DATA_EXPORT_*`; IDOR.
 
 ### M5-09 · Account deletion pipeline
 - FR: FR-PRIV-02, FR-AUTH-10 · Area: api, worker, security · Est: 4h · Depends: M3-09, M4-16 · Flow: /feature
 - AC:
   - `DELETE /me` (fresh): `deletedAt`, усі сесії revoke, дані одразу недоступні → `202`.
-  - `UserDeletionRequested` → hard delete ≤ 24 год: БД cascade, S3 prefixes, Redis-ключі, Sentry user; `DeletedUserTombstone`; AuditLog анонімізується.
+  - `UserDeletionRequested` → `deletion/delete-account`, hard delete ≤ 24 год: БД cascade, S3 prefixes, Redis-ключі, Sentry user; `DeletedUserTombstone`; AuditLog анонімізується.
   - Integration: після pipeline — жодних рядків/об'єктів/ключів за таблицею `09-security-privacy.md` §12.1.
 
 ### M5-10 · Retention schedulers
 - FR: — · Area: worker, db · Est: 2h · Depends: M5-09 · Flow: /feature
 - AC:
-  - Job schedulers за `05-data-model.md` §8 (Session, Verification, ImportSession, DataExport, IdempotencyRecord, Notification, ReminderDelivery, AiRun, AiUsage*, tombstones, AuditLog — maintenance pool); кожен ідемпотентний, integration на межі дат.
+  - Job schedulers за `05-data-model.md` §8 (Session, Verification, ImportSession, DataExport, IdempotencyRecord, Notification, ReminderDelivery, AiRun, AiUsage*, tombstones, AuditLog — maintenance pool); кожен ідемпотентний, integration на межі дат. Іменування — `04-architecture.md` §5.4: job `cleanup-<model>` на черзі модуля-власника, scheduler `<queue>:cleanup-<model>`; нові черги дописуються в таблицю §5.4.
 
 ### M5-11 · Web: Settings → Data
 - FR: FR-PRIV-01, FR-PRIV-02 · Area: web · Est: 1.5h · Depends: M5-08, M5-09 · Flow: direct
@@ -820,7 +820,7 @@
 ### M5-13 · Demo purge + banner
 - FR: FR-DEMO-02, FR-DEMO-06 · Area: worker, web · Est: 2h · Depends: M5-12 · Flow: /feature
 - AC:
-  - `demo:purge` — той самий pipeline, що delete account (integration).
+  - Scheduler `deletion:purge-demo` (job `deletion/purge-demo`, `04-architecture.md` §5.4) — той самий pipeline, що delete account (integration).
   - «Try demo» на sign-in; банер «Demo — data resets in N h» + «Request access» на всіх екранах (gap G-06).
 
 **E10 Ops & observability**

@@ -2,6 +2,7 @@
 
 - Status: Accepted (Q7 resolved in `docs/spec/01-product.md`; technical verification in R2)
 - Date: 2026-11-16
+- Amended: 2026-11-16 — M0-02 queue naming (`docs/spec/04-architecture.md` §5.4): `fx:fetch` becomes job `fx-fetch` on queue `ingest`, scheduler id `ingest:fx-fetch`
 
 ## Context
 - Salaries are normalised to USD/month (`salaryMinUsdMonth`, `salaryMaxUsdMonth`) for filters and matching (see `docs/spec/08-ingestion-matching.md`).
@@ -9,7 +10,7 @@
 - Open question Q7: NBU or ECB public API.
 
 ## Decision
-Use the **NBU public exchange-rate API** as the source, fetched by the `fx:fetch` job scheduler (twice daily, `docs/spec/08-ingestion-matching.md` §7.2) into `ExchangeRate` (R2).
+Use the **NBU public exchange-rate API** as the source, fetched by the `ingest:fx-fetch` job scheduler (queue `ingest`, job `fx-fetch`) (twice daily, `docs/spec/08-ingestion-matching.md` §7.2) into `ExchangeRate` (R2).
 - UAH is the NBU base currency; USD conversions are derived via cross rates.
 - `salary*UsdMonth` is computed on write and recalculated nightly for open jobs; year → /12, hour → ×168.
 - UI always shows the original salary; the normalised value is secondary (tooltip/brackets).

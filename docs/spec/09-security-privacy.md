@@ -47,7 +47,7 @@
 
 - Кожен приватний endpoint — за глобальним auth guard; публічні маркуються явно `@Public()`. Неавторизований запит → 401.
 - Доступ до user-owned даних — **тільки** через `findOwned*` / `listOwned*` хелпери репозиторіїв (`where: { id, userId }`).
-- Чужий або неіснуючий ресурс → **404 `NOT_FOUND`**, ніколи 403 (не розкриваємо факт існування). Роль без доступу (admin-routes) → теж 404. 403 — тільки `CSRF_ORIGIN`, `FRESH_SESSION_REQUIRED`, `DEMO_FEATURE_DISABLED`, `SIGNUP_CLOSED` (каталог — `06-api.md` §3.1).
+- Чужий або неіснуючий ресурс → **404 `NOT_FOUND`**, ніколи 403 (не розкриваємо факт існування). Роль без доступу (admin-routes) → теж 404. 403 — тільки `CSRF_ORIGIN`, `FRESH_SESSION_REQUIRED`, `DEMO_FEATURE_DISABLED`, `SIGNUP_CLOSED` (лише прямий API sign-up; OAuth callback — redirect `?error=SIGNUP_CLOSED`) (каталог — `06-api.md` §3.1).
 - **Job access predicate** (A-09) — єдиний helper `canAccessJob(user, job)`:
   `job.visibility = 'PUBLIC'` **або** `job.ownerId = user.id`. Приватна чужа вакансія → 404. Мутації `Job` — тільки власник (catalog jobs — тільки ingestion/admin).
 - Вхідні схеми (Zod, `.strict()`) не містять `userId`, `ownerId`, `role`, `deletedAt` — mass assignment неможливий. Відповіді проходять response-схему (`@ZodResponse`) — зайві поля відрізаються.
@@ -74,7 +74,7 @@
 | Метод | Реліз |
 |---|---|
 | Google OAuth (OIDC, PKCE) | [R0] |
-| Sign-up allowlist (`AUTH_SIGNUP_ALLOWLIST` — список email; решта → 403 `SIGNUP_CLOSED`) | [R0] |
+| Sign-up allowlist (`AUTH_SIGNUP_ALLOWLIST` — список email; решта: Google OAuth → redirect на `errorCallbackURL` = `/sign-in` з `?error=SIGNUP_CLOSED`, прямий API sign-up (email, R1) → 403 `SIGNUP_CLOSED`). `callbackURL`/`errorCallbackURL` Better Auth перевіряє проти `trustedOrigins` (без open redirect) | [R0] |
 | Email + password, email verification, reset password | [R1] |
 | Invite-only / публічна реєстрація | [R1] — див. `02-releases.md` |
 | TOTP (Better Auth `twoFactor`) — обов'язковий для `ADMIN` | [R1] |
@@ -127,7 +127,7 @@ URL capture переїхав у R1 (див. `02-releases.md`). Fetcher — ок�
 | Крок | Контроль |
 |---|---|
 | 1. Init | `POST /documents/uploads` → `DocumentVersion(status=PENDING)`, key `quarantine/<userId>/<uuid>`; **presigned PUT** (рішення: Cloudflare R2 не підтримує presigned POST policy) з підписаними `Content-Length` (= заявлений `sizeBytes`, 1..5 242 880) і `Content-Type ∈ {application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document}`, TTL 5 хв. Запит з іншим розміром/типом storage відхиляє (підпис не збігається) |
-| 2. Confirm | `POST /documents/uploads/:versionId/complete` → `HEAD` (розмір = заявлений, ≤ 5 MB) → job `document.validate` |
+| 2. Confirm | `POST /documents/uploads/:versionId/complete` → `HEAD` (розмір = заявлений, ≤ 5 MB) → outbox `DocumentUploaded` → job `documents/validate` (кроки 3–5, `04-architecture.md` §5.4) |
 | 3. Validate | magic bytes (`file-type`) збігаються з MIME; DOCX без макросів (`.docm` content types → reject); зашифровані PDF → reject |
 | 4. Parse (sandbox) | child process (`fork`, `--max-old-space-size=256`), timeout 20 с → SIGKILL; без мережі й credentials (env очищений). DOCX: ≤ 1 000 zip entries, decompressed ≤ 50 MB, ratio ≤ 100, XML без DTD/external entities. PDF: pdfjs `isEvalSupported: false`, `disableFontFace: true`, ≤ 50 сторінок. `parsedText` ≤ 200 000 символів |
 | 5. Promote | успіх → copy у `documents/<userId>/<uuid>`, delete quarantine, `DocumentVersion.status=READY`; невдача → `status=REJECTED` + delete object |
