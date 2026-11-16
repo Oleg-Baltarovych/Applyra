@@ -21,6 +21,50 @@ const block = (reason) => {
 
 const SECRETS_HINT = 'Secrets files are off-limits. Use .env.example and ask the user to update their local .env.';
 
+// Representative secret file names a glob is tested against.
+const SECRET_NAMES = ['.env', '.env.local', '.env.test', '.env.development', '.env.production', '.env.staging', '.env.development.local'];
+
+// Bash-style brace expansion: `.env{,.local}` → ['.env', '.env.local'] (nested braces supported).
+function expandBraces(s) {
+  const open = s.indexOf('{');
+  if (open < 0) return [s];
+  let depth = 0;
+  const parts = [];
+  let start = open + 1;
+  for (let i = open; i < s.length; i++) {
+    if (s[i] === '{') depth++;
+    else if (s[i] === '}' && --depth === 0) {
+      parts.push(s.slice(start, i));
+      const pre = s.slice(0, open);
+      const post = s.slice(i + 1);
+      return parts.flatMap((p) => expandBraces(pre + p + post));
+    } else if (s[i] === ',' && depth === 1) {
+      parts.push(s.slice(start, i));
+      start = i + 1;
+    }
+  }
+  return [s]; // unbalanced → literal
+}
+
+// Bash glob → RegExp: `*` → any chars, `?` → one char, `[...]` → class (invalid/empty class → literal).
+function globToRegExp(g) {
+  let re = '';
+  for (let i = 0; i < g.length; i++) {
+    const c = g[i];
+    if (c === '*') re += '.*';
+    else if (c === '?') re += '.';
+    else if (c === '[') {
+      const end = g.indexOf(']', i + 2);
+      if (end < 0) { re += '\\['; continue; }
+      let cls = g.slice(i + 1, end);
+      if (cls.startsWith('!')) cls = '^' + cls.slice(1);
+      re += '[' + cls.replace(/\\/g, '\\\\') + ']';
+      i = end;
+    } else re += c.replace(/[.+^$()|\\\]{}]/g, '\\$&');
+  }
+  try { return new RegExp('^' + re + '$'); } catch { return /$^/; }
+}
+
 // Bash: block commands that reference a .env file (anything but .env.example), including glob/brace forms
 // such as `.env*`, `.env?`, `.env{,.local}`, `.e[n]v`. This is a best-effort guard against accidental reads,
 // not a sandbox: the permission deny rules in settings.json and keeping real secrets out of reach are the
@@ -28,11 +72,12 @@ const SECRETS_HINT = 'Secrets files are off-limits. Use .env.example and ask the
 if (tool === 'Bash') {
   const command = String(input?.tool_input?.command ?? '');
   const plain = /(?:^|[\s'"=<>|;&(/\\`])\.env(?:\.(?!example\b)[\w-]+)*(?=$|[\s'"<>|;&)`*?[{,])/;
-  // Any dot-file token that starts with `e` or a glob char and contains glob syntax could expand to .env*.
+  // Dot-file tokens with glob/brace syntax: block only if the pattern can actually expand to a .env file name
+  // (so jq filters like `.[]` or regexes like `.*foo` pass).
   const tokens = command.match(/(?:^|[\s'"=<>|;&(/\\`])\.[^\s'"<>|;&)`/\\]*/g) ?? [];
   const globbed = tokens.some((t) => {
     const tok = t.replace(/^[^.]*/, '');
-    return /^\.[e*?[{]/.test(tok) && /[*?[{]/.test(tok);
+    return /[*?[{]/.test(tok) && expandBraces(tok).some((g) => SECRET_NAMES.some((n) => globToRegExp(g).test(n)));
   });
   if (plain.test(command) || globbed) {
     block(`command references a .env file. ${SECRETS_HINT}`);
