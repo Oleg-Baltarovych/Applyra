@@ -1,0 +1,8 @@
+# Entry point so `docker compose up -d` works from the repo root (CLAUDE.md, 12-infra-ops.md §1).
+# The services live in infra/compose/compose.yml (12 §2); relative paths there resolve against that file.
+# Interpolation: the root `.env` (or --env-file) and the shell environment take precedence over
+# defaults of the included file, so the root `.env` is the single place to configure local infra.
+name: applyra
+
+include:
+  - infra/compose/compose.yml

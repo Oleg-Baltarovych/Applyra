@@ -1,0 +1,111 @@
+# Local development infrastructure (docs/spec/12-infra-ops.md §1 "local", §2, §4).
+# Run from the repo root: `docker compose up -d` (the root compose.yaml includes this file).
+# Variables come from the root `.env` (cp .env.example .env); required ones fail fast via ${VAR:?}.
+# Every port is published on 127.0.0.1 only — nothing is reachable from the network.
+# prod/staging compose files (compose.prod.yml, M0-14) add caddy/api and the edge/internal networks (§3.2).
+
+services:
+  postgres:
+    image: postgres:18.7
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD (see .env.example)}
+      POSTGRES_DB: applyra
+      # Read by infra/postgres/init/10-roles.sql via psql \getenv (>= 16 chars, pairwise distinct).
+      APPLYRA_APP_PASSWORD: ${APPLYRA_APP_PASSWORD:?set APPLYRA_APP_PASSWORD (see .env.example)}
+      APPLYRA_MAINTENANCE_PASSWORD: ${APPLYRA_MAINTENANCE_PASSWORD:?set APPLYRA_MAINTENANCE_PASSWORD (see .env.example)}
+      APPLYRA_BACKUP_PASSWORD: ${APPLYRA_BACKUP_PASSWORD:?set APPLYRA_BACKUP_PASSWORD (see .env.example)}
+      APPLYRA_METRICS_PASSWORD: ${APPLYRA_METRICS_PASSWORD:?set APPLYRA_METRICS_PASSWORD (see .env.example)}
+    volumes:
+      # PG 18 images keep PGDATA at /var/lib/postgresql/18/docker; mount the parent (image VOLUME).
+      - postgres-data:/var/lib/postgresql
+      # Runs once, on the first start with an EMPTY volume only.
+      - ../postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - 127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432
+    healthcheck:
+      # TCP on purpose: the entrypoint's temporary init server listens on the unix socket only, so the
+      # check stays red until the init scripts (roles) have finished and the real server is up.
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, postgres, -d, applyra]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # Queue/cache store: Valkey (Redis protocol), service name `redis` (12 §2, 04 §7.2). No auth locally.
+  redis:
+    image: valkey/valkey:9.1.3
+    volumes:
+      - redis-data:/data
+    ports:
+      - 127.0.0.1:${REDIS_HOST_PORT:-6379}:6379
+    healthcheck:
+      test: [CMD-SHELL, '[ "$$(valkey-cli ping)" = PONG ]']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # S3-compatible storage standing in for Cloudflare R2 (12 §1). Upstream no longer publishes MinIO images
+  # (Docker Hub minio/minio removed, quay.io needs auth) → Chainguard build, pinned by digest (free tier
+  # serves only :latest). Entrypoint is /usr/bin/minio (args = official `server …`), runs as uid 65532,
+  # distroless: no curl, but ships mc + bash. Local dev only. Bump: pull :latest, take RepoDigests[0].
+  minio:
+    # cgr.dev/chainguard/minio:latest as of 2026-11-16 = MinIO RELEASE.2026-11-16T00-11-40Z
+    image: cgr.dev/chainguard/minio@sha256:1ec745a06a986762f89e68e855fc189f403941eff8c0a5f94767e92c8e39d3f5
+    command: [server, /data, --console-address, ':9001']
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER (see .env.example)}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD (see .env.example)}
+      # Alias for the healthcheck's `mc ready` (env, not argv). MC_HOST_* embeds the credentials in a URL,
+      # so MINIO_ROOT_USER/PASSWORD must be URL-safe (no @ : / ? # %).
+      MC_HOST_self: http://${MINIO_ROOT_USER:?set MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}@127.0.0.1:9000
+    volumes:
+      - minio-storage:/data
+    ports:
+      - 127.0.0.1:${MINIO_API_HOST_PORT:-9000}:9000
+      - 127.0.0.1:${MINIO_CONSOLE_HOST_PORT:-9001}:9001
+    healthcheck:
+      test: [CMD, mc, ready, self]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # One-shot: creates the private local buckets (idempotent; no anonymous policy), then exits 0.
+  minio-init:
+    # cgr.dev/chainguard/minio-client:latest as of 2026-11-16 (entrypoint /usr/bin/mc)
+    image: cgr.dev/chainguard/minio-client@sha256:1260ca38acf78bf8d2833845fda6636b27388ab919b750d79f2c7167fb45ec74
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      # mc reads the alias from MC_HOST_<alias> — keeps the credentials off argv (`mc alias set` would put
+      # them there); hence URL-safe credentials, see the minio service.
+      MC_HOST_local: http://${MINIO_ROOT_USER:?set MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}@minio:9000
+    command: [mb, --ignore-existing, local/applyra-local-documents, local/applyra-local-exports]
+    restart: 'no'
+
+  # SMTP sink + web UI (12 §1 local email). SMTP :1025, UI/API :8025.
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    environment:
+      MP_DATABASE: /data/mailpit.db
+    volumes:
+      - mailpit-data:/data
+    ports:
+      - 127.0.0.1:${MAILPIT_SMTP_HOST_PORT:-1025}:1025
+      - 127.0.0.1:${MAILPIT_UI_HOST_PORT:-8025}:8025
+    healthcheck:
+      test: [CMD, /mailpit, readyz]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-storage:
+  mailpit-data:
