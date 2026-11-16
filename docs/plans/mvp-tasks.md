@@ -6,7 +6,7 @@
 
 - Одна задача = один PR = один GitHub issue (ID задачі в назві issue/PR, напр. `M1-08 · Transitions + undo`). Issue посилається на FR і на розділ спеки.
 - Порядок усередині milestone — за `Depends`; задачі без взаємних залежностей можна брати в будь-якому порядку.
-- `Flow`: `/feature` — plan → approve → implement → review → verify → accept; `direct` — `lead-developer` без окремого плану (дрібне, без змін схеми); `spike` — throwaway-перевірка, результат у `docs/CONTEXT.md` §6 / ADR, код лише якщо придатний; `/e2e`, `/security-audit`, `/ship` — відповідні flow-команди.
+- `Flow`: `/feature` — plan → approve → implement → review → verify → accept; `direct` — без окремого плану (дрібне, без змін схеми): `/implement docs/plans/mvp-tasks.md <ID>`, AC задачі = кроки плану, далі `/review` + `/verify` + `qa-lead` як зазвичай; `spike` — throwaway-перевірка, результат у `docs/CONTEXT.md` §6 / ADR, код лише якщо придатний; `/e2e`, `/security-audit`, `/ship` — відповідні flow-команди.
 - DoD: R0-задачі — `02-releases.md` §5.1; з M3 — §5.2. Тести з AC — частина задачі, не окремий PR.
 - `optional` — нижчий пріоритет; береться, якщо milestone іде за графіком. Не виконано → переноситься в `Later`/наступний milestone свідомо (запис у PR-описі релізу).
 - Оцінки — години роботи соло-розробника з Claude Code (включно з review/verify), не «чистий» час агента.
@@ -17,16 +17,16 @@
 
 | Milestone | 02 (ціль) | План: core | optional | Разом |
 |---|---|---|---|---|
-| M0 Setup | 12–15 | 28 | 2 | 30 |
+| M0 Setup | 12–15 | 29 | 1.5 | 30.5 |
 | M1 Tracker | 22–26 | 41.5 | 1.5 | 43 |
 | M2 Migration | 11–14 | 20 | — | 20 |
-| **R0** | **45–55** | **89.5** | **3.5** | **93** |
-| M3 Capture & Notify | 30–35 | 63.5 | — | 63.5 |
+| **R0** | **45–55** | **90.5** | **3** | **93.5** |
+| M3 Capture & Notify | 30–35 | 65.5 | — | 65.5 |
 | M4 Profile, Jobs & Extraction | 45–55 | 63 | — | 63 |
 | M5 Insights & Launch | 50–60 | 65 | 10 | 75 |
-| **R1** | **125–150** | **191.5** | **10** | **201.5** |
+| **R1** | **125–150** | **193.5** | **10** | **203.5** |
 
-**Висновок:** core-обсяг R0 ≈ 1.6–2× від оцінки 02, R1 ≈ 1.3–1.5×. Нічого з FR не вирізано; варіанти — у `mvp.md` §2.
+**Висновок:** core-обсяг R0 ≈ 1.6–2× від оцінки 02, R1 ≈ 1.3–1.5×. Колонка «02 (ціль)» лишається як орієнтир; при відставанні першими знімаються `optional` (правило `mvp.md` §7), але це закриває лише ~3 год R0 / ~10 год R1 — решта розриву вирішується календарем або правкою спеки (варіанти — `mvp.md` §2). Нічого з FR не вирізано.
 
 ---
 
@@ -37,10 +37,13 @@
 ### M0-01 · Monorepo scaffold
 - FR: — · Area: repo · Est: 2h · Depends: — · Flow: direct
 - AC:
-  - `corepack enable`; pnpm 11 workspaces + Turborepo 2; `apps/web`, `apps/api`, `packages/contracts`; `pnpm dev|lint|typecheck|test|build` працюють з кореня.
+  - `corepack enable`; pnpm 11 workspaces + Turborepo 2; workspaces `apps/web`, `apps/api`, `packages/contracts`, `e2e` (окремий пакет, `04-architecture.md` §6; існуючий `e2e/seed.spec.ts` зберегти); `pnpm dev|lint|typecheck|test|build` працюють з кореня.
+  - `e2e/package.json` з pinned `@playwright/test` 1.65.x (MCP playwright-test використовує локальну версію). `packages/config` — лише якщо ≥ 2 споживачі.
+  - `apps/api` тут — голий TS-пакет зі скелетом `src/modules/` + `src/platform/` (спільний backend-код живе лише в `src/platform/`); пакети Nest ставить M0-02.
   - tsconfig base: strict + `noUncheckedIndexedAccess`; ESLint flat + `eslint-plugin-boundaries` (правила 1–6 `04-architecture.md` §4.1) + `import-x/no-cycle`; Prettier.
-  - `pnpm-workspace.yaml` з `onlyBuiltDependencies`; `engines` (Node 24); README skeleton, PR template, `.gitattributes`.
-  - Навмисне порушення boundaries у фікстурі → `pnpm lint` падає.
+  - `pnpm-workspace.yaml` з налаштуванням дозволених build-скриптів; `engines` (Node 24); README skeleton, PR template, `.gitattributes`.
+  - Перевірка boundaries: Vitest-тест запускає ESLint Node API на фікстурі з порушенням (тека в ESLint `ignores`, тож звичайний `pnpm lint` зелений) і очікує помилку правила. `passWithNoTests`, щоб `pnpm test` був зелений з порожніми пакетами.
+  - Перевірити під час реалізації (не з пам'яті): назву налаштування pnpm 11 (`onlyBuiltDependencies` vs `allowBuilds`), підтримку pinned-версії TypeScript у typescript-eslint.
 - Notes: оновити `CONTEXT.md` §2 (✅ layout) і Commands у `CLAUDE.md`.
 
 ### M0-02 · Spike: NestJS 12 / nestjs-zod / Better Auth / BullMQ 6
@@ -54,48 +57,66 @@
 ### M0-03 · Spike: Prisma 7 raw features + DB roles
 - FR: — · Area: db · Est: 1.5h · Depends: M0-01 · Flow: spike
 - AC:
-  - Перевірено на PG 18: partial `@@unique(where:)` (preview), `ops: raw("gin_trgm_ops")`, GIN на `Unsupported("tsvector")`, `migrate diff --exit-code` без хибного drift для CHECK.
+  - Перевірено на PG 18 (throwaway `docker run postgres:18`; compose з'являється лише в M0-04): partial `@@unique(where:)` (preview), `ops: raw("gin_trgm_ops")`, GIN на `Unsupported("tsvector")`, `migrate diff --exit-code` без хибного drift для CHECK.
   - Init-скрипт ролей `applyra_app` / `applyra_maintenance` / `backup` / `metrics` з grants `12-infra-ops.md` §4; `applyra_app` не може DDL (перевірено).
   - Що не працює в Prisma → raw SQL у міграції; записано в `CONTEXT.md` §6 і ADR 016.
 
 ### M0-04 · Docker Compose + env config
 - FR: — · Area: infra · Est: 1h · Depends: M0-01, M0-03 · Flow: direct
 - AC:
-  - `docker compose up -d`: postgres 18 (init ролей з M0-03), valkey 9, minio, mailpit; healthchecks.
-  - `apps/api/src/config/env.schema.ts` (Zod): невалідна/відсутня змінна → процес падає з переліком; `.env.example` з коментарями; web — тільки `VITE_*`.
+  - `docker compose up -d`: postgres 18 (init ролей з M0-03), сервіс `redis` (image `valkey/valkey:9`), minio, mailpit; healthchecks.
+  - `apps/api/src/platform/config/env.schema.ts` (Zod): невалідна/відсутня змінна → процес падає з переліком; `.env.example` з коментарями; web — тільки `VITE_*`.
 
 ### M0-05 · CI pipeline
 - FR: — · Area: ci · Est: 2h · Depends: M0-01 · Flow: direct
 - AC:
-  - `ci.yml` (PR + `main`): `--frozen-lockfile` → lint/prettier/typecheck → unit + coverage `**/*.domain.ts` ≥ 90% → integration (Testcontainers) → migrations (drift, squawk, clean apply, якщо змінено `prisma/`) → build images → gitleaks + `pnpm audit --audit-level=high`.
+  - `ci.yml` (PR + `main`), `--frozen-lockfile`; стадії вмикаються, щойно з'являється їхній предмет (кожна — окремий job, required check з моменту ввімкнення):
+    1. зараз: lint/prettier/typecheck → unit + coverage `**/*.domain.ts` ≥ 90% → gitleaks + `pnpm audit --audit-level=high`;
+    2. integration (Testcontainers, включно з IDOR gate) — вмикає M0-07a;
+    3. migrations (drift, squawk, clean apply, якщо змінено `prisma/`) — вмикає M0-08 (перша міграція);
+    4. build images — вмикає M0-14 (Dockerfiles).
   - `permissions: contents: read` top-level; branch protection на `main` з обов'язковими checks.
 - Notes: `11-testing.md` §9 (колонка R0), `09-security-privacy.md` §14.
 
-### M0-06 · Supply chain extras
-- FR: — · Area: ci, security · Est: 1h · Depends: M0-05 · Flow: direct · **optional**
+### M0-06 · Supply chain gates
+- FR: — · Area: ci, security · Est: 1h · Depends: M0-05 · Flow: direct
 - AC:
-  - CodeQL (PR + weekly), osv-scanner, Renovate (`minimumReleaseAge: 3 days`, grouped), усі Actions pinned на SHA.
+  - CodeQL (PR + weekly) і osv-scanner у CI як required checks — R0 gate разом із `pnpm audit` і gitleaks (`11-testing.md` §9).
 
-### M0-07 · Integration test infra + IDOR gate skeleton
-- FR: FR-AUTH-03 · Area: api, ci · Est: 2.5h · Depends: M0-08, M0-10 · Flow: /feature
+### M0-06b · Renovate + Actions SHA pinning
+- FR: — · Area: ci, security · Est: 0.5h · Depends: M0-06 · Flow: direct · **optional**
 - AC:
-  - Vitest `globalSetup`: один набір контейнерів, template DB, БД на worker, Redis prefix (`11-testing.md` §3).
-  - Factories (`test/factories/*`), helper сесії для user A/B, `expectContract(res, Schema)` (strict).
+  - Renovate (`minimumReleaseAge: 3 days`, grouped); усі Actions pinned на SHA.
+
+### M0-07a · Integration test infra
+- FR: — · Area: api, ci · Est: 1.5h · Depends: M0-04 · Flow: /feature
+- AC:
+  - Vitest `globalSetup`: один набір контейнерів, template DB (= `migrate deploy`; до M0-08 порожня), БД на worker, Redis prefix (`11-testing.md` §3).
+  - Каркас factories (`test/factories/*`; моделі додають задачі, що їх створюють — `user` у M0-08), helper сесії для user A/B (наповнюється в M0-10), `expectContract(res, Schema)` (strict).
+  - Integration-стадія `ci.yml` увімкнена (M0-05 п. 2); smoke-тест інфраструктури зелений.
+- Notes: передує M0-08 і M0-10.
+
+### M0-07b · IDOR gate skeleton
+- FR: FR-AUTH-03 · Area: api, ci, security · Est: 1h · Depends: M0-07a, M0-10 · Flow: /feature
+- AC:
   - Route table через `DiscoveryService`; gate: не-`@Public` route без fixture/`@IdorExempt('reason')` → fail зі списком; не-`@Public` route без guard → fail.
+  - Навмисний route без fixture у тестовому модулі → gate падає (тест самого gate).
 
 **E10 Platform**
 
 ### M0-08 · Prisma baseline + platform/prisma
-- FR: — · Area: db, api · Est: 1.5h · Depends: M0-03, M0-04 · Flow: /feature
+- FR: — · Area: db, api · Est: 1.5h · Depends: M0-03, M0-04, M0-07a · Flow: /feature
 - AC:
-  - `prisma.config.ts`, adapter-pg, generator `output`; міграція extensions (`pg_trgm`, `unaccent`, `f_unaccent`) + `User`, `Session`, `Account`, `Verification`, `UserSettings` (`05-data-model.md` §4.2).
+  - `prisma.config.ts`, adapter-pg, generator `output`; міграція extensions (`pg_trgm`, `unaccent`, `f_unaccent`) + `User`, `Session`, `Account`, `Verification`, `UserSettings` (`05-data-model.md` §4.2) — лише моделі/поля без маркера `// R1+` у §4.
+  - Перша міграція вмикає migrations-стадію `ci.yml` (M0-05 п. 3); `user` factory для M0-07a.
   - Prisma Extension: запит до user-scoped моделі без `userId` у `where` → warning у dev, fail у тестах.
   - Migrate one-off через `MAINTENANCE_DATABASE_URL`; runtime — `DATABASE_URL` (`applyra_app`).
 
 ### M0-09 · HTTP platform hardening
-- FR: FR-AUTH-03 · Area: api, security · Est: 2.5h · Depends: M0-02 · Flow: /feature
+- FR: FR-AUTH-03 · Area: api, contracts, security · Est: 2.5h · Depends: M0-02, M0-04, M0-08 · Flow: /feature
 - AC:
-  - Error filter: формат + `ErrorCode` з contracts, `requestId` = `X-Request-Id`, без stack trace; Zod → 400 `VALIDATION_ERROR`.
+  - `packages/contracts`: enum `ErrorCode` і схема error shape за `06-api.md` §3.1 (створюються тут; M1-02 лише розширює доменними кодами, якщо чогось бракує).
+  - Error filter (`apps/api/src/platform/`): формат + `ErrorCode` з contracts, `requestId` = `X-Request-Id`, без stack trace; Zod → 400 `VALIDATION_ERROR`.
   - pino + redaction-список `09-security-privacy.md` §10 (unit: запис з усіма полями → жодного значення).
   - helmet headers API (§9.2), `Cache-Control: no-store`; CORS allowlist; `OriginGuard` → 403 `CSRF_ORIGIN`; non-JSON мутація → 415; JSON body > 1 MB → 413.
   - `/health/live`, `/health/ready` (PG, Redis); Supertest на headers/CORS/Origin/415.
@@ -108,14 +129,14 @@
   - Google OAuth (PKCE) через Better Auth; sign-out інвалідує сесію на сервері.
   - Email поза `AUTH_SIGNUP_ALLOWLIST` → `403 SIGNUP_CLOSED`, акаунт не створено; існуючий користувач входить без перевірки.
   - Idle 7 д / absolute 30 д (перевірка в guard), rotation при вході; cookie `__Host-applyra.session; HttpOnly; Secure; SameSite=Lax`.
-  - Integration з mocked Google token endpoint; запит без сесії → 401; `POST /api/auth/revoke-sessions` працює.
-- Notes: результат M0-02; ADR 007/008.
+  - Integration з mocked Google token endpoint; запит без сесії → 401; helper сесії user A/B (M0-07a) працює через реальний auth-шлях.
+- Notes: результат M0-02; ADR 007/008. `POST /api/auth/revoke-sessions` — R1 (M3-09).
 
 ### M0-11 · `/me` + `PATCH /me/settings`
 - FR: FR-PROF-01 · Area: api, contracts · Est: 1h · Depends: M0-10 · Flow: /feature
 - AC:
   - `GET /me` → user + settings; `PATCH /me/settings` (timezone, stale-пороги, `hotkeysEnabled`), `.strict()`.
-  - Невалідна IANA-зона → 422; `UserSettings` створюється при першому вході; `@IdorExempt` з причиною.
+  - Невалідна IANA-зона → 400 `VALIDATION_ERROR`; `UserSettings` створюється при першому вході; `@IdorExempt` з причиною.
 
 ### M0-12 · Web foundation + sign-in + Settings
 - FR: FR-AUTH-01, FR-PROF-01 · Area: web · Est: 3h · Depends: M0-11 · Flow: /feature
@@ -130,17 +151,17 @@
 ### M0-13 · R0 environment provisioning
 - FR: — · Area: infra · Est: 1.5h · Depends: — · Flow: direct
 - AC:
-  - Hetzner VPS (Docker, Tailscale, host firewall; 22 закритий публічно, 80/443 тільки з Cloudflare), DNS `app.`/`api.`, Cloudflare Pages project, R2 bucket для бекапів (scoped token без delete), Google OAuth client.
-  - Runbook `infra/README.md` (кроки відтворювані; Terraform — M5-19).
-- Notes: **рішення D-01** (`mvp.md` §6) — де живуть реальні дані автора в R0.
+  - R0-середовище = майбутній **prod**-хост (реальні дані автора, allowlist = автор; D-01 resolved): Hetzner VPS (Docker, Tailscale, host firewall; 22 закритий публічно, 80/443 тільки з Cloudflare), prod DNS `app.`/`api.`, Cloudflare Pages project (prod), R2 bucket prod-бекапів (scoped token без delete), prod Google OAuth client, GitHub Environment `production`.
+  - Runbook `infra/README.md` (кроки відтворювані; Terraform — M5-19). Synthetic-only staging у R0 немає — з'являється в M5-20.
 
 ### M0-14 · Deploy pipeline (R0) + SPA `_headers`
 - FR: — · Area: ci, infra, security · Est: 3h · Depends: M0-05, M0-12, M0-13 · Flow: /feature
 - AC:
-  - `deploy-staging.yml` на push `main`: image у GHCR (`sha-*`, non-root, pinned digest) → `/opt/applyra/.env` з Environment secrets → `compose run --rm migrate` → restart api → `wrangler pages deploy` з `_headers` → health-check smoke.
-  - `compose.yml` + `compose.staging.yml`: caddy, api, postgres, redis, backup-cron; мережі `edge`/`internal`/`outbound`.
+  - Dockerfiles (створюються тут): `apps/api` — один multi-stage image, non-root, entrypoints `main` / `worker`; `caddy`. Вмикають build-стадію `ci.yml` (M0-05 п. 4).
+  - `deploy-prod.yml` на push `main` (GitHub Environment `production`): image у GHCR (`sha-*`, pinned digest) → `/opt/applyra/.env` з Environment secrets → `compose run --rm migrate` → restart api → `wrangler pages deploy` з `_headers` → health-check smoke. У M5-20 замінюється на `deploy-staging.yml` + `release.yml`.
+  - `compose.yml` + `compose.prod.yml`: caddy, api, postgres, `redis` (`valkey/valkey:9`), backup-cron; мережі `edge`/`internal`/`outbound`.
   - Spike CSP: `_headers` `09-security-privacy.md` §9.1 реально віддається Pages на custom domain (curl-check у workflow); інакше fallback — Caddy static.
-  - Staging «hello»: sign-in Google → `/applications` (порожньо).
+  - Prod «hello»: sign-in Google → `/applications` (порожньо).
 
 ### M0-15 · Nightly backup + Sentry + uptime
 - FR: — · Area: infra, obs · Est: 1.5h · Depends: M0-14 · Flow: direct
@@ -163,14 +184,14 @@
 ### M1-01 · R0 domain schema migration
 - FR: FR-APP-02, FR-JOB-04 · Area: db · Est: 2h · Depends: M0-08 · Flow: /feature (`/prisma-migration`)
 - AC:
-  - `Job`, `Application`, `ApplicationEvent`, `Reminder`, `ImportSession`, `IdempotencyRecord` за `05-data-model.md` §4.2; FK/cascade за §5.
+  - `Job`, `Application`, `ApplicationEvent`, `Reminder`, `ImportSession`, `IdempotencyRecord` за `05-data-model.md` §4.2 — лише моделі/поля без маркера `// R1+` у §4 (зокрема без `UserJob`, G-08); FK/cascade за §5.
   - Partial unique: активна заявка на (user, job) (`archivedAt IS NULL`), PRIVATE `canonicalUrl` на owner; один відкритий `NEXT_ACTION` reminder на заявку; CHECK з §7.4.
   - Integration: порушення кожного unique/CHECK дає очікувану помилку; drift = 0.
 
 ### M1-02 · Contracts R0 domain
-- FR: FR-APP-01, FR-JOB-01, FR-REM-01 · Area: contracts · Est: 1.5h · Depends: M0-01 · Flow: direct
+- FR: FR-APP-01, FR-JOB-01, FR-REM-01 · Area: contracts · Est: 1.5h · Depends: M0-09 · Flow: direct
 - AC:
-  - Zod 4: enums (status, origin, channel, priority, event types, reminder kind/source), input `.strict()` без `userId/ownerId/role`, response-схеми, cursor-pagination, `ErrorCode`.
+  - Zod 4: enums (status, origin, channel, priority, event types, reminder kind/source), input `.strict()` без `userId/ownerId/role`, response-схеми, cursor-pagination; `ErrorCode` з M0-09 лише розширюється доменними кодами, якщо бракує.
   - Ліміти полів (`title` ≤ 300, `notes`/`descriptionText` ≤ 50 000); unit-тести схем.
 
 ### M1-03 · Idempotency-Key interceptor
@@ -184,10 +205,10 @@
 **E04 Jobs & Capture**
 
 ### M1-04 · Jobs: canonicalUrl + CRUD + dedup
-- FR: FR-JOB-01, FR-JOB-02, FR-JOB-03, FR-JOB-04, FR-JOB-05, FR-JOB-06, FR-PRIV-04 · Area: api, contracts · Est: 2.5h · Depends: M1-01, M1-02, M0-07 · Flow: /feature
+- FR: FR-JOB-01, FR-JOB-02, FR-JOB-03, FR-JOB-04, FR-JOB-05, FR-JOB-06, FR-PRIV-04 · Area: api, contracts · Est: 2.5h · Depends: M1-01, M1-02, M0-07b · Flow: /feature
 - AC:
   - `canonicalUrl` — pure function у `jobs.domain.ts` (unit: host case, `www.`, fragment, `utm_*`, `fbclid`, `gclid`, `ref`, trailing slash).
-  - `POST /jobs` (PRIVATE, MANUAL, paste text як plain text) → дубль `canonicalUrl` → `409 CONFLICT_DUPLICATE_JOB` з `existingJobId`.
+  - `POST /jobs` (PRIVATE, MANUAL, paste text як plain text) створює лише PRIVATE `Job`, без `UserJob` (R1, G-08) → дубль `canonicalUrl` → `409 CONFLICT_DUPLICATE_JOB` з `existingJobId`.
   - `GET/PATCH/DELETE /jobs/:id` тільки owner; DELETE знімає `jobId` у заявок, snapshot лишається; повторне → 404.
   - IDOR fixtures для всіх маршрутів (чужа приватна → 404).
 
@@ -304,6 +325,7 @@
 - FR: — · Area: web · Est: 1.5h · Depends: M1-19 · Flow: direct · **optional**
 - AC:
   - `⌘/Ctrl+K`: пошук по заявках + «Add application», команди з реєстру хоткеїв; доступно з клавіатури.
+- Notes: у R0 optional, може зсунутися в R1 (`10-frontend-ux.md`).
 
 ---
 
@@ -312,7 +334,8 @@
 **E06 Import / Export**
 
 ### M2-01 · CSV import domain
-- FR: FR-IMP-01, FR-IMP-03, FR-IMP-04 · Area: api · Est: 2.5h · Depends: M1-05 · Flow: /feature (test-first)
+- FR: FR-IMP-01, FR-IMP-03, FR-IMP-04 · Area: api · Est: 2.5h · Depends: M1-05, M1-14 · Flow: /feature (test-first)
+- Notes: залежність від M1-14 — пріоритет графа `mvp.md` §3 (`KB --> IMP`): імпорт починаємо, коли tracker уже придатний для dogfooding.
 - AC:
   - Pure functions: UTF-8 + BOM, роздільник `,`/`;` (автовизначення), автовгадування колонок за заголовками, мапінг значень статусу (→ status / skip), парсинг дат за обраним форматом; неоднозначна дата без формату → помилка рядка.
   - `importKey` = (нормалізований company, role, `appliedAt`); побудова backdated подій (`CREATED`, `STATUS_CHANGED` → `APPLIED` → поточний).
@@ -353,7 +376,7 @@
   - Redis недоступний → fail-open in-memory з warning (тест).
 
 ### M2-07 · R0 IDOR coverage + security test set
-- FR: FR-AUTH-03 · Area: security, api · Est: 1.5h · Depends: M2-02, M2-03, M1-12 · Flow: /feature
+- FR: FR-AUTH-03 · Area: security, api · Est: 1.5h · Depends: M2-02, M2-03, M2-06, M1-12 · Flow: /feature
 - AC:
   - IDOR gate зелений для всіх R0 routes; список `@IdorExempt` переглянуто.
   - Тести: headers API, CORS, cookies, CSV injection, redaction, rate limits — усі R0-рядки `11-testing.md` §5.3.
@@ -374,7 +397,7 @@
   - Відновлення останнього `pg_dump` в ізольований контейнер, `prisma migrate status` актуальний, row counts збігаються; runbook `docs/runbooks/restore.md`.
 
 ### M2-11 · R0 release
-- FR: — · Area: security, docs · Est: 2h · Depends: M2-07, M2-09, M2-10 · Flow: /security-audit → /ship
+- FR: — · Area: security, docs · Est: 2h · Depends: усі не-optional задачі R0 — M0-01…M0-06, M0-07a, M0-07b, M0-08…M0-15, M1-01…M1-19, M2-01…M2-10 (поза gate: optional M0-06b, M0-16, M1-20) · Flow: /security-audit → /ship
 - AC:
   - `/security-audit` R0 без відкритих high/critical; README (setup, команди, архітектура коротко); `CONTEXT.md` оновлено.
   - Тег `v0.1.0`, GitHub milestone R0 закрито; ручний smoke-чекліст пройдено; старт 7-денного exit-критерію.
@@ -395,9 +418,20 @@
 ### M3-02 · Transactional outbox
 - FR: — · Area: worker, db · Est: 3h · Depends: M3-01 · Flow: /feature
 - AC:
-  - `OutboxEvent` міграція + partial index; `OutboxWriter.append(tx, …)`; relay claim (`FOR UPDATE SKIP LOCKED`, коротка tx) → publish (`jobId = eventId:consumer`) → mark/backoff; dead після 10.
+  - `OutboxEvent` міграція + partial index; `OutboxWriter.append(tx, …)`; relay claim (`FOR UPDATE SKIP LOCKED`, коротка tx) → publish (`jobId = <eventId>_<consumer>` — BullMQ забороняє `:` у custom jobId) → mark/backoff; dead після 10.
   - Integration: crash між publish і mark → без дубля; Redis down → події накопичуються й доганяються; `outbox:cleanup` 7 днів.
 - Notes: `04-architecture.md` §5.2, ADR 006.
+
+### M3-02b · Outbox producers in R0 code
+- FR: FR-NOTIF-01, FR-DISC-01 · Area: api, contracts · Est: 2h · Depends: M3-02 · Flow: /feature
+- AC:
+  - Payload-схеми подій (Zod у contracts: ids + `occurredAt` + версія) для типів `DomainEventType`, чий producer живе в R0-коді (`04-architecture.md` §5.3):
+    - `JobCreated` — `POST /jobs` і inline job у `POST /applications` (M1-04, M1-06); `JobUpdated` — `PATCH /jobs/:id` (M1-04);
+    - `ApplicationStatusChanged` — transitions і undo-revert (M1-08); CSV import його не емітить (рядки — `ImportCommitted`, щоб не спамити нотифікаціями);
+    - `ImportCommitted` — `POST /import/csv/commit` (M2-02).
+  - `outbox.append(tx, …)` у тій самій `$transaction`, що й мутація; синхронні R0-ефекти (A-03, §5.1) не переводяться на події.
+  - Integration на кожен producer: рядок `OutboxEvent` записано разом з мутацією; rollback мутації → рядка немає; IK-replay → без другого рядка.
+- Notes: решта R1-подій (`DocumentUploaded`, `DocumentDeleted`, `DataExportRequested`, `UserDeletionRequested`) додають свої задачі (M4-14/16, M5-08/09); revert статусу в M3-12 теж емітить `ApplicationStatusChanged`.
 
 ### M3-03 · AuditLog
 - FR: — · Area: api, db, security · Est: 2h · Depends: M3-01 · Flow: /feature
@@ -410,7 +444,7 @@
 ### M3-04 · Email infrastructure
 - FR: FR-NOTIF-02 · Area: api, worker · Est: 2h · Depends: M3-01 · Flow: /feature
 - AC:
-  - `EmailSender` (Mailpit локально, provider adapter для staging/prod), черга `email:send` з ідемпотентним `jobId`; шаблони (text + HTML).
+  - `EmailSender` (Mailpit локально, provider adapter для prod, з M5-20 — і staging), черга `email:send` з ідемпотентним `jobId`; шаблони (text + HTML).
   - Вибір Resend vs Postmark зафіксовано (рядок в ADR 011 або новий ADR).
 
 ### M3-05 · Email + password sign-up / sign-in + verification
@@ -439,7 +473,7 @@
 ### M3-09 · Sessions management + re-auth
 - FR: FR-AUTH-09, FR-AUTH-10 · Area: api · Est: 2.5h · Depends: M3-06 · Flow: /feature
 - AC:
-  - `list-sessions`, `revoke-session`, revoke all others; audit.
+  - `list-sessions`, `revoke-session`, revoke all others, `POST /api/auth/revoke-sessions` (R1); audit.
   - `@RequireRecentAuth` (freshAge 10 хв) → `403 FRESH_SESSION_REQUIRED`; route-table тест: кожен `fresh` route має декоратор.
 
 ### M3-10 · Web: auth screens, sessions, re-auth
@@ -457,10 +491,10 @@
   - `POST /applications/:id/stale/dismiss` (IDOR); `isStale`/hint у list/detail; UI-підказки на картці й у detail.
 
 ### M3-12 · Edit / delete timeline events
-- FR: FR-APP-15 · Area: api, web · Est: 2.5h · Depends: M1-09, M1-16 · Flow: /feature
+- FR: FR-APP-15 · Area: api, web · Est: 2.5h · Depends: M1-09, M1-16, M3-02b · Flow: /feature
 - AC:
   - `PATCH /applications/:id/events/:eventId`: текст + `occurredAt` для NOTE/MESSAGE/FOLLOW_UP; тільки `occurredAt` для `STATUS_CHANGED`.
-  - `DELETE`: останній `STATUS_CHANGED` без 15-с вікна (статус → `fromStatus`), `CREATED` → 409; `lastActivityAt` перераховується (integration).
+  - `DELETE`: останній `STATUS_CHANGED` без 15-с вікна (статус → `fromStatus`, `ApplicationStatusChanged` в outbox), `CREATED` → 409; `lastActivityAt` перераховується (integration).
   - `TimelineEventEditor` у detail; IDOR.
 
 ### M3-13 · Contacts
@@ -505,7 +539,7 @@
   - Quiet hours у `UserSettings` (default 22:00–08:00, вимикаються) відкладають доставку; списки Today не залежать (unit з DST).
 
 ### M3-19 · Outbox consumers → in-app
-- FR: FR-NOTIF-01 · Area: worker · Est: 1h · Depends: M3-17, M2-02 · Flow: /feature
+- FR: FR-NOTIF-01 · Area: worker · Est: 1h · Depends: M3-17, M3-02b · Flow: /feature
 - AC:
   - `ApplicationStatusChanged`, `ImportCommitted` → notifications; consumer читає поточний стан, видалений агрегат → no-op.
 
@@ -515,14 +549,16 @@
 - FR: FR-JOB-07 · Area: worker, infra, security · Est: 5h · Depends: M3-01 · Flow: /feature (+ security-reviewer)
 - AC:
   - Окремий контейнер; URL/port/userinfo правила, `ipaddr.js` allow-only unicast, DNS один раз + undici `lookup` на перевірений IP, redirects ≤ 3 з повною перевіркою, 2 MB decoded, `text/html`, connect 3 с / total 5 с, `ApplyraBot` UA.
-  - Мережі `egress` + `fetch-rpc`, `DOCKER-USER` правила; не резолвить `postgres`/`redis`.
+  - Мережі `egress` + `fetch-rpc` (у `fetch-rpc` лише worker і safe-fetcher; api — ні), `DOCKER-USER` правила; не резолвить `postgres`/`redis`.
+  - Worker-processor черги `capture` викликає safe-fetcher через `fetch-rpc` (ADR 021).
   - Усі SSRF fixtures `11-testing.md` §5.1 зелені в CI; метрика `capture_fetch_total{result}`.
-- Notes: ADR 009, `09-security-privacy.md` §5; gap G-02 (sync API ↔ worker-only fetcher).
+- Notes: ADR 009, ADR 021, `09-security-privacy.md` §5; G-02 resolved.
 
 ### M3-21 · Capture API: domain policy + JSON-LD → JobDraft
 - FR: FR-JOB-07, FR-JOB-09 · Area: api, contracts · Est: 3.5h · Depends: M3-20, M1-04 · Flow: /feature
 - AC:
-  - `POST /jobs/capture` (IK, no-demo, 30/год): LinkedIn paste-only, `robots.txt` для UA, denylist конфігом → «Paste the job text instead».
+  - `POST /jobs/capture` (IK, no-demo, 30/год): API ставить BullMQ job `capture` зі стабільним `jobId` і чекає результат ≤ 6 с; fetch робить лише worker (ADR 021); тайм-аут → `504 CAPTURE_TIMEOUT` (`06-api.md` §3.1, ADR 021). Integration: повтор із тим самим IK не ставить другий job.
+  - LinkedIn paste-only, `robots.txt` для UA, denylist конфігом → «Paste the job text instead».
   - JSON-LD `JobPosting` mapper (фікстури) → `JobDraft` з `source` + confidence на поле; нічого не зберігається.
   - Недоступна сторінка → `422 CAPTURE_UNAVAILABLE` без повторів; captured — завжди PRIVATE.
 
@@ -536,7 +572,7 @@
 ### M3-23 · Playwright infrastructure
 - FR: — · Area: e2e, ci · Est: 3h · Depends: M3-10 · Flow: /e2e
 - AC:
-  - `@playwright/test` + `@axe-core/playwright`; `compose.ci.yml` (production images, Caddy з headers, Mailpit, stub LLM, stub capture-сайт); `e2e/seed.spec.ts`.
+  - Workspace `e2e` (з M0-01, pinned `@playwright/test`) + `@axe-core/playwright`; `compose.ci.yml` (production images, Caddy з headers, Mailpit, stub LLM, stub capture-сайт); `e2e/seed.spec.ts`.
   - CI job на PR; trace on first retry, 1 retry тільки в CI; role-based locators.
 - Notes: після інсталяції перевірити `.mcp.json` playwright-test (`CONTEXT.md` §6).
 
@@ -596,10 +632,10 @@
 - FR: FR-DISC-02, FR-JOB-10 · Area: db · Est: 2h · Depends: M4-01 · Flow: /feature (`/prisma-migration`)
 - AC:
   - `Company`, `UserJob`, `JobSkill` (gap G-03); `search_vector` generated (`f_unaccent`) + GIN, trigram на title/company (`05-data-model.md` §7.3); `CONCURRENTLY` де потрібно, squawk зелений.
-  - Backfill `UserJob` для R0-вакансій (ідемпотентний).
+  - Створення `UserJob` у jobs-сервісі з цього моменту + backfill `UserJob` для R0-вакансій (ідемпотентний; R0 створював лише PRIVATE `Job`, G-08).
 
 ### M4-08 · Skill extraction consumer
-- FR: FR-DISC-01, FR-DISC-03 · Area: worker · Est: 2h · Depends: M4-02, M4-07 · Flow: /feature
+- FR: FR-DISC-01, FR-DISC-03 · Area: worker · Est: 2h · Depends: M4-02, M4-07, M3-02b · Flow: /feature
 - AC:
   - `JobCreated`/`JobUpdated` (outbox) → `extractFromText` → upsert `JobSkill` (source `DICTIONARY`); повтор не дублює.
 
@@ -636,10 +672,11 @@
 **E08 Documents**
 
 ### M4-14 · Documents: schema, storage, upload init/complete
-- FR: FR-DOC-01, FR-DOC-02 · Area: db, api · Est: 3.5h · Depends: M3-02, M0-16 · Flow: /feature
+- FR: FR-DOC-01, FR-DOC-02 · Area: db, api · Est: 3.5h · Depends: M3-02 · Flow: /feature
 - AC:
+  - Якщо spike M0-16 не виконано: спершу перевірити presigned PUT у R2 з підписаними `Content-Length`/`Content-Type` (інший розмір/тип → відмова; R2 і MinIO); не працює → fallback upload через API з лімітом (ADR 010).
   - `Document`, `DocumentVersion` (status PENDING/READY/REJECTED); storage client (MinIO/R2), quarantine lifecycle 1 день.
-  - `POST /documents/uploads` (no-demo) → presigned PUT ≤ 5 хв з підписаними length/type; `.../complete` → HEAD (розмір = заявлений) → job `document.validate`.
+  - `POST /documents/uploads` (no-demo) → presigned PUT ≤ 5 хв з підписаними length/type; `.../complete` → HEAD (розмір = заявлений) → outbox `DocumentUploaded` у тій самій транзакції (`04-architecture.md` §5.3) → consumer ставить job `document.validate` (stable `jobId` = versionId).
   - `/health/ready` + storage HEAD (кеш 30 с); IDOR.
 
 ### M4-15 · Validate + parse sandbox
@@ -791,7 +828,7 @@
 ### M5-14 · Sentry web/worker + SPA CSP final
 - FR: — · Area: obs, security, web · Est: 2h · Depends: M5-12 · Flow: direct
 - AC:
-  - Sentry web + worker, sourcemaps upload і видалення з `dist`; `_headers` з Turnstile/Sentry/report-to; nightly header check на staging.
+  - Sentry web + worker, sourcemaps upload і видалення з `dist`; `_headers` з Turnstile/Sentry/report-to; nightly header check на prod (і staging після M5-20).
 
 ### M5-15 · Metrics instrumentation
 - FR: — · Area: obs, api, worker · Est: 3h · Depends: M3-02, M4-19 · Flow: /feature
@@ -805,12 +842,12 @@
   - Dashboards (api, queues-outbox, ai-cost, capture, postgres-redis, host); alert rules R1 + `promtool test rules` у CI; routing у Telegram/email.
 
 ### M5-17 · WAL-G continuous archiving
-- FR: — · Area: infra · Est: 3h · Depends: M5-20 · Flow: /feature · **optional**
+- FR: — · Area: infra · Est: 3h · Depends: M0-15 (prod-хост існує з R0) · Flow: /feature · **optional**
 - AC:
   - WAL-G (libsodium), base backup щодня, `archive_timeout = 60s`, retain 14 днів; textfile-метрики свіжості. Без нього RPO лишається 24 год (явно в release notes).
 
 ### M5-18 · Restore-test workflow
-- FR: — · Area: ci, infra · Est: 2h · Depends: M5-20 · Flow: /feature
+- FR: — · Area: ci, infra · Est: 2h · Depends: M0-15 (prod-хост існує з R0) · Flow: /feature
 - AC:
   - `restore-test.yml` (monthly + manual, Environment `backup-restore`) за `12-infra-ops.md` §5: ефемерний PG на prod-хості, перевірки, повторне застосування tombstones, метрика + Telegram; перший прогін успішний.
 
@@ -819,11 +856,11 @@
 - AC:
   - `infra/terraform/{modules,envs/staging,envs/production}` (hcloud, cloudflare DNS/Pages/R2), state у R2; `terraform.yml` (fmt/validate/plan у PR).
 
-### M5-20 · Production environment + release workflow
-- FR: — · Area: infra, ci · Est: 3h · Depends: M0-14, M5-16 · Flow: /feature
+### M5-20 · Staging environment + production release workflow
+- FR: — · Area: infra, ci · Est: 3h · Depends: M0-14, M2-08, M5-16 · Flow: /feature
 - AC:
-  - Prod VPS + окремі секрети/OAuth client/R2 buckets; `release.yml` на `v*`: retag digest зі staging → approval → backup marker → migrate → rollout з healthcheck → SPA → smoke → Sentry release → Grafana annotation.
-  - Staging переходить на окремий registrable domain і тільки synthetic data (рішення D-01).
+  - Prod уже існує з R0 (M0-13/14, D-01). Новий synthetic-only staging: окремий registrable domain, окремі секрети/OAuth client/R2 bucket, GitHub Environment `staging`, дані лише з `pnpm db:seed`.
+  - `deploy-prod.yml` (M0-14) замінюється: push `main` → `deploy-staging.yml`; `release.yml` на `v*`: retag digest зі staging → approval (Environment `production`) → backup marker → migrate → rollout з healthcheck → SPA → smoke → Sentry release → Grafana annotation.
 
 **E2E / QA**
 
@@ -867,7 +904,7 @@
   - ADR-індекс актуальний (рішення спайків, провайдер LLM, email-провайдер); 2-хвилинний demo-сценарій у `docs/demo.md`.
 
 ### M5-28 · R1 release
-- FR: — · Area: security, docs · Est: 3h · Depends: M5-21, M5-22, M5-25, M5-26, M5-27 · Flow: /security-audit → /ship
+- FR: — · Area: security, docs · Est: 3h · Depends: усі не-optional задачі R1 — M3-01, M3-02, M3-02b, M3-03…M3-25, M4-01…M4-23, M5-01…M5-16, M5-18, M5-20…M5-22, M5-25…M5-27 (поза gate: optional M5-17, M5-19, M5-23, M5-24) · Flow: /security-audit → /ship
 - AC:
   - `/security-audit` повний (OWASP API мапінг, SSRF, uploads, demo) без відкритих high/critical; fixes — окремими PR.
   - CI зелений, Grafana показує живі метрики prod; тег `v1.0.0`; exit-критерій R1 перевірено на незнайомій людині.
@@ -880,7 +917,7 @@
 |---|---|---|---|---|
 | FR-AUTH-01 | M0-10, M0-12 | | FR-PROF-01 | M0-11, M0-12, M1-19 |
 | FR-AUTH-02 | M0-10, M3-05 | | FR-PROF-02 | M3-18, M5-07 |
-| FR-AUTH-03 | M0-07, M0-09, M0-10, M2-07, M3-24 | | FR-PROF-03 | M4-01, M4-03, M4-05 |
+| FR-AUTH-03 | M0-07b, M0-09, M0-10, M2-07, M3-24 | | FR-PROF-03 | M4-01, M4-03, M4-05 |
 | FR-AUTH-04 | M0-10 | | FR-PROF-04 | M4-02, M4-04, M4-06 |
 | FR-AUTH-05 | M3-05, M3-10 | | FR-PROF-05 | M4-03, M4-05 |
 | FR-AUTH-06 | M3-06, M3-10 | | FR-DOC-01 | M0-16, M4-14, M4-15, M4-18 |
@@ -889,7 +926,7 @@
 | FR-AUTH-09 | M3-06, M3-09, M3-10 | | FR-DOC-04 | M4-15 |
 | FR-AUTH-10 | M3-09, M3-10, M5-08, M5-09 | | FR-DOC-05 | M4-16 |
 | FR-JOB-01 | M1-04, M1-13 | | FR-DOC-06 | M4-16, M4-18 |
-| FR-JOB-02 | M1-04, M1-13 | | FR-DISC-01 | M4-08, M4-09, M4-12 |
+| FR-JOB-02 | M1-04, M1-13 | | FR-DISC-01 | M3-02b, M4-08, M4-09, M4-12 |
 | FR-JOB-03 | M1-04 | | FR-DISC-02 | M4-07, M4-09 |
 | FR-JOB-04 | M1-01, M1-04, M1-13 | | FR-DISC-03 | M4-08, M4-09, M4-12 |
 | FR-JOB-05 | M1-04, M1-17 | | FR-DISC-04 | M4-09 |
@@ -899,7 +936,7 @@
 | FR-JOB-09 | M3-21 | | FR-AI-05 | M3-22, M4-19, M4-22 |
 | FR-JOB-10 | M4-07, M4-10, M4-12 | | FR-AI-06 | M4-19, M4-23 |
 | FR-APP-01 | M1-02, M1-06, M1-13 | | FR-AI-07 | M4-19, M4-23 |
-| FR-APP-02 | M1-01, M1-06, M1-07, M1-13 | | FR-NOTIF-01 | M3-17, M3-19, M5-06 |
+| FR-APP-02 | M1-01, M1-06, M1-07, M1-13 | | FR-NOTIF-01 | M3-02b, M3-17, M3-19, M5-06 |
 | FR-APP-03 | M1-05, M1-08 | | FR-NOTIF-02 | M3-04, M5-06, M5-07 |
 | FR-APP-04 | M1-03, M1-08 | | FR-NOTIF-03 | M5-06 |
 | FR-APP-05 | M1-08, M1-14, M3-24 | | FR-NOTIF-04 | M5-06 |

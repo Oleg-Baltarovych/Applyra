@@ -14,6 +14,7 @@ We record every significant architecture decision as a Markdown ADR in `docs/adr
 - Template (from `.claude/skills/adr/SKILL.md`): title, Status, Date, Context, Decision, Alternatives considered, Consequences (Positive / Negative / Follow-ups).
 - Status values: `Proposed` → `Accepted`; a replaced ADR becomes `Superseded by NNN` and is not edited otherwise.
 - Superseding: write a new ADR that references the old one; update the old one's Status line only.
+- Factual corrections that keep the decision (cost, wording, references) are amended in place, with a line `- Amended: YYYY-MM-DD — <what>` under Status.
 - Language: English (see ADR 020). Length: ~60 lines, facts over prose.
 - If an ADR changes behaviour described in the spec, the relevant `docs/spec/*.md` file is updated in the same change, and a one-line entry is added to "Key decisions" in `docs/CONTEXT.md`.
 - `docs/adr/README.md` holds the index (number, title, status, one-line decision).

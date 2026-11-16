@@ -120,7 +120,7 @@ Blueprint v1.0 описував повний комерційний SaaS; для
 
 - [ ] Live URL + **«Try demo»** без реєстрації: ефемерний demo-користувач на відвідувача (див. `03-functional.md` FR-DEMO).
 - [ ] README: абзац «що це», GIF/скріншоти, архітектурна діаграма, stack, «Key engineering decisions» з посиланнями на ADR, локальний запуск.
-- [ ] `docs/adr/` — мінімум 5 ADR (перелік — див. `04-architecture.md`).
+- [ ] `docs/adr/` — ADR актуальні (перелік — `docs/adr/README.md`).
 - [ ] Зелений CI badge, відкриті issues/roadmap.
 - [ ] Публічний репозиторій з першого дня: gitleaks у CI, тільки синтетичні дані у фікстурах і seed.
 

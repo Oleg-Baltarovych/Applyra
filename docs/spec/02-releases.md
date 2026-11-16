@@ -25,10 +25,11 @@
 | Applications: CRUD **з delete**, Kanban (DnD + «Move to…»), Table, простий Detail (поля, notes, timeline) | FR-APP (R0) |
 | Transitions з idempotency + **Undo toast 10 с** | FR-APP (R0) |
 | Бейдж «N днів без активності» (без stale-підказок) | FR-APP (R0) |
-| Next action + список **Today / Overdue** — рахується при читанні, без worker | FR-REM (R0) |
+| Next action + списки **Today / Overdue / Upcoming** — рахуються при читанні, без worker | FR-REM (R0) |
 | CSV-імпорт (preview → commit, мапінг колонок і статусів) | FR-IMP (R0) |
 | Синхронний експорт CSV/JSON | FR-IMP (R0) |
-| Staging deploy (VPS: api + postgres + redis, **без worker-контейнера**; SPA — Cloudflare Pages) + нічний `pg_dump` | `12-infra-ops.md` |
+| Deploy R0-середовища на майбутній prod-хост (реальні дані автора, allowlist = автор; VPS: api + postgres + redis, **без worker-контейнера**; SPA — Cloudflare Pages) + нічний `pg_dump`. Synthetic staging — з R1 (D-01) | `12-infra-ops.md` §1 |
+| Security headers / CSP (API + `_headers` SPA); Sentry для api (web/worker — R1) | `09-security-privacy.md` §9, `11-testing.md` §5, `12-infra-ops.md` §9 |
 | Onboarding: «Import CSV / Add first job»; навігація: Applications · Today · Settings | FR-DASH (R0), `10-frontend-ux.md` |
 
 **Не входить у R0 (перенесено в R1):** URL fetcher (SSRF + JSON-LD) · in-app notification centre · email + password і reset · stale-підказки · contacts · interviews · Playwright E2E · outbox + worker · Prometheus/Grafana.
@@ -39,7 +40,7 @@
 
 | Блок | Зміст |
 |---|---|
-| Platform | outbox + BullMQ worker, AuditLog, Prometheus + Grafana (dashboards/alerts as code), Sentry, security headers/CSP |
+| Platform | outbox + BullMQ worker, AuditLog, Prometheus + Grafana (dashboards/alerts as code), Sentry web + worker |
 | Auth | email + password + reset + email verification, політика паролів (≥12 + HIBP), revoke сесій, re-auth для чутливих дій |
 | Capture | URL fetcher (SSRF-safe) + JSON-LD, `extract-job` (LLM) як fallback з підтвердженням, політика доменів |
 | CRM | stale-підказки, custom reminders, редагування/видалення подій, contacts, interviews + `.ics` |
@@ -48,7 +49,7 @@
 | Insights | Dashboard, Analytics (base) |
 | Notifications | in-app центр, email-нагадування, daily digest, quiet hours |
 | Privacy | повний async експорт (zip), видалення акаунта, AI settings |
-| Demo & launch | ефемерний demo, production deploy, README зі скріншотами, ≥5 ADR, restore-тест бекапу, Playwright E2E, privacy policy |
+| Demo & launch | ефемерний demo, synthetic staging + production release flow (тег `v*` + approval), README зі скріншотами, ADR актуальні (000–021 уже є, нові — за потреби), restore-тест бекапу, Playwright E2E, privacy policy |
 
 **Exit criteria:** незнайомий рекрутер/інженер відкриває посилання, заходить у demo і за 2 хвилини розуміє, що робить продукт; CI зелений; Grafana-дашборд показує живі метрики prod.
 
@@ -82,7 +83,7 @@ Browser extension (MV3) · AI-чат із діями (tool calling + confirm) ·
 
 | Milestone | Тижні | Год | Зміст | Реліз |
 |---|---|---|---|---|
-| M0 Setup | 1 | 12–15 | monorepo, CI, compose, Google OAuth + allowlist, `UserSettings`, staging «hello», нічний `pg_dump`; **spike версій**: NestJS 12 (fallback 11) з `nestjs-zod` і `@thallesp/nestjs-better-auth`, BullMQ 6 ↔ `@nestjs/bullmq` (інакше власна обгортка) — див. `04-architecture.md` §7 | |
+| M0 Setup | 1 | 12–15 | monorepo, CI, compose, Google OAuth + allowlist, `UserSettings`, deploy «hello» (R0-середовище на prod-хості), нічний `pg_dump`; **spike версій**: NestJS 12 (fallback 11) з `nestjs-zod` і `@thallesp/nestjs-better-auth`, BullMQ 6 ↔ `@nestjs/bullmq` (інакше власна обгортка) — див. `04-architecture.md` §7 | |
 | M1 Tracker | 2–3 | 22–26 | applications CRUD + delete, Kanban, Table, Detail, timeline, transitions + idempotency + undo, ручна вакансія, next action, Today/Overdue | |
 | M2 Migration | 4 | 11–14 | CSV import (preview → commit), експорт CSV/JSON, IDOR-тести applications, полірування для щоденного використання | **R0** (кінець тижня 4) |
 | M3 Capture & Notify | 5–6 | 30–35 | outbox + worker, URL fetcher + JSON-LD, notification centre, stale-підказки, custom reminders, email+password+reset, contacts, interviews, Playwright E2E | |
@@ -100,16 +101,16 @@ Browser extension (MV3) · AI-чат із діями (tool calling + confirm) ·
 
 | Епік | Зміст | Реліз |
 |---|---|---|
-| E01 Foundation | monorepo + turbo, tsconfig base, ESLint (+ boundaries) + Prettier, compose, env-валідація, CI, gitleaks, PR template, `.env.example`, README skeleton, ADR-001…003 | R0 |
+| E01 Foundation | monorepo + turbo, tsconfig base, ESLint (+ boundaries) + Prettier, compose, env-валідація, CI, gitleaks, PR template, `.env.example`, README skeleton, ADR index (000–021 уже записані) | R0 |
 | E02 Auth | Better Auth + Prisma, Google OAuth, allowlist, guards, `@CurrentUser`, сесії; R1: email+password, reset, HIBP, re-auth, revoke-all | R0 / R1 |
 | E03 Applications | схема + partial unique, CRUD + delete, transitions + events + idempotency + undo, Kanban, Table, Detail, notes, бейдж днів; R1: stale-підказки, edit/delete events, contacts | R0 / R1 |
-| E04 Jobs & Capture | Job/UserJob, ручна форма, paste text; R1: safe fetcher (SSRF), JSON-LD mapper, політика доменів, JobDraft UI | R0 / R1 |
-| E05 Reminders & Notifications | next action → Reminder, Today/Overdue; R1: worker-доставка `ReminderDelivery`, notification centre, email + шаблони, digest, preferences, quiet hours | R0 / R1 |
+| E04 Jobs & Capture | Job (PRIVATE), ручна форма, paste text; R1: `UserJob` + backfill, safe fetcher (SSRF), JSON-LD mapper, політика доменів, JobDraft UI | R0 / R1 |
+| E05 Reminders & Notifications | next action → Reminder, Today/Overdue/Upcoming; R1: worker-доставка `ReminderDelivery`, notification centre, email + шаблони, digest, preferences, quiet hours | R0 / R1 |
 | E06 Import / Export | CSV import session (preview → commit), синхронний експорт; R1: async `DataExport` zip | R0 / R1 |
 | E07 Profile & Skills | profile CRUD, skills seed (≥300 з aliases), autocomplete, languages, preferences, hard filters | R1 |
 | E08 Documents | presigned PUT (підписані `Content-Length`/`Content-Type`), magic bytes, карантин, версії, parse у child process, download URLs, видалення | R1 |
 | E09 Jobs search, Dashboard, Analytics | search_vector migration, JobQuery, фільтри (без зарплати), keyset pagination, dashboard, funnel, channels | R1 |
-| E10 Platform & Ops | outbox + relay, AuditLog, export/delete pipelines, demo (ефемерний), Sentry, pino redaction, Prometheus/Grafana, CSP/headers, backups + restore-тест | R0 (backups) / R1 |
+| E10 Platform & Ops | outbox + relay, AuditLog, export/delete pipelines, demo (ефемерний), Sentry, pino redaction, Prometheus/Grafana, CSP/headers, backups + restore-тест | R0 (backups, CSP/headers, Sentry api) / R1 |
 | E11 Ingestion | adapter contract, Greenhouse/Lever/Ashby/DOU, normalization, salary parser, курси НБУ, salary-фільтр/сортування Jobs, dedup, source health, admin | R2 |
 | E12 Matching | skill extraction, компоненти, агрегація, golden set, тригери, UI, feedback, saved searches, OTel | R2 |
 | E13 AI | AIProvider, task registry, executor, AiRun, бюджети (`AiUsageDaily`, `AiGlobalUsageDaily`), `extract-job` (R1), решта задач, evals, embeddings | R1 / R3 |

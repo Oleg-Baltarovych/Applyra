@@ -13,7 +13,8 @@ Applyra is built with Claude Code. The configuration is committed so the workflo
 | `.claude/skills/*` | body loads only when invoked | flow commands and procedures |
 
 Token budget rules: agent descriptions are always in context, so they are one short sentence each; flow commands use
-`disable-model-invocation: true` (zero cost until you type them); heavy tools run only on explicit triggers (see Guardrails).
+`disable-model-invocation: true` (zero cost until you type them) — except `/review` and `/verify`, which other flows
+call as steps and therefore must stay model-invocable; heavy tools run only on explicit triggers (see Guardrails).
 
 ## Team — who owns what
 | Agent | Model | Access | Owns | Never does |
@@ -39,7 +40,7 @@ The main session is the orchestrator (subagents cannot spawn subagents): it rout
 | `/verify` | Definition-of-Done gate | none (runs lint/typecheck/test + DoD checklist) |
 | `/ship [issue]` | commit + PR | verify → drafts → **you approve** → commit/push/PR |
 | `/bugfix <bug>` | bugs | failing test first → fix → review |
-| `/e2e <flow>` | critical flows only (SPEC §14) | Playwright planner → generator → healer |
+| `/e2e <flow>` | critical flows only (`docs/spec/11-testing.md` §6) | Playwright planner → generator → healer |
 | `/security-audit [scope]` | before each release, after auth/capture/upload/AI land | security-reviewer + Trail of Bits + built-in `/security-review` |
 | `/sync-context` | after structural changes | none (refreshes `docs/CONTEXT.md`) |
 

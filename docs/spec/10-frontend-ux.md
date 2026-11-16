@@ -6,7 +6,7 @@
 
 | Реліз | Основна навігація (sidebar; на mobile — bottom bar) | Додатково |
 |---|---|---|
-| R0 | `Applications · Today · Settings` | Import CSV (з Applications і Settings), Cmd+K (тільки пошук по заявках + «Add application») |
+| R0 | `Applications · Today · Settings` | Import CSV (з Applications і Settings), Cmd+K (тільки пошук по заявках + «Add application»; R0 optional — може зсунутися в R1) |
 | R1 | `Dashboard · Jobs · Applications · Analytics · Profile (вкл. Documents) · Settings` | дзвіночок Notifications, «Try demo» на sign-in, Cmd+K з jobs |
 | R2 | + `Discover` у Jobs (каталог, saved searches) | match-бейджі в Jobs |
 | R3 | AI-дії в контексті (Job detail, Application detail), окремого пункту немає | — |
@@ -217,7 +217,7 @@ export const applicationKeys = {
 
 | Клавіша | Дія | Реліз |
 |---|---|---|
-| `⌘/Ctrl + K` | command palette | R0 |
+| `⌘/Ctrl + K` | command palette | R0 optional (може зсунутися в R1) |
 | `C` | create application | R0 |
 | `N` | new job (Add job dialog, FR-JOB-01) | R0 |
 | `/` | фокус на пошук поточного списку | R0 |

@@ -17,7 +17,7 @@ Use **Better Auth** as the auth library, integrated through **`@thallesp/nestjs-
 - **Account linking:** a Google account is linked to an existing user only when the email is verified on **both** sides (`email_verified` from Google and a verified local email); otherwise linking is refused.
 - Sessions: HttpOnly cookies; cookie/CSRF/domain rules in ADR 008.
 - Registration in R0 restricted by an allowlist (review S-06).
-- Fallback if the community package proves unsuitable: mount the Better Auth handler at the Express level (SPEC §7).
+- Fallback if the community package proves unsuitable: mount the Better Auth handler at the Express level (`docs/spec/04-architecture.md` §7).
 
 ## Alternatives considered
 - Passport + custom session handling — more code in a security-critical area.

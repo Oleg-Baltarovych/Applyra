@@ -1,12 +1,13 @@
 # 011. Hosting: Hetzner VPS + Docker Compose + Caddy + Terraform
 
 - Status: Accepted
+- Amended: 2026-11-16 — cost aligned with `docs/spec/12-infra-ops.md` §2 (~€20–30/month with two VPSs from R1; R0 runs one VPS); R0 has no staging (decision D-01)
 - Date: 2026-11-16
 
 ## Context
 - Open question Q3: cheap VPS (option A) vs AWS (option B, "AWS on the CV").
-- Review I-01: AWS (ECS Fargate, RDS, ElastiCache, S3, CloudFront) ≈ $60–100/month vs VPS ≈ $8/month — for a solo portfolio project with MVP-scale load.
-- Environments: `local` → `staging` (auto-deploy from `main`) → `production` (tag `v*`) (see `docs/spec/12-infra-ops.md`).
+- Review I-01: AWS (ECS Fargate, RDS, ElastiCache, S3, CloudFront) ≈ $60–100/month vs VPS-based setup ≈ €20–30/month all-in (VPSs, R2, domains, LLM cap) — for a solo portfolio project with MVP-scale load.
+- Environments: `local` → `staging` (auto-deploy from `main`) → `production` (tag `v*`) from R1. In R0 there is no staging: the only deployed environment is the future production host (real data, allowlist = author), auto-deployed from `main` (see `docs/spec/12-infra-ops.md` §1).
 - Same-site domains are required (ADR 008).
 
 ## Decision
@@ -25,6 +26,6 @@ Run staging and production on a **Hetzner VPS** with **Docker Compose**, **Caddy
 - Managed Postgres — extra cost; Postgres in a container with tested backups is sufficient at this scale.
 
 ## Consequences
-- Positive: ~$8/month; full control; reproducible via Terraform; simple Compose mental model shared with local dev.
+- Positive: ~€20–30/month from R1 (prod + staging VPS), one VPS in R0; full control; reproducible via Terraform; simple Compose mental model shared with local dev.
 - Negative / trade-offs: single host = single point of failure; we own OS patching, backups and monitoring; no "AWS" line on the CV.
-- Follow-ups: none open for hosting. Resolved in `docs/spec/12-infra-ops.md`: WAL-G into R2 with RPO/RTO and monthly restore test (I-02); nightly `pg_dump` in R0; squawk + `lock_timeout` (I-03); GitHub Environments + OIDC (S-16/17); admin UIs via Tailscale only (S-19); SPA on Cloudflare Pages; staging and production on two VPSs.
+- Follow-ups: none open for hosting. Resolved in `docs/spec/12-infra-ops.md`: WAL-G into R2 with RPO/RTO and monthly restore test (I-02); nightly `pg_dump` in R0; squawk + `lock_timeout` (I-03); GitHub Environments + OIDC (S-16/17); admin UIs via Tailscale only (S-19); SPA on Cloudflare Pages; staging and production on two VPSs from R1 (synthetic-only staging on a separate registrable domain).

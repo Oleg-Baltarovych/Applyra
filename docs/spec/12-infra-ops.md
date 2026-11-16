@@ -18,12 +18,15 @@
 
 Секрети не шаряться між середовищами; R2-токени — scoped на bucket(и) свого середовища.
 
+**R0 (рішення D-01):** staging немає. Єдине розгорнуте середовище — R0-середовище на **майбутньому prod-хості** (реальні дані автора, sign-up allowlist = автор; колонка «production»: prod OAuth client, buckets `applyra-prod-*`, нічний `pg_dump`); deploy — auto з `main` без approval, smoke = health-check. Synthetic-only staging (окремий registrable domain, окремий VPS, ADR 011) і release flow через тег `v*` + approval з'являються в R1 (`docs/plans/mvp-tasks.md` M5-20). Таблиця вище описує стан з R1.
+
 ## 2. Хостинг (рішення 3, I-01)
 
 | Компонент | Вибір |
 |---|---|
-| Compute | Hetzner Cloud VPS: prod — 4 vCPU / 8 GB (CX32-клас), staging — 2 vCPU / 4 GB (CX22-клас) |
+| Compute | Hetzner Cloud VPS: prod — 4 vCPU / 8 GB (CX32-клас), staging (з R1) — 2 vCPU / 4 GB (CX22-клас) |
 | Оркестрація | Docker Compose (`infra/compose/compose.yml` + `compose.prod.yml` / `compose.staging.yml`). R0: caddy, api, postgres, redis, backup-cron — **без worker**; R1+: + worker, safe-fetcher, observability |
+| Queue/cache store | Compose-сервіс `redis`, image `valkey/valkey:9` (Redis-protocol compatible; `04-architecture.md` §7.2). Той самий image — у local compose і Testcontainers для BullMQ; «Redis» у спеці — назва протоколу/сервісу |
 | Edge / TLS | Caddy (ACME, HTTP/2-3) перед API на VPS |
 | SPA | **Cloudflare Pages** з custom domain `app.<domain>` (same-site з `api.<domain>`, ADR 008/011); security headers — файл `_headers` (`09-security-privacy.md` §9.1). Fallback: статика в Caddy image на VPS з тими самими headers |
 | DNS / CDN | Cloudflare (proxied), Hetzner firewall: 80/443 тільки з Cloudflare IP ranges |
@@ -37,12 +40,12 @@
 | Стаття | €/міс |
 |---|---|
 | Prod VPS + volume 40 GB | ~8–10 |
-| Staging VPS (можна вимикати поза роботою) | ~4–5 |
+| Staging VPS (з R1; можна вимикати поза роботою) | ~4–5 |
 | R2 (≤ 10 GB free, egress безкоштовний; бекапи 14 днів) | 0–2 |
 | Домени (2) | ~2 |
 | Cloudflare (DNS, Pages), Sentry (developer), Tailscale (personal), email (free tier) | 0 |
 | LLM (cap у провайдера) | 5–10 |
-| **Разом** | **~20–30** (AWS-варіант v2.0: ~$60–100) |
+| **Разом** | **~20–30** з R1 (два VPS); R0 (один VPS, без staging і LLM) — ~10–15 (AWS-варіант v2.0: ~$60–100) |
 
 ## 3. Домени, мережа, доступ
 
@@ -62,7 +65,7 @@
 | `edge` | caddy, api | тільки Caddy публікує 80/443 |
 | `internal` (`internal: true`) | api, worker, migrate, postgres, redis, prometheus, exporters, grafana | без виходу в інтернет; api/worker виходять назовні через `outbound` |
 | `outbound` | api, worker | вихід до LLM, email, R2, джерел ingestion (R2) |
-| `fetch-rpc` | worker, safe-fetcher | тільки RPC worker → fetcher [R1] |
+| `fetch-rpc` | worker, safe-fetcher, prometheus | тільки RPC worker → fetcher [R1]; api сюди не входить (capture — через чергу `capture`, ADR 021); prometheus — лише scrape safe-fetcher `:9466` |
 | `egress` | safe-fetcher | тільки інтернет; host-правила `DOCKER-USER` дропають з її subnet трафік до RFC 1918, `100.64/10`, `169.254/16`, IP хоста (SSRF — `09-security-privacy.md` §5) |
 
 - Postgres, Redis, Prometheus, Grafana, Bull Board, `/metrics` — **не публікуються** на host-порти й не маршрутизуються Caddy.
@@ -121,7 +124,7 @@
 ## 7. Конфігурація і секрети
 
 - `.env.example` у корені — повний список змінних з коментарями; реальні `.env*` не комітяться.
-- Конфіг валідується Zod на старті кожного процесу (`apps/api/src/config/env.schema.ts`, `apps/web` — тільки `VITE_*` публічні значення); відсутня/невалідна змінна → процес падає з переліком помилок.
+- Конфіг валідується Zod на старті кожного процесу (`apps/api/src/platform/config/env.schema.ts`, `apps/web` — тільки `VITE_*` публічні значення); відсутня/невалідна змінна → процес падає з переліком помилок.
 - Prod/staging секрети — у GitHub Environment secrets; deploy job рендерить `/opt/applyra/.env` (`0600`, owner deploy-user) на хості через Tailscale SSH.
 - DB: `DATABASE_URL` — роль `applyra_app` (api, worker); `MAINTENANCE_DATABASE_URL` — роль `applyra_maintenance` (тільки `migrate` і retention-jobs; worker відкриває окремий pool лише для них).
 - Feature flags середовища — теж через валідований конфіг (`CAPTURE_ENABLED`, `DEMO_ENABLED`, `AI_MODE=live|stub|off`, ліміти AI — `07-ai.md` §4).
@@ -133,7 +136,7 @@
 | Workflow | Тригер | Стадії |
 |---|---|---|
 | `ci.yml` | PR, push `main` | install (`--frozen-lockfile`) → lint/typecheck → unit → integration + IDOR → contracts → migrations check → build images → supply chain → e2e (R1+). Gates — `11-testing.md` §9 |
-| `deploy-staging.yml` | push `main` (після `ci.yml`) | push images у GHCR (`sha-<commit>`) → deploy staging (§8.2) + SPA build у Cloudflare Pages (preview → staging) → smoke |
+| `deploy-staging.yml` | push `main` (після `ci.yml`); у R0 цілиться в R0-середовище на prod-хості (§1) | push images у GHCR (`sha-<commit>`) → deploy staging (§8.2) + SPA build у Cloudflare Pages (preview → staging) → smoke |
 | `release.yml` | tag `v*` | retag того самого image digest, що пройшов staging → approval → deploy prod → smoke → Sentry release |
 | `nightly.yml` | cron | k6 + Lighthouse на staging, header check, `pnpm audit`, AI evals (R1+ manual/nightly) |
 | `restore-test.yml` | monthly cron + manual | §5 |
@@ -170,7 +173,7 @@ Rollback: redeploy попереднього image digest (схема суміс�
 
 ## 10. Метрики (P-17)
 
-- `prom-client` експонує `/metrics` на **внутрішніх портах**: api `:9464`, worker `:9465`, safe-fetcher `:9466` — тільки мережа `internal`.
+- `prom-client` експонує `/metrics` на **внутрішніх портах**: api `:9464`, worker `:9465` — мережа `internal`; safe-fetcher `:9466` — мережа `fetch-rpc` (Prometheus приєднаний до неї тільки для scrape; safe-fetcher у `internal` не входить, §3.2).
 - Exporters: `node_exporter` (+ textfile collector для бекапів), `postgres_exporter` (роль `metrics`), `redis_exporter`. Prometheus scrape 15 с, retention 30 днів.
 - Labels без `userId`, email, raw path — тільки route templates і обмежені enum-и.
 
@@ -245,7 +248,7 @@ Rollback: redeploy попереднього image digest (схема суміс�
 | Error rate (5xx) | < 1% за 1 год | Prometheus |
 | Доступність (prod) | ≥ 99.5% / міс (з R1) | uptime-check |
 | Reminder delivery lag | p95 ≤ 60 s | `reminder_delivery_lag_seconds` |
-| Capture (URL → draft, без LLM) | p95 ≤ 6 s | `bullmq_job_duration_seconds{queue="capture"}` |
+| Capture (URL → draft, без LLM) | p95 ≤ 6 s (API чекає job ≤ 6 с, далі `504 CAPTURE_TIMEOUT`, ADR 021) | `bullmq_job_duration_seconds{queue="capture"}` |
 | Outbox lag | p95 ≤ 5 s | `outbox_lag_seconds` |
 | RPO / RTO | R0: 24 год / 4 год; R1+: 5 хв / 2 год | §5 restore test |
 | Account deletion | ≤ 24 год | job duration + e2e (`11-testing.md` §6) |

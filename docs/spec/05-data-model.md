@@ -61,7 +61,7 @@ betterAuth({
     additionalFields: {
       role:      { type: ["USER", "ADMIN"], required: false, defaultValue: "USER", input: false },
       deletedAt: { type: "date", required: false, input: false },
-      demoExpiresAt: { type: "date", required: false, input: false }, // demo ⇔ NOT NULL (§4.7)
+      demoExpiresAt: { type: "date", required: false, input: false }, // R1 · demo ⇔ NOT NULL (§4.7)
     },
   },
   session: { freshAge: 60 * 10 }, // «fresh session» ≤ 10 хв для DELETE /me, POST /me/export (S-05)
@@ -85,7 +85,7 @@ betterAuth({
 
 Перейменування відносно v2.0: `WorkExperience` → `Experience`, `UserLanguage` → `Language`, `MatchResult` → `MatchScore`. `Document` розділено на `Document` + `DocumentVersion` (A-20).
 
-R0-схема — це блоки §4.1 та §4.2. Back-relation поля на `User`, позначені `// R1+`, додаються міграцією разом із відповідною моделлю.
+R0-схема — це блоки §4.1 та §4.2 **без позначених елементів**. Правило: кожне поле, relation, back-relation, індекс чи enum, прив'язане до пізнішого релізу, має маркер `// R1` / `// R2` / `// R3` (під маркером `// R1+` — усі рядки до кінця блоку) і додається міграцією, що вводить модель/функцію цього релізу. R0-міграція містить лише непозначені елементи; значення enum-ів з блоку R0 створюються повністю (без `ALTER TYPE` пізніше). Те саме стосується таблиці FK §5 і raw SQL §7 (теги релізу в заголовках/рядках).
 
 ## 4. `schema.prisma`
 
@@ -110,7 +110,7 @@ enum Role               { USER ADMIN }
 enum WorkMode           { REMOTE HYBRID ONSITE }
 enum EmploymentType     { FULL_TIME PART_TIME CONTRACT FREELANCE INTERNSHIP }
 enum Seniority          { INTERN JUNIOR MIDDLE SENIOR LEAD PRINCIPAL }
-enum SalaryPeriod       { HOUR MONTH YEAR }
+enum SalaryPeriod       { HOUR DAY WEEK MONTH YEAR }   // DAY/WEEK — нормалізація salary (08 §7.3)
 enum CefrLevel          { A1 A2 B1 B2 C1 C2 NATIVE }
 enum JobVisibility      { PUBLIC PRIVATE }
 enum JobStatus          { OPEN CLOSED UNKNOWN }
@@ -123,13 +123,13 @@ enum ApplicationEventType {
   CREATED STATUS_CHANGED NOTE MESSAGE_LOGGED FOLLOW_UP_SENT
   INTERVIEW_SCHEDULED INTERVIEW_COMPLETED OFFER_RECEIVED ARCHIVED UNARCHIVED
 }
-enum EventActor         { USER IMPORT SYSTEM }        // activity (P-04) = тільки USER
+enum EventActor         { USER IMPORT SYSTEM }        // activity (P-04, 03 §1.1) = USER + IMPORT; SYSTEM — ні
 enum ReminderKind       { FOLLOW_UP INTERVIEW DEADLINE CUSTOM }
 enum ReminderSource     { NEXT_ACTION INTERVIEW_AUTO MANUAL }   // A-05
 enum ReminderStatus     { PENDING DONE CANCELLED }    // snooze = новий dueAt, статус лишається PENDING
 enum NotificationChannel { IN_APP EMAIL TELEGRAM }
 enum ImportStatus       { PREVIEWED COMMITTED EXPIRED FAILED }
-enum AiProfilePart      { SUMMARY EXPERIENCE SKILLS LANGUAGES PREFERENCES DOCUMENTS }
+enum AiProfilePart      { SUMMARY EXPERIENCE SKILLS LANGUAGES PREFERENCES DOCUMENTS } // R1 (UserSettings.aiAllowedProfileParts)
 
 // ---------- R1 ----------
 enum JobHiddenReason    { NOT_RELEVANT SALARY LOCATION SENIORITY COMPANY DUPLICATE OTHER }
@@ -186,7 +186,7 @@ model User {
   image         String?
   role          Role      @default(USER)
   deletedAt     DateTime? @db.Timestamptz(3)   // soft delete → hard delete ≤ 24 год (09)
-  demoExpiresAt DateTime? @db.Timestamptz(3)   // R1: ефемерний demo-користувач, TTL 24 год (не з базового списку — рішення §4.7)
+  demoExpiresAt DateTime? @db.Timestamptz(3)   // R1 · ефемерний demo-користувач, TTL 24 год (не з базового списку — рішення §4.7)
   createdAt     DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt     DateTime  @updatedAt @db.Timestamptz(3)
 
@@ -221,7 +221,7 @@ model User {
   matchFeedback      MatchFeedback[]
 
   @@index([deletedAt])
-  @@index([demoExpiresAt])
+  @@index([demoExpiresAt]) // R1
 }
 
 /// R0 · Better Auth
@@ -297,7 +297,7 @@ model Job {
   ownerId           String?          @db.Uuid    // NOT NULL ⇔ PRIVATE (CHECK §7.4)
   owner             User?            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   companyId         String?          @db.Uuid    // R1; private capture тільки лінкує існуючу Company, не створює
-  company           Company?         @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  company           Company?         @relation(fields: [companyId], references: [id], onDelete: SetNull) // R1
   companyNameRaw    String
   title             String
   normalizedTitle   String                       // lower + f_unaccent, обчислюється на запис
@@ -315,7 +315,8 @@ model Job {
   salaryPeriod      SalaryPeriod?
   salaryIsGross     Boolean?
   salaryMinUsdMonth Int?                         // R2 · 08-ingestion-matching.md (null до R2)
-  salaryMaxUsdMonth Int?
+  salaryMaxUsdMonth Int?                         // R2
+  salaryFxDate      DateTime?        @db.Date    // R2 · дата курсу НБУ, використаного для *UsdMonth (08 §7.3, ADR 019)
   originalUrl       String?                      // як ввів користувач
   canonicalUrl      String?                      // без utm/trailing slash, нормалізований host (A-08)
   status            JobStatus        @default(OPEN)
@@ -339,10 +340,10 @@ model Job {
 
   @@unique([ownerId, canonicalUrl], where: raw("visibility = 'PRIVATE'"), map: "job_owner_canonical_url_private_uq") // A-08/P-12
   @@index([ownerId, createdAt])                                   // A-09
-  @@index([visibility, status, publishedAt(sort: Desc)])
-  @@index([canonicalUrl])                                         // capture-дедуп проти PUBLIC
-  @@index([dedupKey])
-  @@index([companyId])
+  @@index([visibility, status, publishedAt(sort: Desc)])          // R1 (каталог)
+  @@index([canonicalUrl])                                         // R2 · capture-дедуп проти PUBLIC
+  @@index([dedupKey])                                             // R2
+  @@index([companyId])                                            // R1
   @@index([searchVector], type: Gin, map: "job_search_gin")       // R1
   @@index([normalizedTitle(ops: raw("gin_trgm_ops"))], type: Gin, map: "job_title_trgm") // R1
 }
@@ -370,7 +371,7 @@ model Application {
   salaryCurrency      String?            @db.Char(3)
   salaryPeriod        SalaryPeriod?                        // A-22
   cvDocumentVersionId String?            @db.Uuid          // R1
-  cvDocumentVersion   DocumentVersion?   @relation(fields: [cvDocumentVersionId], references: [id], onDelete: SetNull)
+  cvDocumentVersion   DocumentVersion?   @relation(fields: [cvDocumentVersionId], references: [id], onDelete: SetNull) // R1
   coverLetter         String?                              // R1
   notes               String?                              // markdown
   importKey           String?                              // P-06: sha256(norm company|norm role|appliedAt::date)
@@ -390,7 +391,7 @@ model Application {
   @@index([userId, lastActivityAt])
   @@index([userId, createdAt])
   @@index([jobId])
-  @@index([cvDocumentVersionId])
+  @@index([cvDocumentVersionId]) // R1
 }
 
 /// R0 · timeline (append-mostly; редагування — див. 06-api.md)
@@ -421,7 +422,7 @@ model Reminder {
   applicationId String?               @db.Uuid
   application   Application?          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   interviewId   String?               @db.Uuid    // R1
-  interview     Interview?            @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  interview     Interview?            @relation(fields: [interviewId], references: [id], onDelete: Cascade) // R1
   source        ReminderSource                    // A-05
   kind          ReminderKind
   title         String
@@ -438,7 +439,7 @@ model Reminder {
   @@unique([applicationId, source], where: raw("source = 'NEXT_ACTION' AND status = 'PENDING'"), map: "reminder_next_action_active_uq") // P-05
   @@index([userId, status, dueAt])
   @@index([status, dueAt])
-  @@index([interviewId])
+  @@index([interviewId]) // R1
 }
 
 /// R0 · CSV preview → commit (P-06)
@@ -1034,12 +1035,12 @@ Prisma Client не повертає й не фільтрує `searchVector` і `
 | `Session/Account.userId` → User | Cascade | auth-дані |
 | `UserSettings/CareerProfile.userId` → User | Cascade | 1:1 |
 | `Job.ownerId` → User | Cascade | приватні вакансії власника |
-| `Job.companyId` → Company | SetNull | Company — глобальний довідник |
+| `Job.companyId` → Company | SetNull | R1 · Company — глобальний довідник |
 | `Application.userId` → User | Cascade | |
 | `Application.jobId` → Job | **SetNull** | snapshot `companyName`/`roleTitle` лишається |
-| `Application.cvDocumentVersionId` → DocumentVersion | **SetNull** | видалення CV не видаляє заявку |
+| `Application.cvDocumentVersionId` → DocumentVersion | **SetNull** | R1 · видалення CV не видаляє заявку |
 | `ApplicationEvent.applicationId` → Application, `.userId` → User | Cascade | |
-| `Reminder.userId/applicationId/interviewId` | Cascade | |
+| `Reminder.userId/applicationId/interviewId` | Cascade | `interviewId` — R1 |
 | `ReminderDelivery.reminderId` → Reminder | Cascade | |
 | `Interview.userId/applicationId` | Cascade | |
 | `Contact.userId` → User | Cascade | |
@@ -1050,7 +1051,7 @@ Prisma Client не повертає й не фільтрує `searchVector` і `
 | `SkillAlias.skillId` → Skill | Cascade | |
 | `Document.userId`, `DocumentVersion.documentId/userId` | Cascade | об'єкти storage видаляє job (за `DOCUMENT_DELETED`) |
 | `UserJob.userId/jobId` | Cascade | |
-| `ImportSession/IdempotencyRecord/DataExport/Notification/NotificationPreference.userId` | Cascade | |
+| `ImportSession/IdempotencyRecord/DataExport/Notification/NotificationPreference.userId` | Cascade | `DataExport`, `Notification*` — R1 |
 | `AiRun/AiUsageDaily.userId` → User | Cascade | |
 | `DeletedUserTombstone`, `AiGlobalUsageDaily` | — (без FK) | tombstone має пережити `User`; глобальні рядки без власника |
 | `SavedSearch/MatchScore/MatchFeedback.userId` → User | Cascade | |
@@ -1059,6 +1060,8 @@ Prisma Client не повертає й не фільтрує `searchVector` і `
 | `SourceJob.jobId` → Job | SetNull | публікація лишається для повторного лінкування |
 | `AuditLog.userId` → User | **SetNull** | журнал переживає видалення; `ip` анонімізується (§8) |
 | `OutboxEvent.userId` | — (без FK) | подія видалення має пережити `User` |
+
+R0-міграція створює лише FK моделей R0 (§3) без колонок з маркером релізу; решта рядків — з міграцією відповідної моделі.
 
 PostgreSQL виконує referential actions з правами власника таблиці, тому `SetNull` на `AuditLog` працює навіть тоді, коли в app-ролі відібрано `UPDATE` (§7.5).
 
@@ -1089,7 +1092,7 @@ PostgreSQL виконує referential actions з правами власника
 
 ### 6.5. Outbox claim (A-04)
 
-Relay виконує три кроки: claim (коротка транзакція) → commit → publish у BullMQ (`jobId = eventId:consumer`) → `UPDATE publishedAt`. Під час publish транзакція не тримається.
+Relay виконує три кроки: claim (коротка транзакція) → commit → publish у BullMQ (`jobId = <eventId>_<consumer>`; BullMQ забороняє `:` у custom jobId) → `UPDATE publishedAt`. Під час publish транзакція не тримається.
 
 ```sql
 UPDATE "OutboxEvent" SET "lockedUntil" = now() + interval '30 seconds', "lockedBy" = $1,
@@ -1099,7 +1102,7 @@ WHERE id IN (
   WHERE "publishedAt" IS NULL AND "nextAttemptAt" <= now()
     AND ("lockedUntil" IS NULL OR "lockedUntil" < now())
     AND "attempts" < "maxAttempts"
-  ORDER BY "nextAttemptAt" LIMIT 100
+  ORDER BY "nextAttemptAt" LIMIT 50
   FOR UPDATE SKIP LOCKED)
 RETURNING *;
 ```
@@ -1157,46 +1160,51 @@ ALTER TABLE "Job" ADD COLUMN "search_vector" tsvector GENERATED ALWAYS AS (
 
 ### 7.4. CHECK constraints (Prisma їх не моделює і не вважає drift)
 
+Кожен CHECK додається міграцією, що створює його колонки (тег релізу в коментарі).
+
 ```sql
--- Job: власник є тоді й лише тоді, коли вакансія приватна
+-- R0 · Job: власник є тоді й лише тоді, коли вакансія приватна
 ALTER TABLE "Job" ADD CONSTRAINT job_visibility_owner_chk
   CHECK ((visibility = 'PRIVATE') = ("ownerId" IS NOT NULL));
--- Job: діапазон зарплати
+-- R0 · Job: діапазон зарплати
 ALTER TABLE "Job" ADD CONSTRAINT job_salary_chk
   CHECK ("salaryMin" IS NULL OR "salaryMax" IS NULL OR "salaryMin" <= "salaryMax");
--- Application: суми без валюти не мають сенсу
+-- R0 · Application: суми без валюти не мають сенсу
 ALTER TABLE "Application" ADD CONSTRAINT application_salary_currency_chk
   CHECK (("salaryExpected" IS NULL AND "salaryOffered" IS NULL) OR "salaryCurrency" IS NOT NULL);
--- UserSettings: розумні межі й quiet hours парою
+-- R0 · UserSettings: розумні межі
 ALTER TABLE "UserSettings" ADD CONSTRAINT user_settings_ranges_chk
   CHECK ("staleFollowUpDays" BETWEEN 1 AND 90 AND "staleDaysAfterInterview" BETWEEN 1 AND 90
          AND "staleGhostDays" BETWEEN 1 AND 180);
+-- R1 · UserSettings: quiet hours парою
 ALTER TABLE "UserSettings" ADD CONSTRAINT user_settings_quiet_hours_chk
   CHECK (("quietHoursStart" IS NULL) = ("quietHoursEnd" IS NULL)
          AND coalesce("quietHoursStart", 0) BETWEEN 0 AND 1439
          AND coalesce("quietHoursEnd", 0) BETWEEN 0 AND 1439);
--- Reminder: прив'язка NEXT_ACTION обов'язково до заявки, INTERVIEW_AUTO — до інтерв'ю
+-- R0 · Reminder: прив'язка NEXT_ACTION обов'язково до заявки
 ALTER TABLE "Reminder" ADD CONSTRAINT reminder_source_link_chk
-  CHECK (("source" <> 'NEXT_ACTION' OR "applicationId" IS NOT NULL)
-     AND ("source" <> 'INTERVIEW_AUTO' OR "interviewId" IS NOT NULL));
--- Interview: тривалість
+  CHECK ("source" <> 'NEXT_ACTION' OR "applicationId" IS NOT NULL);
+-- R1 · INTERVIEW_AUTO — до інтерв'ю (окремий CHECK разом із колонкою interviewId)
+ALTER TABLE "Reminder" ADD CONSTRAINT reminder_interview_link_chk
+  CHECK ("source" <> 'INTERVIEW_AUTO' OR "interviewId" IS NOT NULL);
+-- R1 · Interview: тривалість
 ALTER TABLE "Interview" ADD CONSTRAINT interview_duration_chk CHECK ("durationMin" BETWEEN 5 AND 600);
--- Experience: дати
+-- R1 · Experience: дати
 ALTER TABLE "Experience" ADD CONSTRAINT experience_dates_chk
   CHECK ("endDate" IS NULL OR "endDate" >= "startDate") ;
 ALTER TABLE "Experience" ADD CONSTRAINT experience_current_chk
   CHECK (NOT "isCurrent" OR "endDate" IS NULL);
--- UserSkill: рівень 1..5
+-- R1 · UserSkill: рівень 1..5
 ALTER TABLE "UserSkill" ADD CONSTRAINT user_skill_level_chk CHECK ("level" BETWEEN 1 AND 5);
--- DocumentVersion: ліміт 5 MB (дублює перевірку upload)
+-- R1 · DocumentVersion: ліміт 5 MB (дублює перевірку upload)
 ALTER TABLE "DocumentVersion" ADD CONSTRAINT document_version_size_chk
   CHECK ("sizeBytes" > 0 AND "sizeBytes" <= 5242880);
--- MatchScore / SourceJob: діапазони
+-- R2 · MatchScore / SourceJob: діапазони
 ALTER TABLE "MatchScore" ADD CONSTRAINT match_score_range_chk
   CHECK (("score" IS NULL OR "score" BETWEEN 0 AND 100) AND "confidence" BETWEEN 0 AND 1);
 ALTER TABLE "SourceJob" ADD CONSTRAINT source_job_link_confidence_chk
   CHECK ("linkConfidence" IS NULL OR "linkConfidence" BETWEEN 0 AND 1);
--- OutboxEvent: attempts не перевищує maxAttempts
+-- R1 · OutboxEvent: attempts не перевищує maxAttempts
 ALTER TABLE "OutboxEvent" ADD CONSTRAINT outbox_attempts_chk CHECK ("attempts" <= "maxAttempts");
 ```
 
@@ -1231,7 +1239,7 @@ CREATE INDEX job_embedding_hnsw ON "JobEmbedding" USING hnsw ("embedding" vector
 | `Contact`, `Interview.interviewers` | PII третіх осіб | видаляються з користувачем; окремо видаляються через `DELETE /contacts/:id` |
 | `DocumentVersion` | файл, `parsedText` | hard delete рядка + об'єкта storage (подія `DOCUMENT_DELETED`); `REJECTED` → видалення через 24 год |
 | `ImportSession` | `rows` | `rows = NULL` на commit або при `expiresAt`; рядок видаляється через 7 днів |
-| `DataExport` | zip-файл | об'єкт видаляється при `expiresAt` (24 год), статус `EXPIRED`; рядок — 30 днів |
+| `DataExport` | zip-файл | застосунок видаляє об'єкт при `expiresAt` (24 год), статус `EXPIRED`; bucket lifecycle 48 год — лише страховка; рядок — 30 днів |
 | `IdempotencyRecord` | `responseJson` | `expiresAt` (24 год) → видалення |
 | `Notification` | title/body | `createdAt` > 90 днів → видалення |
 | `ReminderDelivery` | — | `createdAt` > 90 днів → видалення |

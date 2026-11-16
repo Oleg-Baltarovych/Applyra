@@ -70,6 +70,7 @@
 | 502 | `AI_PROVIDER_ERROR` | помилка AI-провайдера після retry |
 | 502 | `UPSTREAM_ERROR` | помилка storage чи іншої залежності після retry |
 | 504 | `AI_TIMEOUT` | AI-провайдер не відповів за timeout задачі |
+| 504 | `CAPTURE_TIMEOUT` | job черги `capture` не завершився за 6 с (worker зайнятий/недоступний; ADR 021) → UI: «Try again» або «Paste the job text instead». Timeout самої сторінки — `CAPTURE_UNAVAILABLE` |
 | 503 | `UNAVAILABLE` | `/health/ready` не готовий, режим обслуговування |
 
 `/api/auth/*` повертає коди Better Auth (напр. enumeration-safe `INVALID_CREDENTIALS`, `09-security-privacy.md` §4.3); `SIGNUP_CLOSED` і `ACCOUNT_LINK_REQUIRES_VERIFICATION` мапляться hook-ами Better Auth у цей каталог. Ролі без доступу (admin) отримують `404`, окремого коду для ролі немає.
@@ -129,7 +130,6 @@ R0 включає тільки Google OAuth, ручну форму ваканс�
 | GET | `/api/auth/callback/google` | public | FR-AUTH | Better Auth; linking тільки при `email_verified` (S-07) |
 | POST | `/api/auth/sign-out` | user | FR-AUTH | |
 | GET | `/api/auth/get-session` | user | FR-AUTH | |
-| POST | `/api/auth/revoke-sessions` | user | FR-AUTH | revoke-all (A-17), audit `SESSIONS_REVOKED` з R1 |
 | GET | `/health/live` · `/health/ready` | public | — | liveness / readiness (DB, Redis; деталі — `12-infra-ops.md` §9) |
 | GET | `/me` | user | FR-AUTH | user + settings |
 | PATCH | `/me/settings` | user | FR-PROF | R0: `timezone`, `staleFollowUpDays`, `staleDaysAfterInterview`, `staleGhostDays`, `hotkeysEnabled` |
@@ -155,10 +155,8 @@ R0 включає тільки Google OAuth, ручну форму ваканс�
 | POST | `/applications/:id/transitions` | user | FR-APP | `{ toStatus, occurredAt?, note? }` → event `STATUS_CHANGED`; той самий статус або архівна заявка → `409 INVALID_TRANSITION`. **IK** |
 | POST | `/applications/:id/archive` · `/unarchive` | user | FR-APP | unarchive може дати `409 CONFLICT_ACTIVE_APPLICATION`. Undo архівування = `unarchive` |
 | POST | `/applications/bulk/archive` | user | FR-APP | `{ ids[≤100] }` → `{ archived, notFound[] }`. IK |
-| POST | `/applications/:id/stale/dismiss` | user | FR-APP | `{ until }` → `staleDismissedUntil` |
 | GET | `/applications/:id/events` | user | FR-APP | timeline за `occurredAt`, cursor |
 | POST | `/applications/:id/events` | user | FR-APP | `NOTE`, `MESSAGE_LOGGED`, `FOLLOW_UP_SENT` (backdated `occurredAt`) |
-| PATCH | `/applications/:id/events/:eventId` | user | FR-APP | `payload` / `occurredAt`. Для `STATUS_CHANGED` — тільки `occurredAt` |
 | DELETE | `/applications/:id/events/:eventId` | user | FR-APP | **Undo transition (R0):** видаляє останній `STATUS_CHANGED`, якщо він створений ≤ 15 с тому, і повертає статус до `fromStatus` (toast 10 с + запас на мережу, P-07). R1 (FR-APP-15): останній `STATUS_CHANGED` — без обмеження часу; `NOTE`/`MESSAGE_LOGGED`/`FOLLOW_UP_SENT`. Не останній / вікно минуло / `CREATED` → `409 CONFLICT_STATE` |
 | GET | `/applications/export?format=csv\|json` | user | FR-IMP | синхронний стрім (P-09), фільтри як у списку; CSV з захистом від formula injection (S-10) |
 
@@ -166,8 +164,8 @@ R0 включає тільки Google OAuth, ручну форму ваканс�
 
 | Method | Path | Auth | FR | Notes |
 |---|---|---|---|---|
-| GET | `/reminders?range=today\|overdue\|upcoming` | user | FR-REM | межі дня — у `UserSettings.timezone`. Today/Overdue в R0 |
-| POST | `/reminders` | user | FR-REM | `{ applicationId?, kind, title, dueAt, asNextAction? }`. `asNextAction = true` замінює активний `NEXT_ACTION` і оновлює кеш `Application.nextAction*` (P-05). IK |
+| GET | `/reminders?range=today\|overdue\|upcoming` | user | FR-REM | межі дня — у `UserSettings.timezone`. R0: Today / Overdue / Upcoming (7 днів), FR-REM-02 |
+| POST | `/reminders` | user | FR-REM | `{ applicationId?, kind, title, dueAt, asNextAction? }`. `asNextAction = true` замінює активний `NEXT_ACTION` і оновлює кеш `Application.nextAction*` (P-05). **R0:** лише next action — `applicationId` обов'язковий, `asNextAction = true`, інакше `400 VALIDATION_ERROR`; `source = MANUAL` (без `asNextAction`, `applicationId?`) — R1, FR-REM-04. IK |
 | PATCH | `/reminders/:id` | user | FR-REM | `title`, `dueAt`, `status: DONE\|CANCELLED` |
 | POST | `/reminders/:id/snooze` | user | FR-REM | `{ preset: "1d"\|"3d" }` або `{ until }` → новий `dueAt`, `snoozeCount++` |
 
@@ -188,13 +186,14 @@ R0 включає тільки Google OAuth, ручну форму ваканс�
 | GET | `/api/auth/verify-email` | public | FR-AUTH | |
 | GET | `/api/auth/list-sessions` | user | FR-AUTH | |
 | POST | `/api/auth/revoke-session` | user | FR-AUTH | одна сесія |
+| POST | `/api/auth/revoke-sessions` | user | FR-AUTH-09 | revoke-all (A-17), audit `SESSIONS_REVOKED` |
 | PATCH | `/me/settings` | user | FR-AUTH | + `quietHours`, `aiEnabled`, `aiAllowedProfileParts` (audit `AI_SETTINGS_CHANGED`) |
 | POST | `/me/export` | fresh, no-demo | FR-PRIV | async → `DataExport` (`202`, `{ id }`) |
 | GET | `/me/exports/:id` | user | FR-PRIV | статус + `downloadUrl` (signed, ≤ 5 хв) при `READY` |
 | DELETE | `/me` | fresh | FR-PRIV | `deletedAt` + `USER_DELETION_REQUESTED`, усі сесії revoke → `202` |
 | POST | `/demo/session` | public | FR-DEMO | створює ефемерного demo-користувача (TTL 24 год) + сесію |
 | GET | `/jobs` | user | FR-DISC | `JobQuery`: `q`, фільтри без зарплати (FR-DISC-03), `sort=newest\|relevance`; PUBLIC + власні PRIVATE |
-| POST | `/jobs/capture` | user, no-demo | FR-JOB | `{ url?, text? }` → `JobDraft` (не зберігає). SSRF-safe fetch → JSON-LD → `extract-job` (AI executor). Помилка → `422 CAPTURE_UNAVAILABLE`. IK |
+| POST | `/jobs/capture` | user, no-demo | FR-JOB | `{ url?, text? }` → `JobDraft` (не зберігає). Синхронний для клієнта: API ставить job у чергу `capture` (`jobId` = hash(userId + canonicalUrl)) і чекає ≤ 6 с; worker: SSRF-safe fetch через `safe-fetcher` → JSON-LD → `extract-job` (AI executor) (ADR 021). Помилка → `422 CAPTURE_UNAVAILABLE`; очікування > 6 с → `504 CAPTURE_TIMEOUT` (не зберігається в IK, retry дозволений). IK |
 | PATCH | `/jobs/:id/user-state` | user | FR-DISC | `{ saved?, hidden?, hiddenReason?, note? }` → `UserJob` (A-21); `viewedAt` ставить `GET /jobs/:id` |
 | GET | `/companies/search?q=` | user | FR-JOB | trigram autocomplete |
 | GET · PATCH | `/profile` | user | FR-PROF | CareerProfile + preferences + hardFilters |
@@ -215,6 +214,8 @@ R0 включає тільки Google OAuth, ручну форму ваканс�
 | PATCH · DELETE | `/interviews/:id` | user | FR-INT | |
 | GET | `/interviews?from=&to=` | user | FR-INT | діапазон ≤ 92 дні (A-17) |
 | GET | `/interviews/:id/ics` | user | FR-INT | `text/calendar` (A-17: було `/:id.ics`) |
+| POST | `/applications/:id/stale/dismiss` | user | FR-APP-14 | `{ until }` → `staleDismissedUntil` |
+| PATCH | `/applications/:id/events/:eventId` | user | FR-APP-15 | `payload` / `occurredAt`. Для `STATUS_CHANGED` — тільки `occurredAt` |
 | GET · POST | `/contacts` | user | FR-APP | cursor, `q` |
 | GET · PATCH · DELETE | `/contacts/:id` | user | FR-APP | |
 | POST | `/applications/:id/contacts` | user | FR-APP | `{ contactId }` (A-17) |
