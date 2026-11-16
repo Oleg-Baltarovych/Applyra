@@ -13,8 +13,8 @@
 | Frontend (Testing Library + MSW) | Kanban hooks, optimistic rollback, import mapping, hotkeys | + jobs, filters, dashboard | — | — |
 | Security negative fixtures | headers, CSV formula injection | + SSRF, upload | — | prompt-injection fixtures |
 | Migration tests | так | так | так | так |
-| E2E (Playwright) | — (ручний smoke-чекліст) | PR проти compose + post-merge smoke на staging | + ingestion flow | + AI flow (stub) |
-| Performance (k6, Lighthouse) | — | nightly на staging | так | так |
+| E2E (Playwright) | — (ручний smoke-чекліст) | PR проти compose + post-merge `@smoke` проти `compose.ci.yml`; live smoke — when hosting (ADR 022) | + ingestion flow | + AI flow (stub) |
+| Performance (k6, Lighthouse) | — | nightly проти `compose.ci.yml` (optional, орієнтир) | так | так |
 | AI evals | — | `extract-job` (manual/nightly) | — | golden sets (див. `07-ai.md`) |
 
 R0 свідомо легший (P-01): unit + integration + IDOR для applications; e2e — з R1.
@@ -34,7 +34,7 @@ R0 свідомо легший (P-01): unit + integration + IDOR для applicat
 
 | Елемент | Правило |
 |---|---|
-| Контейнери | **один набір на прогін**: Vitest `globalSetup` стартує Postgres 18, Redis, MinIO (Testcontainers), передає URL через `provide()`; `teardown` зупиняє |
+| Контейнери | **один набір на прогін**: Vitest `globalSetup` стартує Postgres 18, Redis, MinIO (`cgr.dev/chainguard/minio`, pinned digest — як у local compose, `12-infra-ops.md` §1) (Testcontainers), передає URL через `provide()`; `teardown` зупиняє |
 | Template DB | у `globalSetup`: `prisma migrate deploy` + raw SQL у `applyra_template` один раз |
 | DB на worker | кожен Vitest worker: `CREATE DATABASE test_w<id> TEMPLATE applyra_template`; між test-файлами — drop + re-clone (~100 ms) → ізоляція per file |
 | Redis | окремий BullMQ `prefix` і key prefix на worker (`t<id>:`); `FLUSHDB`-подібне очищення по prefix між файлами |
@@ -94,7 +94,7 @@ Fetcher тестується з інжектованим DNS resolver і лок�
 | Тест | Реліз |
 |---|---|
 | Security headers API (точні значення з `09-security-privacy.md` §9.2) — Supertest | R0 |
-| Security headers SPA (snapshot `_headers` для Cloudflare Pages; у compose — Caddy з тими самими значеннями) — HTTP-запит у e2e job; nightly на staging | R0 (compose), R1 (staging) |
+| Security headers SPA (snapshot `_headers` для Cloudflare Pages; у compose — Caddy з тими самими значеннями) — HTTP-запит у CI проти `compose.prod.yml`/`compose.ci.yml`; nightly на hosted — when hosting | R0 (compose), when hosting (live) |
 | CORS: чужий Origin → без `Access-Control-Allow-Origin`; мутація без/з чужим `Origin` → 403 `CSRF_ORIGIN`; non-JSON мутація → 415 | R0 |
 | Cookies: `__Host-` префікс, `HttpOnly; Secure; SameSite=Lax` | R0 |
 | Сесії: absolute TTL, revoke на зміні пароля, `FRESH_SESSION_REQUIRED` після 10 хв | R0/R1 |
@@ -128,8 +128,8 @@ Fetcher тестується з інжектованим DNS resolver і лок�
 | Контекст | Що | Де |
 |---|---|---|
 | PR | повний набір критичних flows | `docker compose -f compose.ci.yml up` у CI: production images, Caddy з реальними headers, Mailpit, stub LLM, stub capture-сайт |
-| Post-merge (`main`) | `@smoke`: health, sign-in seeded synthetic user, відкрити Applications, створити й видалити заявку, headers | staging після deploy (див. `12-infra-ops.md` §8) |
-| Release (`v*`) | `@smoke` проти production з окремим synthetic-акаунтом, що видаляє свої дані | production |
+| Post-merge (`main`) | `@smoke`: health, demo sign-in (synthetic), відкрити Applications, створити й видалити заявку, headers | `compose.ci.yml` у CI; when hosting — також hosted-середовище після deploy (`12-infra-ops.md` §8) |
+| Release (`v*`) — when hosting | `@smoke` проти production з окремим synthetic-акаунтом, що видаляє свої дані | production |
 
 **Критичні flows:**
 1. Sign up (email+password) → onboarding → add job (paste) → create application → drag до INTERVIEW → Undo → «Move to…» до INTERVIEW (keyboard) → next action → з'являється в Today → export CSV.
@@ -145,10 +145,10 @@ Fetcher тестується з інжектованим DNS resolver і лок�
 
 | Інструмент | Сценарій | Коли |
 |---|---|---|
-| k6 | read API (`GET /applications`, detail, Today), search (`GET /jobs?q=`), transitions; дані — synthetic seed (2 000 applications, 20 000 jobs) | nightly на staging [R1] |
-| Lighthouse CI | Dashboard, Applications (LCP, CLS, TBT), mobile + desktop | nightly на staging [R1] |
+| k6 | read API (`GET /applications`, detail, Today), search (`GET /jobs?q=`), transitions; дані — synthetic seed (2 000 applications, 20 000 jobs) | nightly проти `compose.ci.yml` у CI [R1, optional]; when hosting — staging |
+| Lighthouse CI | Dashboard, Applications (LCP, CLS, TBT), mobile + desktop | nightly проти `compose.ci.yml` у CI [R1, optional]; when hosting — staging |
 
-Thresholds = NFR з `12-infra-ops.md` §12; порушення → червоний nightly + alert у Telegram. Staging містить тільки synthetic data.
+Thresholds = NFR з `12-infra-ops.md` §12; на CI-runner — орієнтир (не prod-подібне залізо), порушення → червоний nightly + issue. Staging (when hosting) містить тільки synthetic data.
 
 ## 8. Coverage policy
 
@@ -171,13 +171,14 @@ Thresholds = NFR з `12-infra-ops.md` §12; порушення → червон�
 | security headers, CORS, cookies | PR | ✓ | ✓ | ✓ |
 | SSRF / upload fixtures | PR | — | ✓ | ✓ |
 | frontend tests + contrast check | PR | ✓ | ✓ | ✓ |
-| build (images) | PR | ✓ | ✓ | ✓ |
+| build (images, multi-arch amd64 + arm64) | PR | ✓ | ✓ | ✓ |
+| deploy-ready: `docker compose config` (`compose.yml`, `compose.prod.yml`), `terraform fmt -check` + `validate`, actionlint (ADR 022) | PR | ✓ | ✓ | ✓ |
 | supply chain: `pnpm audit`, osv-scanner, gitleaks, CodeQL | PR | ✓ | ✓ | ✓ |
 | Playwright e2e проти compose | PR | — | ✓ | ✓ |
-| smoke на staging (R0 — R0-середовище на prod-хості, `12-infra-ops.md` §1) | push `main` | health-check | `@smoke` | `@smoke` |
-| smoke на production | tag `v*` | — | `@smoke` | `@smoke` |
-| k6 + Lighthouse | nightly | — | ✓ | ✓ |
-| restore test (`12-infra-ops.md` §5) | monthly | — | ✓ | ✓ |
+| `@smoke` проти `compose.ci.yml` | push `main` | — | ✓ | ✓ |
+| smoke на hosted staging/production | push `main` / tag `v*` | when hosting | when hosting | when hosting |
+| k6 + Lighthouse (проти `compose.ci.yml`) | nightly | — | optional | ✓ |
+| restore test (`12-infra-ops.md` §5) | R0/R1: ручний local restore; monthly — when hosting | ручний (local) | ручний (local) | when hosting |
 | AI evals | manual / nightly | — | `extract-job` | golden sets |
 
 Обов'язкові checks налаштовані як branch protection на `main`; nightly/monthly не блокують merge, але відкривають issue при падінні.
@@ -197,3 +198,4 @@ Thresholds = NFR з `12-infra-ops.md` §12; порушення → червон�
 - P-01 — піраміда по релізах: R0 легший (unit + integration + IDOR для applications), e2e з R1.
 - A-09 — IDOR-перевірка приватних jobs у генерованому suite.
 - Нове — таблиця CI gates по релізах, coverage policy з порогом тільки для domain, політика flaky-тестів.
+- ADR 022 — без hosted-середовищ: smoke/k6/Lighthouse проти `compose.ci.yml`, live smoke і monthly restore test — when hosting; новий gate deploy-ready (compose config, terraform validate, actionlint, multi-arch build).

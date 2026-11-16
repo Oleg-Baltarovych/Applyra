@@ -61,7 +61,7 @@ betterAuth({
     additionalFields: {
       role:      { type: ["USER", "ADMIN"], required: false, defaultValue: "USER", input: false },
       deletedAt: { type: "date", required: false, input: false },
-      demoExpiresAt: { type: "date", required: false, input: false }, // R1 · demo ⇔ NOT NULL (§4.7)
+      demoExpiresAt: { type: "date", required: false, input: false }, // R0 (ADR 022) · demo ⇔ NOT NULL (§4.7)
     },
   },
   session: { freshAge: 60 * 10 }, // «fresh session» ≤ 10 хв для DELETE /me, POST /me/export (S-05)
@@ -188,7 +188,7 @@ model User {
   image         String?
   role          Role      @default(USER)
   deletedAt     DateTime? @db.Timestamptz(3)   // soft delete → hard delete ≤ 24 год (09)
-  demoExpiresAt DateTime? @db.Timestamptz(3)   // R1 · ефемерний demo-користувач, TTL 24 год (не з базового списку — рішення §4.7)
+  demoExpiresAt DateTime? @db.Timestamptz(3)   // R0 (ADR 022; purge — R1) · ефемерний demo-користувач, TTL 24 год (не з базового списку — рішення §4.7)
   createdAt     DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt     DateTime  @updatedAt @db.Timestamptz(3)
 
@@ -223,7 +223,7 @@ model User {
   matchFeedback      MatchFeedback[]
 
   @@index([deletedAt])
-  @@index([demoExpiresAt]) // R1
+  @@index([demoExpiresAt]) // R0 (ADR 022)
 }
 
 /// R0 · Better Auth

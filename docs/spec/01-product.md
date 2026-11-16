@@ -15,7 +15,7 @@ CRM для відгуків, пояснюваний match score і AI-поміч
 
 | # | Ціль | Що означає на практиці |
 |---|---|---|
-| G1 | **Портфоліо** | Задеплоєний production-grade проєкт: demo, тести, CI, ADR, README. Показує те, чого не видно в CRUD: ingestion, черги, дедуп, пошук, AI зі structured output, безпеку, observability |
+| G1 | **Портфоліо** | Deploy-ready production-grade проєкт (ADR 022: не хоститься постійно; запуск однією командою локально або в Codespaces): demo sign-in, тести, CI, ADR, README з відео. Показує те, чого не видно в CRUD: ingestion, черги, дедуп, пошук, AI зі structured output, безпеку, observability |
 | G2 | **Dogfooding** | Автор шукає роботу (Full-stack, remote, UA-ринок: Djinni, DOU, robota.ua, LinkedIn). R0 замінює Google Sheets за 3–4 тижні (див. `02-releases.md` §2) — головне джерело фідбеку |
 | G3 | **Комерційний потенціал** | Опція. Не впливає на рішення до R3. Монетизація, billing, тарифи — поза scope |
 
@@ -59,7 +59,7 @@ Blueprint v1.0 описував повний комерційний SaaS; для
 
 | # | Рішення | Чому |
 |---|---|---|
-| D1 | MVP розбито на **R0 → R1 → R2 → R3**, кожен реліз окремо деплоїться і корисний сам по собі | 25 пунктів «Must Have» у v1.0 — не MVP |
+| D1 | MVP розбито на **R0 → R1 → R2 → R3**, кожен реліз окремо deploy-ready (ADR 022) і корисний сам по собі | 25 пунктів «Must Have» у v1.0 — не MVP |
 | D2 | **Ручний capture** (форма + paste text) — R0; **URL capture (JSON-LD → LLM)** — R1. Автоматичні адаптери — R2 і тільки для джерел із публічним API/feed | Продукт корисний без інтеграцій; SSRF-fetcher не влазить у R0 (P-01, P-11) |
 | D3 | Перші адаптери: **Greenhouse, Lever, Ashby** (публічні job board API) і **DOU** (RSS). Djinni, robota.ua, work.ua, LinkedIn — **тільки user-initiated capture** за політикою доменів (див. `03-functional.md` FR-JOB) | Немає відомого публічного API для пошукача. ToS-check — див. `08-ingestion-matching.md` |
 | D4 | **Matching v1 детермінований** (словник навичок + ваги); семантика (pgvector) — R3 | Тестується unit-тестами, пояснюється без LLM |
@@ -87,7 +87,7 @@ Blueprint v1.0 описував повний комерційний SaaS; для
 | React | Kanban з optimistic updates і keyboard DnD, складні фільтри, Cmd+K, a11y |
 | PostgreSQL | FTS + trigram, partial unique indexes, `EXPLAIN ANALYZE` в ADR про пошук |
 | Черги / async (push-платформа) | outbox, ідемпотентні consumers, retries/backoff, DLQ, source health |
-| Docker | Compose локально і в prod (VPS), multi-stage images |
+| Docker | Compose локально + `compose.prod.yml` (deploy-ready, перевірка в CI), multi-stage non-root multi-arch images, devcontainer |
 | Prometheus / Grafana | метрики API/черг/AI cost, dashboards і alerts as code — з R1 (P-17) |
 
 ### 4.2. Прогалини, які проєкт закриває
@@ -98,7 +98,7 @@ Blueprint v1.0 описував повний комерційний SaaS; для
 | Security | SSRF-захист, IDOR, CSP/headers, signed URLs, redaction, supply-chain checks (див. `09-security-privacy.md`) |
 | Prisma | Prisma 7 + raw SQL для FTS/partial indexes, drift-check у CI |
 | BullMQ | worker, job schedulers, ідемпотентні jobs, Bull Board за admin-доступом |
-| GitHub Actions | CI gates, deploy, pinned actions, OIDC/Environments (див. `12-infra-ops.md`) |
+| GitHub Actions | CI gates, multi-arch image build, Terraform validate, deploy workflow (dispatch-only), pinned actions, OIDC/Environments (див. `12-infra-ops.md`) |
 | LLM-інтеграція | structured output + Zod, evals, prompt-injection захист, бюджети (див. `07-ai.md`) |
 
 ### 4.3. Сигнали для рекрутера / інтерв'юера
@@ -112,14 +112,15 @@ Blueprint v1.0 описував повний комерційний SaaS; для
 | LLM-інтеграція | structured output, evals, cost control |
 | Security mindset | IDOR suite, SSRF, signed URLs, CSP |
 | Інженерна культура | CI gates, Testcontainers, E2E, conventional commits, README, ADR |
-| DevOps | Docker, CI/CD, Terraform (VPS, DNS, R2), Prometheus/Grafana |
+| DevOps | Docker, CI/CD, Terraform (VPS, DNS, R2) — deploy-ready і перевірено в CI, Prometheus/Grafana as code |
 
 ## 5. Портфоліо-артефакти
 
-### 5.1. До R1
+### 5.1. До R1 (базова версія — наприкінці R0, ADR 022)
 
-- [ ] Live URL + **«Try demo»** без реєстрації: ефемерний demo-користувач на відвідувача (див. `03-functional.md` FR-DEMO).
-- [ ] README: абзац «що це», GIF/скріншоти, архітектурна діаграма, stack, «Key engineering decisions» з посиланнями на ADR, локальний запуск.
+- [ ] Без live URL (ADR 022): локальний запуск однією командою (`cp .env.example .env && docker compose up -d && pnpm dev`) + `pnpm db:seed`; **«Try demo»** без Google credentials — ефемерний demo-користувач (див. `03-functional.md` FR-DEMO).
+- [ ] Devcontainer + кнопка «Open in GitHub Codespaces» (квота відвідувача, не автора).
+- [ ] README: абзац «що це», GIF/скріншоти + коротке відео (1–2 хв), архітектурна діаграма, stack, «Key engineering decisions» з посиланнями на ADR, локальний запуск, «Deploy-ready» (що перевіряється в CI, варіанти хостингу — `12-infra-ops.md` §2.1).
 - [ ] `docs/adr/` — ADR актуальні (перелік — `docs/adr/README.md`).
 - [ ] Зелений CI badge, відкриті issues/roadmap.
 - [ ] Публічний репозиторій з першого дня: gitleaks у CI, тільки синтетичні дані у фікстурах і seed.
@@ -132,7 +133,7 @@ Blueprint v1.0 описував повний комерційний SaaS; для
 
 Секція **Projects** (не Work Experience; не видавати за комерційний досвід). Шаблон — **заповнювати тільки реальними даними після реалізації**:
 
-> **Applyra** — job-search workspace · [live] · [GitHub]
+> **Applyra** — job-search workspace · [demo video] · [GitHub] · [Open in Codespaces] (live — лише якщо колись хоститься, ADR 022)
 > React, NestJS, PostgreSQL, Redis/BullMQ, Prisma, Docker, GitHub Actions, Prometheus/Grafana, [LLM provider]
 > - Designed a modular-monolith backend with a transactional outbox and idempotent BullMQ consumers for job ingestion from [N] public sources.
 > - Built multi-level vacancy deduplication (external ID → canonical URL → fingerprint) and explainable match scoring with confidence for missing data.
@@ -147,7 +148,8 @@ Blueprint v1.0 описував повний комерційний SaaS; для
 |---|---|---|
 | Scope creep → проєкт не доходить до релізу | **висока** | урізаний R0 (~45–55 год), кожен реліз окремо корисний; нові ідеї → `Later` |
 | Pet project з'їдає час пошуку роботи | висока | R0 сам економить час (dogfooding); R1 дає рядок у CV (строки — `02-releases.md` §3) |
-| Втрата реальних даних автора в R0 | середня | нічний `pg_dump` уже в R0 (P-23), експорт CSV/JSON |
+| Втрата реальних даних автора в R0 (дані локально, ADR 022) | середня | локальний `pg_dump`-скрипт + ручний restore у R0 (P-23), експорт CSV/JSON |
+| Без live URL слабше враження на рекрутера | середня | README з відео/GIF, Codespaces, demo sign-in без Google, deploy-ready перевірено в CI; хостинг — `12-infra-ops.md` §2.1 |
 | Джерела закривають доступ / змінюють формат | середня | capture-first, ізольовані адаптери, фікстури, source health, auto-disable |
 | Сайти блокують URL capture | висока | «paste text» — рівноправний шлях; extension — Later |
 | Юридичні претензії джерела | низька | політика доменів (LinkedIn — тільки paste), captured content лишається PRIVATE |
@@ -164,7 +166,8 @@ Blueprint v1.0 описував повний комерційний SaaS; для
 |---|---|---|---|
 | Q1 | Реєстрація в R1 | **Invite-only** (allowlist реєстрації) + ефемерний demo для всіх | `03-functional.md` FR-AUTH, FR-DEMO |
 | Q2 | Мова | Спека — українською; `00-overview.md`, код, README, ADR — англійською | `00-overview.md` |
-| Q3 | Хостинг | **VPS (Hetzner) + Docker Compose + Caddy + Terraform** (VPS, DNS, R2) для API; SPA — Cloudflare Pages на `app.<domain>`. Без AWS | `12-infra-ops.md` |
+| Q3 | Хостинг | Цільова конфігурація: **VPS (Hetzner) + Docker Compose + Caddy + Terraform** (VPS, DNS, R2) для API; SPA — Cloudflare Pages на `app.<domain>`. Без AWS. У R0/R1 **не хоститься** — deploy-ready (ADR 022) | `12-infra-ops.md`, ADR 011, 022 |
+| D-01 | R0-середовище | ~~R0 на майбутньому prod-хості з реальними даними~~ — **superseded ADR 022**: R0 використовується локально; постійного hosted-середовища в R0/R1 немає | ADR 022, `12-infra-ops.md` §1 |
 | Q4 | LLM-провайдер | **Один провайдер** зі schema-enforced structured output за `AIProvider`; вибір — у M4 за результатами golden set | `07-ai.md` |
 | Q5 | Публічний репо | **Так, з першого дня**; gitleaks у CI; тільки синтетичні дані | `11-testing.md`, `12-infra-ops.md` |
 | Q6 | UA-локалізація | **Later**. З R0 — форматування дат/чисел/валют через `Intl` (без хардкоду форматів); i18n-бібліотека — при локалізації | `10-frontend-ux.md` |
@@ -190,3 +193,4 @@ Blueprint v1.0 описував повний комерційний SaaS; для
 - SPEC-REVIEW §4 (1–10), Q1–Q7: §20 «Відкриті питання» → §7 «Прийняті рішення».
 - D7: GHOSTED ставить тільки користувач (P-04).
 - Технічна стаття перенесена після R2 (тема — дедуп/matching, які з'являються в R2).
+- ADR 022: G1/D1 — deploy-ready замість «задеплоєний»; §5.1 без live URL (local + Codespaces + відео); D-01 superseded; ризик «без live URL».

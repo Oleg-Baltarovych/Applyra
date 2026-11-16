@@ -59,7 +59,7 @@
 
 | Контроль | Значення |
 |---|---|
-| Домени | SPA `https://app.<domain>`, API `https://api.<domain>` — same-site (див. `12-infra-ops.md` §3). Staging (з R1, тільки synthetic) — окремий registrable domain; у R0 staging немає (`12-infra-ops.md` §1) |
+| Домени | SPA `https://app.<domain>`, API `https://api.<domain>` — same-site (див. `12-infra-ops.md` §3). Staging (опційно, when hosting; тільки synthetic) — окремий registrable domain. У R0/R1 hosted-середовищ немає (ADR 022, `12-infra-ops.md` §1) |
 | Session cookie | `__Host-applyra.session` (Better Auth `advanced.cookiePrefix`), `HttpOnly; Secure; SameSite=Lax; Path=/`, без `Domain` |
 | Інші cookies | тільки Better Auth (state/PKCE для OAuth), той самий префікс `__Host-` |
 | Origin check | Better Auth `trustedOrigins = [APP_ORIGIN]` для `/api/auth/*`; власний `OriginGuard` для решти мутацій: `POST/PUT/PATCH/DELETE` без `Origin` або з `Origin ∉ allowlist` → 403 `CSRF_ORIGIN` |
@@ -73,7 +73,8 @@
 
 | Метод | Реліз |
 |---|---|
-| Google OAuth (OIDC, PKCE) | [R0] |
+| Google OAuth (OIDC, PKCE) — provider реєструється лише при заданих `GOOGLE_CLIENT_ID/SECRET` | [R0] |
+| Demo sign-in (`POST /demo/session`, FR-DEMO-01) — вхід без Google для local/Codespaces за `DEMO_ENABLED`; на публічному хості — тільки з контролями §11 | [R0] (anti-abuse — [R1]) |
 | Sign-up allowlist (`AUTH_SIGNUP_ALLOWLIST` — список email; решта: Google OAuth → redirect на `errorCallbackURL` = `/sign-in` з `?error=SIGNUP_CLOSED`, прямий API sign-up (email, R1) → 403 `SIGNUP_CLOSED`). `callbackURL`/`errorCallbackURL` Better Auth перевіряє проти `trustedOrigins` (без open redirect) | [R0] |
 | Email + password, email verification, reset password | [R1] |
 | Invite-only / публічна реєстрація | [R1] — див. `02-releases.md` |
@@ -172,7 +173,7 @@ URL capture переїхав у R1 (див. `02-releases.md`). Fetcher — ок�
 
 `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` · `Cache-Control: no-store` на всіх приватних відповідях · HSTS, `nosniff`, `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-site` · без `X-Powered-By` · помилки без stack trace (формат — `06-api.md`).
 
-Тест: точні значення headers — integration + nightly на staging (див. `11-testing.md` §5).
+Тест: точні значення headers — integration + nightly проти `compose.ci.yml`; nightly на hosted-середовищі — when hosting (див. `11-testing.md` §5).
 
 ## 10. Логи та redaction
 
@@ -188,7 +189,9 @@ pino `redact` (censor `[REDACTED]`), єдиний список у `apps/api/src/
 
 Шифрування на рівні застосунку: Telegram chat id, токени інтеграцій — AES-256-GCM, ключ `APP_ENCRYPTION_KEY` з key id (ротація без перешифрування старих записів одразу).
 
-## 11. Demo-режим (S-15, рішення 7) [R1]
+## 11. Demo-режим (S-15, рішення 7) [R0 local / R1]
+
+**R0 (ADR 022):** «Try demo» — вхід без Google для local/Codespaces; діють рядки «Модель», «Ізоляція», «Сесія»; решта — R1. Увімкнення — `DEMO_ENABLED` (env schema): `true` у `.env.example`, у `NODE_ENV=production` дозволено лише з налаштованим Turnstile (R1), інакше процес не стартує — demo без anti-abuse не може потрапити на публічний хост. Demo-сесія не обходить allowlist для реальних акаунтів: створюється лише demo-`User` з `demoExpiresAt`, без `Account`. У R0 немає uploads/capture/email, тож список «Вимкнено» поки нічого не блокує; purge — R1 (локально demo-користувачі накопичуються до M5-13).
 
 | Контроль | Правило |
 |---|---|
@@ -210,7 +213,7 @@ pino `redact` (censor `[REDACTED]`), єдиний список у `apps/api/src/
 | S3 documents | CV-файли, усі `DocumentVersion` | до видалення | `DeleteObjects` за prefix `documents/<userId>/` + `quarantine/<userId>/`, включно з noncurrent versions, якщо bucket versioning увімкнено | так |
 | S3 exports | `DataExport` zip | посилання й об'єкт 24 год (`DataExport.expiresAt`, видаляє застосунок); bucket lifecycle 48 год — страховка | cleanup при `expiresAt` + явне видалення в delete pipeline; lifecycle — backstop | так |
 | Redis / BullMQ | job payloads (тільки id, без PII), rate-limit лічильники | completed 24 год, failed 7 днів | `removeOnComplete/Fail` за віком; ключі `*:<userId>` видаляються pipeline | так |
-| Backups (WAL-G, pg_dump) | повна копія БД | 14 днів, далі expire (lifecycle) | автоматичне закінчення; після restore — повторне застосування tombstones | ні — зникає ≤ 14 днів (зазначено в privacy policy) |
+| Backups (local `pg_dump` автора; when hosting — WAL-G, pg_dump у R2) | повна копія БД | 14 днів / 14 файлів, далі expire (lifecycle / ротація скрипта) | автоматичне закінчення; після restore — повторне застосування tombstones | ні — зникає ≤ 14 днів (зазначено в privacy policy) |
 | Логи (docker json-file) | метадані запитів, redacted | 14 днів (ротація) | ротація | ні — тільки userId, без контенту |
 | Sentry | помилки, `user.id` без email/IP (`sendDefaultPii: false`, `beforeSend` scrub) | 30 днів | retention Sentry; за запитом — delete by user id | частково (ручний запит) |
 | `AiRun`, `AiUsageDaily` | task, model, tokens, cost, input hash (без сирого тексту) | 90 днів | cron + Cascade | так |
@@ -263,7 +266,7 @@ pino `redact` (censor `[REDACTED]`), єдиний список у `apps/api/src/
 | Install scripts | pnpm (версія — `04-architecture.md` §7) блокує lifecycle scripts; allowlist `pnpm.onlyBuiltDependencies` (`prisma`, `@prisma/engines`, `esbuild`, …) у `pnpm-workspace.yaml`; `--frozen-lockfile` |
 | Actions | pinned на повний commit SHA (+ коментар з версією); тільки verified/офіційні або перевірені |
 | Permissions | top-level `permissions: contents: read`; ширші — per job (`packages: write` для build, `security-events: write` для CodeQL) |
-| Environments | `staging`, `production` (required reviewer = автор, тільки теги `v*`), `backup-restore`; секрети тільки в Environment, не в repo-level |
+| Environments | `production` (required reviewer = автор; `deploy-prod.yml` — dispatch-only до hosting), when hosting — + `staging`, `backup-restore`, тільки теги `v*` для prod при staging-flow; секрети тільки в Environment, не в repo-level; у R0/R1 deploy-секретів немає (ADR 022) |
 | OIDC | де провайдер підтримує (Tailscale для deploy-доступу, GHCR через `GITHUB_TOKEN`); інакше короткоживучі scoped токени (R2 token на один bucket) |
 | PR з форків | без секретів (`pull_request`, не `pull_request_target`) |
 | Images | base images pinned digest; non-root user; `npm`/`pnpm` відсутні в runtime image |
@@ -302,3 +305,4 @@ pino `redact` (censor `[REDACTED]`), єдиний список у `apps/api/src/
 - S-19 — `role` (`USER`/`ADMIN`; demo через `demoExpiresAt`), admin + TOTP, внутрішні UI тільки через Tailscale.
 - A-09 — Job access predicate для приватних вакансій.
 - Нове — мапінг OWASP API Top 10 (2023) і теги релізів на контролях.
+- ADR 022 — R0/R1 не hosted: реальні дані третіх осіб не хостяться; demo sign-in у R0 (local) з production-guard на `DEMO_ENABLED`; Google provider опційний; staging/backup-restore Environments — when hosting.

@@ -211,12 +211,12 @@
 
 | ID | R | Вимога | Acceptance criteria |
 |---|---|---|---|
-| FR-DEMO-01 | R1 | «Try demo» без реєстрації створює **окремого demo-користувача на відвідувача** (`User.demoExpiresAt` заповнено) з синтетичними даними (заявки у всіх статусах, події, reminders, вакансії) | • Кожен відвідувач бачить тільки свої demo-дані (IDOR-тест між двома demo) · • Seed — тільки синтетичні дані |
+| FR-DEMO-01 | R0 | «Try demo» без реєстрації створює **окремого demo-користувача на відвідувача** (`User.demoExpiresAt` заповнено) з синтетичними даними (заявки у всіх статусах, події, reminders, вакансії). R0 — це також вхід без Google credentials для local/Codespaces (ADR 022): доступно лише при `DEMO_ENABLED=true` (за замовчуванням у `.env.example`); у `NODE_ENV=production` — тільки разом із FR-DEMO-05 (R1) | • Кожен відвідувач бачить тільки свої demo-дані (IDOR-тест між двома demo) · • Seed — тільки синтетичні дані · • `DEMO_ENABLED=false` → `POST /demo/session` 404, кнопки немає · • `NODE_ENV=production` + `DEMO_ENABLED=true` без Turnstile → процес не стартує |
 | FR-DEMO-02 | R1 | TTL 24 год | • Після TTL demo-користувач і всі його дані видаляються cleanup-job-ом |
 | FR-DEMO-03 | R1 | Обмеження demo | • Вимкнено: uploads, URL capture (fetch), надсилання email, linking/зміна auth · • Спроба → `403 DEMO_FEATURE_DISABLED` («Not available in demo»), без 500 |
 | FR-DEMO-04 | R1 | AI у demo | • Заглушка (фіксовані відповіді) або жорсткий ліміт; глобальний денний ліміт у USD (FR-AI-07) діє |
 | FR-DEMO-05 | R1 | Захист від зловживань | • Turnstile і rate limit створення demo на IP; глобальний ліміт одночасних demo-користувачів → дружнє повідомлення (значення — `09-security-privacy.md` §11) |
-| FR-DEMO-06 | R1 | Банер «Demo — data resets in N h» + CTA «Request access» | • Банер видно на всіх екранах demo |
+| FR-DEMO-06 | R0 / R1 | Банер «Demo — data resets in N h» (R0) + CTA «Request access» (R1) | • Банер видно на всіх екранах demo |
 
 ## Зміни відносно v2.0
 
@@ -239,4 +239,5 @@
 - S-05/S-06/S-07: TTL сесій, re-auth, generic responses, пароль ≥ 12 + HIBP, linking лише з `email_verified`, allowlist у R0 (FR-AUTH-02…10).
 - S-10: formula injection і ліміти імпорту (FR-IMP-04/06).
 - S-15/P-16: ефемерний demo (FR-DEMO-01…06).
+- ADR 022: FR-DEMO-01 і банер FR-DEMO-06 — у R0 (вхід без Google для local/Codespaces, за `DEMO_ENABLED`); обмеження, TTL-purge, anti-abuse — R1.
 - A-15: перевірка «AI вимкнено» в executor (FR-AI-06).
