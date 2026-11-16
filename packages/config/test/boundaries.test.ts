@@ -1,4 +1,5 @@
-// Guards the module-boundary rules of docs/spec/04-architecture.md §4.1 (rules 1–8).
+// Guards the module-boundary rules of docs/spec/04-architecture.md §4.1 (rules 1–8) and the
+// process.env ban outside apps/api/src/platform/config (12-infra-ops.md §7).
 // Lints a fixture tree that mirrors the repo layout with the real root ESLint config and asserts
 // the exact findings per file: each boundaries message ends with "(rule N)".
 import { readdirSync } from 'node:fs';
@@ -29,6 +30,10 @@ const boundary = (rule: number) => ({
   ruleId: 'boundaries/dependencies',
   message: expect.stringContaining(`(rule ${rule})`),
 });
+const processEnv = (ruleId: string) => ({
+  ruleId,
+  message: expect.stringContaining('only apps/api/src/platform/config may read process.env'),
+});
 const cycle = { ruleId: 'import-x/no-cycle', message: expect.stringContaining('cycle') };
 
 const clean = [
@@ -37,6 +42,7 @@ const clean = [
   `${api}/platform/health.ts`, // platform → platform/prisma
   `${api}/platform/prisma/prisma.service.ts`, // platform/prisma → @prisma/client
   `${api}/platform/prisma/transaction.ts`,
+  `${api}/platform/config/load-env.ts`, // the only reader of process.env
   `${api}/platform/prisma/generated/client.ts`,
   `${api}/modules/alpha/index.ts`,
   `${api}/modules/alpha/alpha.service.ts`, // → transaction.ts, own repository, @applyra/contracts
@@ -73,6 +79,20 @@ const violations: [file: string, expected: object[]][] = [
   [`${api}/platform/module-leak.ts`, [boundary(7)]],
   ['packages/contracts/src/api-leak.ts', [boundary(8)]],
   ['packages/contracts/src/core.ts', [boundary(8)]],
+  [`${api}/modules/beta/process-env.ts`, [processEnv('no-restricted-properties')]],
+  [`${api}/platform/process-env-destructure.ts`, [processEnv('no-restricted-properties')]],
+  [`${api}/process-env-import.ts`, [processEnv('no-restricted-imports')]],
+  [`${api}/modules/beta/process-env-global.ts`, [processEnv('no-restricted-syntax')]],
+  [`${api}/modules/beta/process-env-computed.ts`, [processEnv('no-restricted-properties')]],
+  [`${api}/platform/process-env-default-import.ts`, [processEnv('no-restricted-imports')]],
+  [`${api}/platform/process-env-namespace-import.ts`, [processEnv('no-restricted-imports')]],
+  [
+    `${api}/process-env-require.ts`,
+    [
+      { ruleId: '@typescript-eslint/no-require-imports', message: expect.any(String) },
+      processEnv('no-restricted-syntax'),
+    ],
+  ],
 ];
 
 describe('boundaries fixtures', () => {

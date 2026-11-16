@@ -26,7 +26,8 @@ Better Auth · Vitest, Supertest, Testcontainers, Playwright, MSW.
 - `pnpm format:check` — Prettier (docs/ and .claude/ are ignored)
 - `pnpm --filter @applyra/config test` — boundary-rule test (lints `packages/config/test/fixtures/boundaries/`)
 - `pnpm --filter @applyra/e2e e2e` — Playwright; not part of `pnpm test`
-- `docker compose up -d` — postgres, redis, minio, mailpit (from M0-04)
+- `cp .env.example .env` then `docker compose up -d` (repo root; root `compose.yaml` includes `infra/compose/compose.yml`) — postgres, redis (Valkey), minio, mailpit on 127.0.0.1. Agents can't touch `.env`: use `docker compose --env-file .env.example …`. `up --wait` exits 1 because the one-shot `minio-init` exits — use `ps`
+- `pnpm --filter @applyra/api dev` — tsc --watch + node --watch, loads the root env file (`--env-file-if-exists`; process env wins). `start` = plain `node dist/main.js` (process env only, production)
 
 ## Non-negotiable rules
 

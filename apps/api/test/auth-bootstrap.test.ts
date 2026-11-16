@@ -15,6 +15,7 @@ import {
   Session,
   type UserSession,
 } from '../src/modules/auth/index.js';
+import { testEnv } from './support/test-env.js';
 
 const BASE_URL = 'http://localhost:3000';
 const ALLOWED = 'owner@example.com';
@@ -45,7 +46,7 @@ const db: MemoryDb = { user: [], session: [], account: [], verification: [] };
 // Mutable on purpose: a test removes an existing user from the allowlist (the hook reads it per sign-up).
 const allowlist: string[] = [];
 
-// Stand-in for the M0-04 config module: auth config comes from an injected provider via forRootAsync.
+// Test-specific auth config (mutable allowlist, email + password) injected via the forRootAsync seam.
 const TEST_AUTH_CONFIG = Symbol('TEST_AUTH_CONFIG');
 const testAuthConfig: AuthConfig = {
   database: memoryAdapter(db),
@@ -69,6 +70,7 @@ describe('API bootstrap: auth guard, body parsing, sign-up allowlist', () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
         AppModule.forRoot({
+          env: testEnv(),
           auth: {
             imports: [TestConfigModule],
             inject: [TEST_AUTH_CONFIG],

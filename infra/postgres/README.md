@@ -5,8 +5,13 @@
 
 ## How it runs
 
-- **Compose (M0-04):** mount `infra/postgres/init` read-only at `/docker-entrypoint-initdb.d`. The official
-  image runs it once, on the first start with an empty data volume, as `POSTGRES_USER` against `POSTGRES_DB`.
+- **Compose (local, `infra/compose/compose.yml`):** `infra/postgres/init` is mounted read-only at
+  `/docker-entrypoint-initdb.d`. The official image runs it once, on the first start with an empty data volume
+  (`applyra_postgres-data`), as `POSTGRES_USER` against `POSTGRES_DB` (`applyra`). Later password changes in
+  `.env` are NOT applied automatically — re-run it (rotation) inside the running container:
+  `docker compose exec postgres psql -v ON_ERROR_STOP=1 -U postgres -d applyra -f /docker-entrypoint-initdb.d/10-roles.sql`
+  (the container's `APPLYRA_*_PASSWORD` come from its environment; `docker compose up -d` first to recreate it
+  with the new values).
 - **Manually / cloud-init:** `psql -v ON_ERROR_STOP=1 -d applyra -f infra/postgres/init/10-roles.sql` as a superuser.
 - **Testcontainers (M0-07a):** run it before `prisma migrate deploy` — migrations reference `applyra_app`
   (e.g. the AuditLog `REVOKE`, `05-data-model.md` §7.5) and fail on a cluster without the roles.
