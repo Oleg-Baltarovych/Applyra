@@ -24,6 +24,9 @@ Plaintext passwords stay out of logs: the session sets `log_statement = 'none'`,
 `log_min_duration_statement = -1` (server log) and psql `VERBOSITY terse` (psql would otherwise echo a failing
 statement into `docker logs`). `password_encryption = 'scram-sha-256'` → stored verifiers are `SCRAM-SHA-256$…`.
 Verified in M0-03 with server-wide `log_statement = all` and a forced error.
+The statement text is also kept out of `pg_stat_activity` (readable by `metrics` via `pg_monitor`) with
+`track_activities = off`, and out of `pg_stat_statements` (if enabled later) with `pg_stat_statements.track_utility = off`
+— verified: a running statement in a session with `track_activities = off` is invisible to `metrics`.
 
 ## Notes
 

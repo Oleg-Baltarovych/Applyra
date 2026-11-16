@@ -21,6 +21,10 @@ SET log_statement = 'none';
 SET log_min_error_statement = 'panic';
 SET log_min_duration_statement = -1;
 SET password_encryption = 'scram-sha-256';
+-- Keep the statement text (which carries the passwords) out of pg_stat_activity, which `metrics` (pg_monitor)
+-- can read for every session, and out of pg_stat_statements should that extension be enabled later.
+SET track_activities = off;
+SET pg_stat_statements.track_utility = off;
 
 \getenv app_password APPLYRA_APP_PASSWORD
 \getenv maintenance_password APPLYRA_MAINTENANCE_PASSWORD
