@@ -19,7 +19,7 @@ Landing після входу: R0 — `/today` (якщо є due/overdue) іна�
 
 | Route | Екран | Реліз |
 |---|---|---|
-| `/sign-in` | Google (R0); email+password, «Try demo» (R1) | R0 |
+| `/sign-in` | Google (R0); email+password, «Try demo» (R1). Сторінка — `errorCallbackURL` для OAuth: `?error=SIGNUP_CLOSED` → банер «Access is invite-only» (FR-AUTH-02); інший `?error=` → загальне «Sign-in failed, try again» (сирий код не показується); параметр прибирається з URL після показу | R0 |
 | `/onboarding` | §3 | R0 |
 | `/applications` | Kanban (default), `?view=table` — Table | R0 |
 | `/applications/:id` | Detail drawer поверх списку (nested route); на mobile — повна сторінка | R0 |

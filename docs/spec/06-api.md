@@ -48,7 +48,7 @@
 | 403 | `FRESH_SESSION_REQUIRED` | сесії більше 10 хв для дії з позначкою `fresh` (§6); UI просить увійти знову |
 | 403 | `CSRF_ORIGIN` | мутація без `Origin` або з `Origin` поза allowlist (`09-security-privacy.md` §3) |
 | 403 | `DEMO_FEATURE_DISABLED` | функція вимкнена для demo-користувача (FR-DEMO) |
-| 403 | `SIGNUP_CLOSED` | email не в allowlist реєстрації (S-06, FR-AUTH-02) |
+| 403 | `SIGNUP_CLOSED` | email не в allowlist реєстрації — лише прямий API sign-up (`/api/auth/sign-up/email`, R1); Google OAuth callback замість 403 робить redirect на `errorCallbackURL?error=SIGNUP_CLOSED` (§7.1, S-06, FR-AUTH-02) |
 | 404 | `NOT_FOUND` | ресурсу немає або він чужий |
 | 409 | `CONFLICT_ACTIVE_APPLICATION` | порушено `application_user_job_active_uq` (`05-data-model.md` §6.1); `details.existingApplicationId` — UI пропонує заархівувати стару й повторити |
 | 409 | `INVALID_TRANSITION` | `toStatus` = поточний статус або заявка заархівована |
@@ -73,7 +73,7 @@
 | 504 | `CAPTURE_TIMEOUT` | job черги `capture` не завершився за 6 с (worker зайнятий/недоступний; ADR 021) → UI: «Try again» або «Paste the job text instead». Timeout самої сторінки — `CAPTURE_UNAVAILABLE` |
 | 503 | `UNAVAILABLE` | `/health/ready` не готовий, режим обслуговування |
 
-`/api/auth/*` повертає коди Better Auth (напр. enumeration-safe `INVALID_CREDENTIALS`, `09-security-privacy.md` §4.3); `SIGNUP_CLOSED` і `ACCOUNT_LINK_REQUIRES_VERIFICATION` мапляться hook-ами Better Auth у цей каталог. Ролі без доступу (admin) отримують `404`, окремого коду для ролі немає.
+`/api/auth/*` повертає коди Better Auth (напр. enumeration-safe `INVALID_CREDENTIALS`, `09-security-privacy.md` §4.3); `SIGNUP_CLOSED` і `ACCOUNT_LINK_REQUIRES_VERIFICATION` мапляться hook-ами Better Auth у цей каталог. На OAuth callback (`/api/auth/callback/*`) Better Auth не віддає JSON-помилку: код приходить у SPA як `?error=<CODE>` на `errorCallbackURL` (M0-02); статус із таблиці діє лише для програмних викликів. Ролі без доступу (admin) отримують `404`, окремого коду для ролі немає.
 
 ## 4. Idempotency-Key (A-07, S-18)
 
@@ -126,8 +126,8 @@ R0 включає тільки Google OAuth, ручну форму ваканс�
 
 | Method | Path | Auth | FR | Notes |
 |---|---|---|---|---|
-| POST | `/api/auth/sign-in/social` | public | FR-AUTH | `{ provider: "google" }` → redirect URL |
-| GET | `/api/auth/callback/google` | public | FR-AUTH | Better Auth; linking тільки при `email_verified` (S-07) |
+| POST | `/api/auth/sign-in/social` | public | FR-AUTH | `{ provider: "google", callbackURL, errorCallbackURL: "/sign-in" }` → redirect URL |
+| GET | `/api/auth/callback/google` | public | FR-AUTH | Better Auth; linking тільки при `email_verified` (S-07). Помилки — redirect на `errorCallbackURL?error=<CODE>`, не JSON: email поза allowlist → `?error=SIGNUP_CLOSED` (FR-AUTH-02) |
 | POST | `/api/auth/sign-out` | user | FR-AUTH | |
 | GET | `/api/auth/get-session` | user | FR-AUTH | |
 | GET | `/health/live` · `/health/ready` | public | — | liveness / readiness (DB, Redis; деталі — `12-infra-ops.md` §9) |
@@ -181,7 +181,7 @@ R0 включає тільки Google OAuth, ручну форму ваканс�
 
 | Method | Path | Auth | FR | Notes |
 |---|---|---|---|---|
-| POST | `/api/auth/sign-up/email` · `/sign-in/email` | public | FR-AUTH | пароль ≥ 12 + HIBP, allowlist (S-06) |
+| POST | `/api/auth/sign-up/email` · `/sign-in/email` | public | FR-AUTH | пароль ≥ 12 + HIBP, allowlist (S-06): sign-up поза allowlist → 403 `SIGNUP_CLOSED` |
 | POST | `/api/auth/request-password-reset` · `/reset-password` | public | FR-AUTH | однакова відповідь для існуючого і неіснуючого email; після reset усі сесії анулюються |
 | GET | `/api/auth/verify-email` | public | FR-AUTH | |
 | GET | `/api/auth/list-sessions` | user | FR-AUTH | |
@@ -193,7 +193,7 @@ R0 включає тільки Google OAuth, ручну форму ваканс�
 | DELETE | `/me` | fresh | FR-PRIV | `deletedAt` + `USER_DELETION_REQUESTED`, усі сесії revoke → `202` |
 | POST | `/demo/session` | public | FR-DEMO | створює ефемерного demo-користувача (TTL 24 год) + сесію |
 | GET | `/jobs` | user | FR-DISC | `JobQuery`: `q`, фільтри без зарплати (FR-DISC-03), `sort=newest\|relevance`; PUBLIC + власні PRIVATE |
-| POST | `/jobs/capture` | user, no-demo | FR-JOB | `{ url?, text? }` → `JobDraft` (не зберігає). Синхронний для клієнта: API ставить job у чергу `capture` (`jobId` = hash(userId + canonicalUrl)) і чекає ≤ 6 с; worker: SSRF-safe fetch через `safe-fetcher` → JSON-LD → `extract-job` (AI executor) (ADR 021). Помилка → `422 CAPTURE_UNAVAILABLE`; очікування > 6 с → `504 CAPTURE_TIMEOUT` (не зберігається в IK, retry дозволений). IK |
+| POST | `/jobs/capture` | user, no-demo | FR-JOB | `{ url?, text? }` → `JobDraft` (не зберігає). Синхронний для клієнта: API ставить job `capture` у чергу `capture` (`jobId` = `capture-<sha256(userId|canonicalUrl)>`, без `:`, `04-architecture.md` §5.4) і чекає ≤ 6 с; worker: SSRF-safe fetch через `safe-fetcher` → JSON-LD → `extract-job` (AI executor) (ADR 021). Помилка → `422 CAPTURE_UNAVAILABLE`; очікування > 6 с → `504 CAPTURE_TIMEOUT` (не зберігається в IK, retry дозволений). IK |
 | PATCH | `/jobs/:id/user-state` | user | FR-DISC | `{ saved?, hidden?, hiddenReason?, note? }` → `UserJob` (A-21); `viewedAt` ставить `GET /jobs/:id` |
 | GET | `/companies/search?q=` | user | FR-JOB | trigram autocomplete |
 | GET · PATCH | `/profile` | user | FR-PROF | CareerProfile + preferences + hardFilters |

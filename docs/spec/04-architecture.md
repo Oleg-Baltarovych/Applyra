@@ -109,7 +109,7 @@ flowchart TD
   subgraph R1["R1+: transactional outbox"]
     A1[Service] -->|same tx| OB[(OutboxEvent)]
     OB --> RL[Relay у worker: claim → commit → publish → mark]
-    RL -->|jobId = eventId_consumer| Q1[[BullMQ queue per consumer]]
+    RL -->|jobId = eventId_consumer| Q1[[BullMQ queue модуля-consumer-а §5.4]]
     Q1 --> P1[Processor → Service]
     P1 -->|читає поточний стан, idempotent upsert| DB[(PostgreSQL)]
   end
@@ -134,7 +134,7 @@ flowchart TD
 | `documents` | upload, versions, парсинг у child process | R1 | `DocumentsService.getParsedText` | Document, DocumentVersion | `DocumentUploaded`, `DocumentDeleted` | `DocumentUploaded`, `DocumentDeleted` |
 | `analytics` | funnel, response rate, канали (read-time агрегати) | R1 | `AnalyticsService` | — (read-only запити) | — | — |
 | `ingestion` | adapters, scheduling, source health, dedup, FX rates fetch | R2 | `IngestionService` (admin) | JobSource, SourceJob | — (через `jobs`) | — |
-| `matching` | скоринг, explanation, MatchFeedback | R2 | `MatchingService.getForJob` | MatchScore, MatchFeedback | `SavedSearchMatched` | `ProfileUpdated`; queue `matching:job` від skills |
+| `matching` | скоринг, explanation, MatchFeedback | R2 | `MatchingService.getForJob` | MatchScore, MatchFeedback | `SavedSearchMatched` | `ProfileUpdated`; job `matching/match-job` від skills (§5.4) |
 | `ai` | executor, task registry, budgets, AiRun | R1 (extract-job), R3 | `AiExecutor.run(task, input, ctx)` | AiRun, AiUsageDaily, AiGlobalUsageDaily | — | — |
 | `outbox` | relay, registry consumer-ів, cleanup | R1 | `OutboxWriter.append(tx, event)` (re-export у `platform`) | OutboxEvent | — | — |
 | `audit` | журнал чутливих дій | R1 | `AuditService.record(tx, …)` | AuditLog | — | — |
@@ -225,11 +225,11 @@ Outbox і worker у R0 відсутні. Побічні ефекти — син�
 
 1. **Write.** Service у бізнес-транзакції викликає `OutboxWriter.append(tx, { type, aggregateId, payload })`. Payload — мінімальний: ids + `occurredAt` + версія схеми події (Zod у contracts).
 2. **Claim (коротка tx).** Relay (worker, цикл кожну 1 с; batch 50): SQL — джерело правди `05-data-model.md` §6.5 (`… ORDER BY "nextAttemptAt" LIMIT 50 FOR UPDATE SKIP LOCKED`, `lockedUntil = now() + 30s`, `attempts + 1`) → **commit**. Транзакція не тримається під час мережевих викликів.
-3. **Publish (поза tx).** Для кожного consumer-а з registry типу події: `queue.add(name, payload, { jobId: \`${eventId}_${consumer}\` })` (BullMQ забороняє `:` і суто цифрові custom jobId; імена consumer-ів — без `:`). Повторний publish того самого jobId BullMQ ігнорує, поки job зберігається.
+3. **Publish (поза tx).** Для кожного consumer-а з registry типу події: `queues[queue].add(job, payload, { jobId: \`${eventId}_${consumer}\` })`, де consumer = пара (черга, job name) з §5.4, а `consumer` = `<queue>-<job>` (BullMQ забороняє `:` і суто цифрові custom jobId). Повторний publish того самого jobId BullMQ ігнорує, поки job зберігається.
 4. **Mark.** Успіх усіх consumer-ів → `publishedAt = now()`, `lockedUntil = null`. Помилка → `lastError`, `nextAttemptAt = now() + min(2^attempts s, 5 хв)`, `lockedUntil = null`.
 5. **Dead.** `attempts ≥ maxAttempts` (10) і `publishedAt IS NULL` = dead-letter (окремого статусу немає), метрика `outbox_dead_events` (gauge, `12-infra-ops.md` §10), alert; ручний replay через admin-скрипт.
 6. **Crash між publish і mark** → подію буде claimed знову після `lockedUntil`; дубль відсікається `jobId` і ідемпотентністю consumer-а.
-7. **Retention.** Job scheduler `outbox:cleanup` щодня: видалити `publishedAt < now() - 7 days`. Dead-letter події не видаляються автоматично.
+7. **Retention.** Job scheduler `outbox:cleanup` (черга `outbox`, job `cleanup`) щодня: видалити `publishedAt < now() - 7 days`. Dead-letter події не видаляються автоматично.
 
 **Consumer-и (BullMQ):** `attempts: 5`, exponential backoff від 5 с, `removeOnComplete: { age: 24h }`, `removeOnFail: { age: 7d }`. Вимоги:
 - читати **поточний стан** з БД за id (payload — лише тригер), відсутній/видалений агрегат → no-op;
@@ -248,7 +248,7 @@ Outbox і worker у R0 відсутні. Побічні ефекти — син�
 |---|---|---|---|
 | `ApplicationStatusChanged` | applications | notifications (in-app), reminders (запропонувати follow-up) | R1 |
 | `JobCreated` / `JobUpdated` | jobs | skills (extraction зі словника) | R1 |
-| ↳ ті самі | | skills consumer після extraction ставить `matching:job` (не напряму з outbox — щоб matching бачив свіжі JobSkill) | R2 |
+| ↳ ті самі | | skills consumer після extraction ставить `matching/match-job` (не напряму з outbox — щоб matching бачив свіжі JobSkill) | R2 |
 | `DocumentUploaded` | documents | documents (парсинг у child process) | R1 |
 | `UserDeletionRequested` | users | users (hard-delete pipeline: БД cascade, S3, Redis keys, Sentry user) | R1 |
 | `DataExportRequested` | import-export | import-export (zip у S3, лінк з TTL) | R1 |
@@ -259,8 +259,35 @@ Outbox і worker у R0 відсутні. Побічні ефекти — син�
 | `SavedSearchMatched` | matching | notifications (digest) | R2 |
 
 Назви подій у коді — `DomainEventType` (`ApplicationStatusChanged` = `APPLICATION_STATUS_CHANGED`, див. `05-data-model.md` §4.1); таблиця і enum збігаються 1:1. `ApplicationNextActionSet` з v2.0 **видалено**: це синхронний виклик (§5.1).
-Часові задачі (не події): `reminders:scan-due` (щохвилини, R1), `notifications:digest` (щодня у TZ користувача, R1), `outbox:cleanup`, `demo:purge` (TTL 24 год), `ingest:<source>` і `fx:fetch` (R2).
+Часові задачі (не події) — job schedulers з §5.4: `reminders:scan-due` (щохвилини, R1), `notifications:digest` (щодня у TZ користувача, R1), `outbox:cleanup`, `ai:retention`, `deletion:purge-demo` (TTL 24 год), `ingest:run:<sourceKey>`, `ingest:fx-fetch` і `ingest:salary-renormalize` (R2).
 Command-черги (не події, не через outbox): `capture` (R1, FR-JOB-07) — API ставить job (`jobId = capture-<sha256(userId|canonicalUrl)>`) і чекає результат ≤ 6 с; worker викликає `safe-fetcher` по `fetch-rpc`; API в `fetch-rpc` не входить (ADR 021, `06-api.md` §8).
+
+### 5.4. Черги та jobs: іменування (M0-02)
+
+BullMQ 6 кидає помилку на `:` у назві **черги**; custom `jobId` не може містити `:` і не може бути цілим числом; job name і id scheduler-а `:` містити можуть (job scheduler-а отримує id `repeat:<schedulerId>:<ts>`). Звідси:
+
+- **Черга** = одна робоча зона worker-а: kebab-case (`^[a-z]+(-[a-z]+)*$`), без `:`. Кожна черга має **одного** модуля-власника з одним `@Processor`, який диспатчить за `job.name` (два Worker-и з різними handler-ами на одній черзі забирали б jobs один в одного). Модуль може мати кілька черг.
+- **Job name** — kebab-case дія (`send`, `scan-due`, `match-job`). У специфікації job позначається `<queue>/<job>` (напр. `matching/match-job`); колишні `area:action` = черга `area` + job `action`.
+- **Job scheduler id** = `<queue>:<job>[:<key>]` (`:` дозволено), `upsertJobScheduler` ідемпотентний за id.
+- **Custom jobId** — тільки через `-`/`_`, не суто цифри: outbox `${eventId}_${queue}-${job}` (§5.2), command/fan-out `<job>-<ключ>` (`capture-<sha256>`, `ingest-<key>-<unit>-<runId>`).
+- Метрики: label `queue` = назва черги, `name` = job name (`12-infra-ops.md` §10).
+
+| Черга | Власник | Jobs (тригер) | Реліз |
+|---|---|---|---|
+| `outbox` | outbox | `cleanup` (scheduler `outbox:cleanup`, щодня) | R1 |
+| `email` | notifications | `send` (будь-який лист; ідемпотентний `jobId`) | R1 |
+| `notifications` | notifications | `status-changed` (`ApplicationStatusChanged`), `import-committed` (`ImportCommitted`), `digest` (scheduler `notifications:digest`), `scan-stale` (scheduler `notifications:scan-stale`, щодня); `saved-search-matched` (`SavedSearchMatched`, R2) | R1 |
+| `reminders` | reminders | `scan-due` (scheduler `reminders:scan-due`, щохвилини), `follow-up` (`ApplicationStatusChanged`) | R1 |
+| `capture` | jobs | `capture` (command, ADR 021) | R1 |
+| `skills` | skills | `extract` (`JobCreated` / `JobUpdated`) | R1 |
+| `documents` | documents | `validate` (`DocumentUploaded`: валідація + парсинг у child process), `delete-object` (`DocumentDeleted`) | R1 |
+| `deletion` | users | `delete-account` (`UserDeletionRequested`), `purge-demo` (scheduler `deletion:purge-demo`) | R1 |
+| `export` | import-export | `build-zip` (`DataExportRequested`) | R1 |
+| `ai` | ai | `retention` (scheduler `ai:retention`, щодня) | R1 |
+| `matching` | matching | `match-job` (ставить `skills/extract`), `profile-updated` (outbox `ProfileUpdated` → ставить `match-profile` з debounce), `match-profile` (`08-ingestion-matching.md` §8.4) | R2 |
+| `ingest` | ingestion | `run` (scheduler `ingest:run:<sourceKey>`), `fetch` (fan-out з `run`), `fx-fetch` (scheduler `ingest:fx-fetch`), `salary-renormalize` (scheduler `ingest:salary-renormalize`, нічний; пише через `JobsService`) | R2 |
+
+Retention-schedulers M5-10 (`05-data-model.md` §8) — job `cleanup-<model>` на черзі модуля-власника таблиці за цим самим правилом; нова черга — новий рядок цієї таблиці.
 
 ## 6. Monorepo
 
@@ -328,18 +355,18 @@ Major-версії фіксуються в `package.json`/`engines`; Renovate т
 
 | Шар | Вибір | Версія | Чому |
 |---|---|---|---|
-| Framework | NestJS (Express 5 adapter) | 12.x ✓ (fallback 11.x) | DI, модулі; 11.x вже лише security support. Gate M0: peerDeps `nestjs-zod` і `@thallesp/nestjs-better-auth` ✓ на 12, інакше 11.x |
-| Validation/OpenAPI | nestjs-zod | 5.x ✓ | Zod 4, `@ZodResponse`, OpenAPI з тих самих схем |
+| Framework | NestJS (Express 5 adapter) | **11.x** (11.2) ✓ — fallback з M0-02 | DI, модулі. M0-02: `nestjs-zod` 5.6 peer `@nestjs/common` 10–11 (Nest 12 — upstream issue #471, PR #515 відкриті) → 11.x; перейти на 12, коли nestjs-zod додасть peer. api — ESM (`"type": "module"`, `nodenext`): Nest 12 ESM-only, Better Auth і contracts теж |
+| Validation/OpenAPI | nestjs-zod | 5.x (5.6) ✓ | Zod 4, `@ZodResponse`, OpenAPI з тих самих схем |
 | ORM | Prisma + `@prisma/adapter-pg` | 7.x ✓ | `prisma.config.ts`, явний generator `output`, `.env` не вантажиться сам; 8 — не раніше ніж через місяць після GA |
 | DB | PostgreSQL | 18.x ✓ | нативний `uuidv7()`; 19 виходить 2026-11 — не брати до 19.2 |
 | Cache/queue store | Valkey (Redis-сумісний) | 9.x ✓ | BSD-ліцензія, drop-in для BullMQ |
-| Queue | BullMQ | 6.x ✓ | job schedulers (`upsertJobScheduler`); repeatable jobs у v6 видалено. `@nestjs/bullmq` — тільки якщо підтримує v6 ◌, інакше тонка власна обгортка |
-| Auth | Better Auth + `@thallesp/nestjs-better-auth` | 1.7.x ✓ / 2.x ◌ | див. нижче |
+| Queue | BullMQ | 6.x ✓ | job schedulers (`upsertJobScheduler`); repeatable jobs у v6 видалено. `@nestjs/bullmq` 12.x ✓ (peer `bullmq ^6`, Nest 10–12; перевірено M0-02 на Valkey 9) + `ioredis` 6 (у BullMQ 6 драйвер — optional peer) |
+| Auth | Better Auth + `@thallesp/nestjs-better-auth` | 1.7.x ✓ / 2.x (2.8) ✓ | див. нижче |
 | Logging | pino + nestjs-pino | 10.x / 4.x ◌ | JSON-логи, redaction |
 | Errors | Sentry (`@sentry/nestjs`, `@sentry/react`) | 11.x ✓ | помилки + release tracking |
 | Metrics | prom-client | 15.x ◌ | `/metrics` для Prometheus (R1) |
 | Tracing | OpenTelemetry JS SDK | 2.x ◌ | R2: HTTP → BullMQ → worker |
-| Unit/integration | Vitest | 4.x ✓ | один runner для web і api |
+| Unit/integration | Vitest | 4.x ✓ | один runner для web і api; decorator metadata для Nest дає Oxc (Vite 8) з tsconfig — SWC-плагін не потрібен (M0-02) |
 | DB tests | Testcontainers | 11.x ◌ | справжній PG/Valkey у тестах |
 | E2E | Playwright | 1.65+ ✓ | e2e + agents (`e2e/`) |
 | API mocks (web) | MSW | 2.x ◌ | мок мережі в тестах web |
@@ -348,6 +375,9 @@ Major-версії фіксуються в `package.json`/`engines`; Renovate т
 1. Пакет реєструє **глобальний** `AuthGuard`: усі routes приватні за замовчуванням; публічні явно `@AllowAnonymous()` (у коді — alias `@Public()`, як у `09-security-privacy.md`; і тест на перелік публічних routes, див. `11-testing.md`).
 2. Потрібно `NestFactory.create(AppModule, { bodyParser: false })` — Better Auth сам читає body; пакет повертає body parsers для не-auth routes. Ліміти розміру body задаються явно (див. `09-security-privacy.md`).
 3. `generateId` → UUID v7 (рішення 5). Fallback, якщо пакет зламається: змонтувати `toNodeHandler(auth)` на Express-рівні + власний guard.
+4. Allowlist (M0-02): `databaseHooks.user.create.before` кидає `APIError('FORBIDDEN', { code: 'SIGNUP_CLOSED' })` — програмно 403 `{ code }`, OAuth callback → redirect `errorCallbackURL?error=SIGNUP_CLOSED` (SPA передає `/sign-in`, FR-AUTH-02); `return false` дає лише `unable_to_create_user`. `user.validateUserInfo` (1.7) не беремо: він перевіряє і повторний OAuth sign-in, а FR-AUTH-02 пускає існуючих без allowlist. `additionalFields` з `input: false` на sign-up мовчки відкидаються з body (не 400), а `update-user` з таким полем відхиляється 400 — роль змінити не можна в обох випадках (тести M0-02).
+5. Прямі залежності api: `express` 5 (адаптер сам `require`-ить його, щоб повернути body parsers) і `uuid` 14 (`generateId` = v7 у застосунку; у Node 24 немає вбудованого v7, `uuidv7()` PG18 — лише на боці БД).
+6. Секрет: Better Auth без явного `secret` шукає env (`BETTER_AUTH_SECRETS` → `secret` → `BETTER_AUTH_SECRET` → `AUTH_SECRET`), а в кінці бере публічний `DEFAULT_SECRET` (поза production — лише warning). Тому `createAuth` вимагає `secret` ≥ 32 символи, а config (M0-04) відхиляє `BETTER_AUTH_SECRETS`, доки ротацію секретів не прийнято свідомо.
 
 ## 8. Over-engineering guard (A-23)
 

@@ -75,8 +75,8 @@ export interface NormalizedJobInput {
 
 ```mermaid
 flowchart TD
-  S[Job scheduler ingest:&lt;source&gt;] --> R[ingest:run — створює runId, fan-out по units]
-  R --> F[ingest:fetch unit]
+  S[Job scheduler ingest:run:&lt;sourceKey&gt;] --> R[ingest/run — створює runId, fan-out по units]
+  R --> F[ingest/fetch unit]
   F -->|для кожного RawJob| N[toNormalized + externalId]
   N --> H{contentHash змінився?}
   H -- ні --> T[touch lastSeenAt, missedRuns = 0]
@@ -84,7 +84,7 @@ flowchart TD
   U --> D[dedup §6: link або create Job]
   D --> J[jobs.upsertFromSource → tx: Job + OutboxEvent JobCreated/JobUpdated]
   J -.outbox.-> SK[skills extraction §9]
-  SK --> M[matching:job §8]
+  SK --> M[matching/match-job §8]
   F --> C{unit завершено повністю?}
   C -- так --> G[mark missing: missedRuns += 1 для не побачених; ≥ 2 → goneAt]
   C -- ні / помилка --> E[source health: consecutiveFailures += 1; без gone-маркування]
@@ -92,8 +92,8 @@ flowchart TD
 
 ### 5.1. Scheduling
 
-- Увімкнення джерела → `upsertJobScheduler('ingest:' + key, { pattern })` (ідемпотентно за id); вимкнення → `removeJobScheduler`.
-- `ingest:run` → по одному `ingest:fetch` на unit з `jobId = ingest-<key>-<unit>-<runId>` (без `:` — обмеження BullMQ custom jobId); concurrency на джерело = 1 (rate limit), між джерелами — паралельно.
+- Черга `ingest`, іменування — `04-architecture.md` §5.4. Увімкнення джерела → `ingestQueue.upsertJobScheduler('ingest:run:' + key, { pattern }, { name: 'run', data: { sourceKey: key } })` (ідемпотентно за id); вимкнення → `removeJobScheduler`.
+- `ingest/run` → по одному `ingest/fetch` на unit з `jobId = ingest-<key>-<unit>-<runId>` (без `:` — обмеження BullMQ custom jobId); concurrency на джерело = 1 (rate limit), між джерелами — паралельно.
 - Обробка RawJob — в межах fetch-job батчами по 50 у короткій транзакції; великий feed не тримає tx.
 
 ### 5.2. Зникнення вакансій (A-11)
@@ -147,7 +147,7 @@ flowchart TD
 ### 7.2. Курси НБУ (Q7)
 
 - Джерело: офіційний API НБУ `bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json&date=YYYYMMDD` (UAH за одиницю валюти). ADR фіксує вибір НБУ (UAH-ринок, офіційний, без ключа).
-- Job scheduler `fx:fetch` двічі на день (07:00 і 17:00 Europe/Kyiv); upsert `ExchangeRate` за (base, quote, date) — ідемпотентно.
+- Job scheduler `ingest:fx-fetch` (job `ingest/fx-fetch`, `04-architecture.md` §5.4) двічі на день (07:00 і 17:00 Europe/Kyiv); upsert `ExchangeRate` за (base, quote, date) — ідемпотентно.
 - Зберігаються сирі пари `X → UAH`; крос-курс `X → USD = rate(X→UAH) / rate(USD→UAH)` рахується в domain.
 - **Fallback last-known:** для дати D береться найновіший курс з `date ≤ D`. Вихідні/свята — штатно. Якщо останній курс старший за 7 днів → нормалізація все одно виконується, але `fx_rate_age_days` метрика + alert; у UI tooltip «rate as of <date>».
 - Немає жодного курсу для валюти → нормалізованих значень немає (`null`), оригінал показується.
@@ -157,7 +157,7 @@ flowchart TD
 - Обчислюються мін./макс. у USD/міс і `fxDate` використаного курсу (поля `Job.salaryMinUsdMonth`, `salaryMaxUsdMonth`, `salaryFxDate` — `05-data-model.md` §4.2).
 - Період → місяць: `YEAR /12`, `WEEK ×52/12`, `DAY ×21`, `HOUR ×168`. Gross/net не конвертується (`isGross` лише показується).
 - Sanity: результат поза 100…100 000 USD/міс → нормалізоване = `null`, лог warning (ймовірна помилка парсингу).
-- Рахується при запису Job і нічним job-ом `salary:renormalize` для `OPEN` вакансій у не-USD. `JobUpdated` емітується лише якщо значення змінилось > 3 % (щоб курсові коливання не запускали масовий matching).
+- Рахується при запису Job і нічним job-ом `ingest/salary-renormalize` (scheduler `ingest:salary-renormalize`) для `OPEN` вакансій у не-USD. `JobUpdated` емітується лише якщо значення змінилось > 3 % (щоб курсові коливання не запускали масовий matching).
 - UI завжди показує **оригінал**; нормалізоване — у дужках/tooltip (див. `10-frontend-ux.md`).
 
 ## 8. Matching v1 (детермінований)
@@ -213,16 +213,16 @@ type MatchExplanation = {
 
 | Тригер | Обсяг перерахунку | Механізм |
 |---|---|---|
-| `JobCreated` / `JobUpdated` | активні користувачі (активність ≤ 30 днів, є CareerProfile) | consumer `matching:job` — один BullMQ job на подію, батчі по 100 користувачів |
-| `ProfileUpdated` | вакансії користувача за 30 днів + saved/applied | consumer `matching:profile` з **BullMQ debounce** |
+| `JobCreated` / `JobUpdated` | активні користувачі (активність ≤ 30 днів, є CareerProfile) | job `matching/match-job` (ставить consumer `skills/extract`) — один BullMQ job на подію, батчі по 100 користувачів |
+| `ProfileUpdated` | вакансії користувача за 30 днів + saved/applied | job `matching/match-profile` з **BullMQ debounce** |
 | зміна `algorithmVersion` | усі OPEN вакансії × активні користувачі | разовий backfill-скрипт, rate-limited |
 
 Debounce для `ProfileUpdated` (користувач редагує профіль серією змін):
 
 ```ts
-queue.add('matching:profile', { userId }, {
+matchingQueue.add('match-profile', { userId }, { // черга `matching` (04-architecture.md §5.4)
   delay: 300_000,
-  deduplication: { id: `match:profile:${userId}`, ttl: 300_000, extend: true, replace: true },
+  deduplication: { id: `match-profile-${userId}`, ttl: 300_000, extend: true, replace: true },
 });
 ```
 
@@ -247,7 +247,7 @@ queue.add('matching:profile', { userId }, {
 - Неоднозначні aliases (`Go`, `R`, `C`, `Rust` як слово) позначені в словнику як case-sensitive / потребують контексту (поруч `lang`, `developer`, список технологій); інакше пропуск.
 - Секції `Requirements` / `Nice to have` визначаються евристикою за заголовками (UA/EN); без заголовків — усе `REQUIRED`.
 - Результат — upsert `JobSkill` з `source = DICTIONARY`; LLM-уточнення (`source = LLM`) — R3, опційно (див. `07-ai.md`).
-- Тригер — consumer `JobCreated`/`JobUpdated` (див. `04-architecture.md` §5.3); після extraction `matching:job` читає вже оновлені JobSkill (consumer matching чекає на skills: matching ставиться в чергу consumer-ом skills, а не напряму з outbox, щоб уникнути гонки).
+- Тригер — consumer `JobCreated`/`JobUpdated` (див. `04-architecture.md` §5.3); після extraction `matching/match-job` читає вже оновлені JobSkill (consumer matching чекає на skills: matching ставиться в чергу consumer-ом skills, а не напряму з outbox, щоб уникнути гонки).
 
 ## Зміни відносно v2.0
 

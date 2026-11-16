@@ -2,6 +2,7 @@
 
 - Status: Accepted (implemented in R2)
 - Amended: 2026-11-16 — job triggers go through the skills consumer (`matching:job`), not directly from the outbox; profile debounce 5 min (FR-PROF-06)
+- Amended: 2026-11-16 — M0-02: BullMQ forbids `:` in queue names; `matching:job` / `matching:profile` become queue `matching` with job names `match-job` / `match-profile` (convention `docs/spec/04-architecture.md` §5.4)
 - Date: 2026-11-16
 
 ## Context
@@ -17,7 +18,7 @@ Matching v1 is a **deterministic weighted score** over components, each returnin
 - `score = round(100 · Σ(w·s over known) / Σ(w over known))`; `confidence = Σ(w over known) / Σ(w over all)`.
 - Hard-filter violation → `excluded`, `score = null`, `excludedReasons`; `confidence < 0.4` → UI shows "Not enough data".
 - Components are pure `*.domain.ts` functions; result stored in `MatchScore` (PK `userId, jobId`) with `algorithmVersion` and `inputsHash` (skip recalculation if unchanged).
-- Triggers: `JobCreated/Updated` → skills consumer extracts `JobSkill`, then enqueues `matching:job` (so matching sees fresh skills; `docs/spec/04-architecture.md` §5.3); `ProfileUpdated` → `matching:profile`, debounced to at most once per 5 min per user. Events travel via the outbox (ADR 006).
+- Triggers: `JobCreated/Updated` → skills consumer extracts `JobSkill`, then enqueues `matching/match-job` (so matching sees fresh skills; `docs/spec/04-architecture.md` §5.3); `ProfileUpdated` → `matching/match-profile`, debounced to at most once per 5 min per user. Events travel via the outbox (ADR 006).
 - Skill extraction from jobs: `SkillAlias` dictionary + word-boundary regex; LLM refinement in R3.
 - R3 adds a semantic component (pgvector cosine, weight 0.15 taken from Skills) under a new `algorithmVersion`.
 
