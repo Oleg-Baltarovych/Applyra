@@ -174,7 +174,7 @@ Thresholds = NFR з `12-infra-ops.md` §12; порушення → червон�
 | build (images) | PR | ✓ | ✓ | ✓ |
 | supply chain: `pnpm audit`, osv-scanner, gitleaks, CodeQL | PR | ✓ | ✓ | ✓ |
 | Playwright e2e проти compose | PR | — | ✓ | ✓ |
-| smoke на staging | push `main` | health-check | `@smoke` | `@smoke` |
+| smoke на staging (R0 — R0-середовище на prod-хості, `12-infra-ops.md` §1) | push `main` | health-check | `@smoke` | `@smoke` |
 | smoke на production | tag `v*` | — | `@smoke` | `@smoke` |
 | k6 + Lighthouse | nightly | — | ✓ | ✓ |
 | restore test (`12-infra-ops.md` §5) | monthly | — | ✓ | ✓ |

@@ -93,7 +93,7 @@ flowchart TD
 ### 5.1. Scheduling
 
 - Увімкнення джерела → `upsertJobScheduler('ingest:' + key, { pattern })` (ідемпотентно за id); вимкнення → `removeJobScheduler`.
-- `ingest:run` → по одному `ingest:fetch` на unit з `jobId = ingest:<key>:<unit>:<runId>`; concurrency на джерело = 1 (rate limit), між джерелами — паралельно.
+- `ingest:run` → по одному `ingest:fetch` на unit з `jobId = ingest-<key>-<unit>-<runId>` (без `:` — обмеження BullMQ custom jobId); concurrency на джерело = 1 (rate limit), між джерелами — паралельно.
 - Обробка RawJob — в межах fetch-job батчами по 50 у короткій транзакції; великий feed не тримає tx.
 
 ### 5.2. Зникнення вакансій (A-11)
@@ -154,7 +154,7 @@ flowchart TD
 
 ### 7.3. Нормалізація
 
-- Обчислюються мін./макс. у USD/міс і `fxDate` використаного курсу (поля — див. `05-data-model.md`).
+- Обчислюються мін./макс. у USD/міс і `fxDate` використаного курсу (поля `Job.salaryMinUsdMonth`, `salaryMaxUsdMonth`, `salaryFxDate` — `05-data-model.md` §4.2).
 - Період → місяць: `YEAR /12`, `WEEK ×52/12`, `DAY ×21`, `HOUR ×168`. Gross/net не конвертується (`isGross` лише показується).
 - Sanity: результат поза 100…100 000 USD/міс → нормалізоване = `null`, лог warning (ймовірна помилка парсингу).
 - Рахується при запису Job і нічним job-ом `salary:renormalize` для `OPEN` вакансій у не-USD. `JobUpdated` емітується лише якщо значення змінилось > 3 % (щоб курсові коливання не запускали масовий matching).
@@ -221,12 +221,12 @@ Debounce для `ProfileUpdated` (користувач редагує профі
 
 ```ts
 queue.add('matching:profile', { userId }, {
-  delay: 60_000,
-  deduplication: { id: `match:profile:${userId}`, ttl: 60_000, extend: true, replace: true },
+  delay: 300_000,
+  deduplication: { id: `match:profile:${userId}`, ttl: 300_000, extend: true, replace: true },
 });
 ```
 
-Нова подія протягом вікна замінює job і продовжує TTL → перерахунок один раз через 60 с після останньої зміни. Outbox-jobId (`eventId:consumer`, див. `04-architecture.md` §5.2) застосовується до доставки події; debounce — у consumer-і, що ставить фактичну задачу перерахунку.
+Нова подія протягом вікна замінює job і продовжує TTL → перерахунок один раз через 5 хв після останньої зміни, тобто не частіше ніж раз на 5 хв на користувача (FR-PROF-06). Outbox-jobId (`eventId_consumer`, див. `04-architecture.md` §5.2) застосовується до доставки події; debounce — у consumer-і, що ставить фактичну задачу перерахунку.
 
 ### 8.5. `inputsHash` (A-22)
 

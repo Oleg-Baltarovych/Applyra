@@ -31,7 +31,7 @@
 | Microservices | Соло-розробник, ~15–20 год/тиждень. Distributed transactions, мережеві контракти, окремі deploy і observability з'їдять бюджет R0–R1. Межі домену ще не стабільні — розріз зараз = розріз помилковий. |
 | Serverless (Lambda/Workers) | Довгі фонові задачі (ingestion, парсинг CV у child process), постійні з'єднання з PG/Redis, cold start; вендор-lock і складніше локальне середовище. Хостинг — VPS (див. `12-infra-ops.md`). |
 | Full Clean Architecture (use-case класи, entities, mappers на кожен шар) | CRUD-домінантний домен; 3–4 мапінги на поле = шум. Чиста логіка вже ізольована в `*.domain.ts`; порти — лише на зовнішніх межах. |
-| Monolith без модулів | Втрачаємо тестованість меж і можливість виділення; ESLint-межі (§5) коштують майже нуль. |
+| Monolith без модулів | Втрачаємо тестованість меж і можливість виділення; ESLint-межі (§4.1) коштують майже нуль. |
 
 ### 1.2. Критерії виділення модуля в сервіс (interview talking point)
 
@@ -109,7 +109,7 @@ flowchart TD
   subgraph R1["R1+: transactional outbox"]
     A1[Service] -->|same tx| OB[(OutboxEvent)]
     OB --> RL[Relay у worker: claim → commit → publish → mark]
-    RL -->|jobId = eventId:consumer| Q1[[BullMQ queue per consumer]]
+    RL -->|jobId = eventId_consumer| Q1[[BullMQ queue per consumer]]
     Q1 --> P1[Processor → Service]
     P1 -->|читає поточний стан, idempotent upsert| DB[(PostgreSQL)]
   end
@@ -217,9 +217,8 @@ Outbox і worker у R0 відсутні. Побічні ефекти — син�
 Поля `OutboxEvent` (attempts, maxAttempts, nextAttemptAt, lockedUntil, lockedBy, lastError, publishedAt) і partial index для pending — див. `05-data-model.md`.
 
 1. **Write.** Service у бізнес-транзакції викликає `OutboxWriter.append(tx, { type, aggregateId, payload })`. Payload — мінімальний: ids + `occurredAt` + версія схеми події (Zod у contracts).
-2. **Claim (коротка tx).** Relay (worker, цикл кожну 1 с; batch 50):
-   `UPDATE … SET lockedUntil = now() + 30s, lockedBy = :workerId, attempts = attempts + 1 WHERE id IN (SELECT id … WHERE publishedAt IS NULL AND attempts < maxAttempts AND nextAttemptAt <= now() AND (lockedUntil IS NULL OR lockedUntil < now()) ORDER BY createdAt LIMIT 50 FOR UPDATE SKIP LOCKED) RETURNING …` → **commit**. Транзакція не тримається під час мережевих викликів.
-3. **Publish (поза tx).** Для кожного consumer-а з registry типу події: `queue.add(name, payload, { jobId: \`${eventId}:${consumer}\` })`. Повторний publish того самого jobId BullMQ ігнорує, поки job зберігається.
+2. **Claim (коротка tx).** Relay (worker, цикл кожну 1 с; batch 50): SQL — джерело правди `05-data-model.md` §6.5 (`… ORDER BY "nextAttemptAt" LIMIT 50 FOR UPDATE SKIP LOCKED`, `lockedUntil = now() + 30s`, `attempts + 1`) → **commit**. Транзакція не тримається під час мережевих викликів.
+3. **Publish (поза tx).** Для кожного consumer-а з registry типу події: `queue.add(name, payload, { jobId: \`${eventId}_${consumer}\` })` (BullMQ забороняє `:` і суто цифрові custom jobId; імена consumer-ів — без `:`). Повторний publish того самого jobId BullMQ ігнорує, поки job зберігається.
 4. **Mark.** Успіх усіх consumer-ів → `publishedAt = now()`, `lockedUntil = null`. Помилка → `lastError`, `nextAttemptAt = now() + min(2^attempts s, 5 хв)`, `lockedUntil = null`.
 5. **Dead.** `attempts ≥ maxAttempts` (10) і `publishedAt IS NULL` = dead-letter (окремого статусу немає), метрика `outbox_dead_events` (gauge, `12-infra-ops.md` §10), alert; ручний replay через admin-скрипт.
 6. **Crash між publish і mark** → подію буде claimed знову після `lockedUntil`; дубль відсікається `jobId` і ідемпотентністю consumer-а.
@@ -248,11 +247,13 @@ Outbox і worker у R0 відсутні. Побічні ефекти — син�
 | `DataExportRequested` | import-export | import-export (zip у S3, лінк з TTL) | R1 |
 | `DocumentDeleted` | documents | documents (видалення об'єкта S3 після commit) | R1 |
 | `ImportCommitted` | import-export | notifications (in-app підсумок імпорту) | R1 |
+| ↳ правило | | CSV-commit емітує **лише** `ImportCommitted` (одна подія на committed `ImportSession`), без per-row `ApplicationStatusChanged`/`JobCreated`; consumer, якому потрібні імпортовані заявки, читає їх за `importSessionId` з цієї події | R1 |
 | `ProfileUpdated` | profile | matching (debounced, див. `08-ingestion-matching.md` §8.4) | R2 |
 | `SavedSearchMatched` | matching | notifications (digest) | R2 |
 
 Назви подій у коді — `DomainEventType` (`ApplicationStatusChanged` = `APPLICATION_STATUS_CHANGED`, див. `05-data-model.md` §4.1); таблиця і enum збігаються 1:1. `ApplicationNextActionSet` з v2.0 **видалено**: це синхронний виклик (§5.1).
 Часові задачі (не події): `reminders:scan-due` (щохвилини, R1), `notifications:digest` (щодня у TZ користувача, R1), `outbox:cleanup`, `demo:purge` (TTL 24 год), `ingest:<source>` і `fx:fetch` (R2).
+Command-черги (не події, не через outbox): `capture` (R1, FR-JOB-07) — API ставить job (`jobId = capture-<sha256(userId|canonicalUrl)>`) і чекає результат ≤ 6 с; worker викликає `safe-fetcher` по `fetch-rpc`; API в `fetch-rpc` не входить (ADR 021, `06-api.md` §8).
 
 ## 6. Monorepo
 
@@ -361,7 +362,7 @@ Major-версії фіксуються в `package.json`/`engines`; Renovate т
 ## Зміни відносно v2.0
 
 - **A-03** — R0 без outbox/worker; побічні ефекти синхронно в tx; `ApplicationNextActionSet` видалено.
-- **A-04** — relay claim (lockedUntil) → commit → publish → mark; `jobId = eventId:consumer`; maxAttempts 10, backoff, dead-letter, retention 7 днів; поведінка без Redis.
+- **A-04** — relay claim (lockedUntil) → commit → publish → mark; `jobId = eventId_consumer`; maxAttempts 10, backoff, dead-letter, retention 7 днів; поведінка без Redis.
 - **A-23 / рішення 9** — 19 → 16 модулів (companies, search → jobs; dedup → ingestion); OTel і similarity-dedup відкладені; таблиця over-engineering guard.
 - **Рішення 3, 4** — VPS + Caddy для API, SPA на Cloudflare Pages (`app.<domain>`), `app.`/`api.` same-site у діаграмі контейнерів.
 - **Рішення 5** — PostgreSQL 18 (`uuidv7()`), Better Auth `generateId` = UUID v7.

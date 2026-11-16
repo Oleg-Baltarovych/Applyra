@@ -6,8 +6,8 @@
 
 ## 1. Status
 - Phase: **pre-M0** — repository holds the spec (v2.1, `docs/spec/`), ADRs and AI tooling config. No application code yet.
-- Done: AI tooling (see `docs/AI-WORKFLOW.md`); spec review (`docs/SPEC-REVIEW.md`) → split spec v2.1 + ADR 000–020.
-- Next: MVP plan (`docs/plans/`) → GitHub milestones/issues → M0 scaffold (monorepo, CI, compose, auth, staging "hello"; spike: NestJS 12 / BullMQ 6 / nestjs-zod / Better Auth compatibility).
+- Done: AI tooling (see `docs/AI-WORKFLOW.md`); spec review (`docs/SPEC-REVIEW.md`) → split spec v2.1 + ADR 000–021; MVP plan (`docs/plans/mvp.md`, `docs/plans/mvp-tasks.md`); pre-coding consistency pass over spec/ADRs.
+- Next: GitHub milestones/issues → M0-01 (M0 scaffold: monorepo, CI, compose, auth, deploy "hello" to the R0 environment on the future prod host; spike: NestJS 12 / BullMQ 6 / nestjs-zod / Better Auth compatibility).
 - Current release target: **R0 "Tracker for myself"** (`docs/spec/02-releases.md`).
 
 ## 2. Repo map
@@ -23,7 +23,7 @@ packages/
   config/              shared tsconfig / eslint / prettier (if needed)
 e2e/                   Playwright: seed.spec.ts, specs/ (test plans)
 docs/
-  spec/00…12-*.md (spec v2.1) · adr/ (000–020 + README index) · plans/ · CONTEXT.md · AI-WORKFLOW.md · SPEC-REVIEW.md (history)
+  spec/00…12-*.md (spec v2.1) · adr/ (000–021 + README index) · plans/ · CONTEXT.md · AI-WORKFLOW.md · SPEC-REVIEW.md (history)
 .claude/
   rules/   path-scoped rules (auto-load by file glob)
   agents/  architect · lead-developer · test-writer · qa-lead · code-/security-/ui-reviewer · playwright-test-*
@@ -47,7 +47,10 @@ Status legend: — not started · 🚧 in progress · ✅ done (link key files w
 - R0 side effects synchronous in the same transaction; outbox + BullMQ from R1 (006).
 - Better Auth, R0 = Google OAuth only, UUID v7 ids (007); `app.`/`api.` same-site, `__Host-` cookies (008).
 - PostgreSQL 18 + native `uuidv7()` (012); Prisma 7 + raw SQL features, drift check in CI (016).
-- Hetzner VPS + Compose + Caddy + Terraform; SPA on Cloudflare Pages custom domain (011).
+- Hetzner VPS + Compose + Caddy + Terraform; SPA on Cloudflare Pages custom domain (011). R0: no staging — one environment on the future prod host (real data, allowlist = author); synthetic staging from R1 (M5-20).
+- Queue/cache store: Valkey 9 (compose service `redis`, image `valkey/valkey:9`, also in Testcontainers).
+- URL capture (R1): API enqueues `capture` job, awaits ≤ 6 s; worker → safe-fetcher; API off `fetch-rpc` (021).
+- R0 schema = unmarked items of `05-data-model.md` §4.1–4.2; `// R1`/`// R2`/`// R3` items come with their release's migration.
 - Prometheus + Grafana (R1, as code) + Sentry; OTel R2 (013). Ephemeral demo users (014). Retention & deletion across stores (015).
 - Docs: spec Ukrainian (overview English), code/README/ADR English (020).
 
@@ -63,6 +66,9 @@ _(append one line per non-obvious discovery: what, where, why)_
 - pnpm is not installed globally yet — enable via `corepack enable` at scaffold.
 - Windows dev machine: hooks are Node scripts (no bash/jq). Git Bash heredocs with quotes break — write scripts to files.
 - Project agents/skills load only when the Claude Code session starts in the `Applyra` folder.
+- `.claude/hooks/guard-paths.mjs` blocks Read/Edit/Write of `.env*` (except `.env.example`) and any Bash command mentioning a `.env` file — false positives possible, rephrase or ask the user; migration files are immutable once tracked by git (untracked `--create-only` migrations may be edited).
+- `/review` and `/verify` are model-invocable on purpose (called from `/feature`, `/implement`, `/bugfix`, `/ship`).
+- BullMQ custom `jobId` must not contain `:` or be all digits — outbox uses `<eventId>_<consumer>` (04 §5.2).
 - Playwright agents were generated with Playwright 1.65.1; after a major upgrade re-run `npx playwright init-agents --loop=claude`, then re-apply the short descriptions and `e2e/` paths.
 
 ## 7. Spec index (`docs/spec/`)

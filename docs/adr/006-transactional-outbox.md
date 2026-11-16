@@ -1,6 +1,7 @@
 # 006. Transactional outbox (from R1); synchronous side effects in R0
 
 - Status: Accepted
+- Amended: 2026-11-16 — consumer idempotency is by natural keys/upserts (no `ProcessedEvent` table); jobId separator `_` (BullMQ forbids `:` in custom ids)
 - Date: 2026-11-16
 
 ## Context
@@ -14,10 +15,10 @@
 - **R1+:** domain events are written to `OutboxEvent` in the same transaction as the data change; a relay in the worker publishes them to **BullMQ**.
 - Relay design (A-04):
   1. **Claim** — short transaction: select due rows (`publishedAt IS NULL AND nextAttemptAt <= now()`) `FOR UPDATE SKIP LOCKED`, mark claimed, **commit**.
-  2. **Publish** — outside any DB transaction; fan-out one BullMQ job per consumer with `jobId = eventId:consumer` (BullMQ dedups re-publishes).
+  2. **Publish** — outside any DB transaction; fan-out one BullMQ job per consumer with `jobId = ${eventId}_${consumer}` (BullMQ dedups re-publishes; `:` is not allowed in custom job ids).
   3. **Mark** — set `publishedAt`; on failure increment `attempts`, set `nextAttemptAt` (backoff) and `lastError`; after max attempts the row stays unpublished for inspection/alert.
 - Poll interval 1–2 s; partial index on unpublished rows; published rows deleted after 7 days.
-- Consumers are idempotent (dedup by `eventId`); delivery is at-least-once.
+- Consumers are idempotent: they re-read current state by id and apply an upsert on a natural key (e.g. `MatchScore (userId, jobId)`, `ReminderDelivery (reminderId, dueAt, channel)`, `Notification.dedupeKey`); no `ProcessedEvent` table in v2.1 (`docs/spec/04-architecture.md` §5.2). Delivery is at-least-once.
 
 ## Alternatives considered
 - Outbox from R0 — needs worker + relay before there is a single async consumer; delays R0.

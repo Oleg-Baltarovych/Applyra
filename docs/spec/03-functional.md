@@ -24,7 +24,7 @@
 
 | ID | R | Вимога | Acceptance criteria |
 |---|---|---|---|
-| FR-AUTH-01 | R0 | Sign in / sign out через **Google OAuth** (єдиний спосіб у R0) | • Успішний вхід створює сесію і веде на Applications (або onboarding, якщо даних немає) · • Sign out інвалідує поточну сесію на сервері, не лише cookie |
+| FR-AUTH-01 | R0 | Sign in / sign out через **Google OAuth** (єдиний спосіб у R0) | • Успішний вхід створює сесію і веде на `/today`, якщо є due/overdue reminders, інакше на `/applications` (перший вхід / немає даних — onboarding empty state, `10-frontend-ux.md` §1, §3) · • Sign out інвалідує поточну сесію на сервері, не лише cookie |
 | FR-AUTH-02 | R0 | **Allowlist реєстрації**: новий акаунт створюється лише для email зі allowlist (конфіг/інвайт) | • Email поза allowlist → акаунт не створюється, відповідь — `403 SIGNUP_CLOSED` із загальним повідомленням «Access is invite-only» без розкриття, чи існує акаунт · • Існуючі користувачі входять без перевірки allowlist |
 | FR-AUTH-03 | R0 | Захист приватних endpoints | • Будь-який запит без валідної сесії до приватного endpoint → 401 · • Виняток: auth, health, старт demo |
 | FR-AUTH-04 | R0 | Життєвий цикл сесії | • Idle TTL 7 днів, absolute TTL 30 днів (конфіг); після спливу → 401 і повторний вхід · • Session id змінюється при вході (rotation) · • Cookie-атрибути — див. `09-security-privacy.md` |
@@ -39,7 +39,7 @@
 
 | ID | R | Вимога | Acceptance criteria |
 |---|---|---|---|
-| FR-JOB-01 | R0 | **Ручна форма вакансії** (кнопка «+ Add job», хоткей `N`): обов'язкові title, companyName; опційні location, workMode, employmentType, seniority, salary (min/max/currency/period/gross), URL, опис | • Створює `Job` з `visibility = PRIVATE`, `ownerId = user` і `UserJob` з `savedAt` · • «Save & create application» створює ще й `Application` (FR-APP-01) атомарно |
+| FR-JOB-01 | R0 | **Ручна форма вакансії** (кнопка «+ Add job», хоткей `N`): обов'язкові title, companyName; опційні location, workMode, employmentType, seniority, salary (min/max/currency/period/gross), URL, опис | • У R0 створює лише `Job` з `visibility = PRIVATE`, `ownerId = user` (`UserJob` з'являється в R1, FR-JOB-10; міграція R1 робить backfill `UserJob(savedAt = Job.createdAt)` для наявних приватних вакансій) · • «Save & create application» створює ще й `Application` (FR-APP-01) атомарно |
 | FR-JOB-02 | R0 | **Paste text**: вставлений текст вакансії зберігається як опис без розбору (без fetch і без LLM) | • Текст зберігається як plain text; HTML не рендериться · • Ліміт розміру — див. `06-api.md` |
 | FR-JOB-03 | R0 | `originalUrl` і **`canonicalUrl`** | • Якщо URL надано, `originalUrl` зберігається завжди · • `canonicalUrl`: lower-case host, без `www.`, без fragment, `utm_*`, `fbclid`, `gclid`, `ref`, без trailing slash (чиста функція з unit-тестами) |
 | FR-JOB-04 | R0 | Дедуп при створенні в межах користувача | • Якщо в користувача вже є приватна вакансія з тим самим `canonicalUrl` → нова не створюється, UI показує «You already saved this» з посиланням · • R2: якщо `canonicalUrl` є в публічному каталозі → створюється лише `UserJob` на публічну вакансію |
@@ -61,7 +61,7 @@
 | FR-APP-05 | R0 | **Undo toast 10 с** після переходу (drag, «Move to…», inline select) і архівування | • Undo переходу = `DELETE` останньої події `STATUS_CHANGED`: повертає `fromStatus` і прибирає подію з timeline · • Сервер приймає undo, лише якщо подія остання і створена ≤ 15 с тому, інакше `409 CONFLICT_STATE` · • Undo архівування = unarchive · • Після 10 с toast зникає, undo недоступний (маршрути — `06-api.md` §7.3) |
 | FR-APP-06 | R0 | **Kanban**: колонки = статуси (термінальні згорнуті), drag & drop, альтернатива — меню «Move to…» | • Optimistic update; помилка сервера → rollback картки + toast · • Перехід доступний з клавіатури і без drag (див. `10-frontend-ux.md`) · • Картка: company, role, salary, «N днів без активності», next action |
 | FR-APP-07 | R0 | **Table**: sorting, filtering (status, origin, channel, archived), пошук за company/role, column visibility, bulk archive | • Фільтри відображаються в URL (shareable/back-button) · • Bulk archive N заявок → N подій, одна операція |
-| FR-APP-08 | R0 | **Detail** (drawer + повна сторінка): поля, notes, timeline, next action | • У R0 немає вкладок contacts / interviews / CV (з'являються з FR-APP-13, FR-INT-01, FR-DOC-03) |
+| FR-APP-08 | R0 | **Detail** (drawer + повна сторінка): поля, notes, timeline, next action | • У R0 немає вкладок contacts / interviews / CV (з'являються з FR-APP-16, FR-INT-01, FR-DOC-03) |
 | FR-APP-09 | R0 | **Timeline** | • Сортування за `occurredAt` desc, при рівності — за часом створення · • Ретроспективні та імпортовані події стоять на своєму місці за `occurredAt` |
 | FR-APP-10 | R0 | Ручні події: note, message logged, follow-up sent — з `occurredAt` | • Подія оновлює `lastActivityAt` (якщо новіша) |
 | FR-APP-11 | R0 | Archive / unarchive (`archivedAt` окремо від статусу) | • Архівні приховані з Kanban і Table за замовчуванням; фільтр «Archived» показує їх · • Архівування не змінює статус |
@@ -97,7 +97,7 @@
 
 | ID | R | Вимога | Acceptance criteria |
 |---|---|---|---|
-| FR-PROF-01 | R0 | **`UserSettings`**: timezone, `staleFollowUpDays` (7), `staleDaysAfterInterview` (10), `staleGhostDays` (21), `hotkeysEnabled` | • Timezone при першому вході береться з браузера (`Intl`), редагується в Settings · • Невалідна IANA-зона → 422 · • Дати/числа/валюти форматуються через `Intl` |
+| FR-PROF-01 | R0 | **`UserSettings`**: timezone, `staleFollowUpDays` (7), `staleDaysAfterInterview` (10), `staleGhostDays` (21), `hotkeysEnabled` | • Timezone при першому вході береться з браузера (`Intl`), редагується в Settings · • Невалідна IANA-зона → `400 VALIDATION_ERROR` · • Дати/числа/валюти форматуються через `Intl` |
 | FR-PROF-02 | R1 | Quiet hours у `UserSettings` (default 22:00–08:00 локально, можна вимкнути) | • Використовуються FR-REM-06, FR-NOTIF-03 |
 | FR-PROF-03 | R1 | **Career Profile**: personal (name, location, links), summary (headline, about, years, seniority, target roles), work experience (company, position, dates, description, achievements, skills), education, languages (CEFR) | • Timezone не дублюється в профілі — тільки `UserSettings` · • Посилання — тільки `http(s)` |
 | FR-PROF-04 | R1 | **Skills**: з каталогу `Skill` (autocomplete + aliases: `node`, `nodejs`, `node.js` → `Node.js`); `UserSkill`: level 1–5, years, last used, preference (`PREFERRED / NEUTRAL / AVOID`) | • Пошук за alias повертає канонічну навичку · • Дубль навички в профілі неможливий |

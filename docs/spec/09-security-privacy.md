@@ -59,7 +59,7 @@
 
 | Контроль | Значення |
 |---|---|
-| Домени | SPA `https://app.<domain>`, API `https://api.<domain>` — same-site (див. `12-infra-ops.md` §3). Staging — окремий registrable domain |
+| Домени | SPA `https://app.<domain>`, API `https://api.<domain>` — same-site (див. `12-infra-ops.md` §3). Staging (з R1, тільки synthetic) — окремий registrable domain; у R0 staging немає (`12-infra-ops.md` §1) |
 | Session cookie | `__Host-applyra.session` (Better Auth `advanced.cookiePrefix`), `HttpOnly; Secure; SameSite=Lax; Path=/`, без `Domain` |
 | Інші cookies | тільки Better Auth (state/PKCE для OAuth), той самий префікс `__Host-` |
 | Origin check | Better Auth `trustedOrigins = [APP_ORIGIN]` для `/api/auth/*`; власний `OriginGuard` для решти мутацій: `POST/PUT/PATCH/DELETE` без `Origin` або з `Origin ∉ allowlist` → 403 `CSRF_ORIGIN` |
@@ -119,7 +119,7 @@ URL capture переїхав у R1 (див. `02-releases.md`). Fetcher — ок�
 | Запит | без cookies, без auth, ідентифікований `User-Agent: ApplyraBot/<version> (+https://app.<domain>/bot)` |
 | Rate limit | 30/год на користувача, 5 паралельних глобально |
 | Політика доменів | LinkedIn — тільки paste; решта — за robots/ToS (P-18, див. `08-ingestion-matching.md`) |
-| Мережева ізоляція | `safe-fetcher` у мережі `egress` (тільки інтернет) + `fetch-rpc` (тільки з worker); не бачить `postgres`/`redis`/`minio` (не резолвляться); без DB/Redis credentials. Host firewall (`DOCKER-USER`) дропає трафік з `egress` subnet до RFC 1918, `100.64/10`, `169.254/16` (див. `12-infra-ops.md` §3) |
+| Мережева ізоляція | `safe-fetcher` у мережі `egress` (тільки інтернет) + `fetch-rpc` (RPC тільки з worker; API в цій мережі немає — capture іде через чергу `capture`, ADR 021; Prometheus — лише scrape `:9466`); не бачить `postgres`/`redis`/`minio` (не резолвляться); без DB/Redis credentials. Host firewall (`DOCKER-USER`) дропає трафік з `egress` subnet до RFC 1918, `100.64/10`, `169.254/16` (див. `12-infra-ops.md` §3) |
 | Результат | метрика `capture_fetch_total{result}` включно з `blocked_ssrf` |
 
 ## 6. Документи та uploads (S-08) [R1]
@@ -176,7 +176,7 @@ URL capture переїхав у R1 (див. `02-releases.md`). Fetcher — ок�
 
 ## 10. Логи та redaction
 
-pino `redact` (censor `[REDACTED]`), єдиний список у `apps/api/src/common/logging/redact.ts`, покритий unit-тестом:
+pino `redact` (censor `[REDACTED]`), єдиний список у `apps/api/src/platform/logging/redact.ts`, покритий unit-тестом:
 
 | Категорія | Шляхи |
 |---|---|
@@ -208,7 +208,7 @@ pino `redact` (censor `[REDACTED]`), єдиний список у `apps/api/src/
 |---|---|---|---|---|
 | Postgres | усі доменні дані користувача | до видалення | soft delete (`deletedAt`) → hard-delete job ≤ 24 год; FK `Cascade` (див. `05-data-model.md`) | так |
 | S3 documents | CV-файли, усі `DocumentVersion` | до видалення | `DeleteObjects` за prefix `documents/<userId>/` + `quarantine/<userId>/`, включно з noncurrent versions, якщо bucket versioning увімкнено | так |
-| S3 exports | `DataExport` zip | посилання 24 год, об'єкт — lifecycle 48 год | lifecycle + явне видалення в delete pipeline | так |
+| S3 exports | `DataExport` zip | посилання й об'єкт 24 год (`DataExport.expiresAt`, видаляє застосунок); bucket lifecycle 48 год — страховка | cleanup при `expiresAt` + явне видалення в delete pipeline; lifecycle — backstop | так |
 | Redis / BullMQ | job payloads (тільки id, без PII), rate-limit лічильники | completed 24 год, failed 7 днів | `removeOnComplete/Fail` за віком; ключі `*:<userId>` видаляються pipeline | так |
 | Backups (WAL-G, pg_dump) | повна копія БД | 14 днів, далі expire (lifecycle) | автоматичне закінчення; після restore — повторне застосування tombstones | ні — зникає ≤ 14 днів (зазначено в privacy policy) |
 | Логи (docker json-file) | метадані запитів, redacted | 14 днів (ротація) | ротація | ні — тільки userId, без контенту |
@@ -227,7 +227,7 @@ pino `redact` (censor `[REDACTED]`), єдиний список у `apps/api/src/
 | Дані користувача | 6(1)(b) — виконання договору (сервіс) | тільки потрібні поля |
 | Контакти рекрутерів (третіх осіб) | 6(1)(f) — законний інтерес користувача вести свій пошук | ім'я, роль, компанія, робочий email/LinkedIn URL, нотатки; без спецкатегорій; видаляються разом із заявкою/акаунтом; користувач може видалити контакт будь-коли |
 
-- Контакти **виключені з AI-контексту за замовчуванням**; включення — явний per-task opt-in у AI settings (див. `07-ai.md`).
+- Контакти **ніколи не потрапляють в AI-контекст** (без opt-in; див. `07-ai.md` §5).
 - Privacy policy (коротка, чесна, з таблицею §12.1) — до відкриття реєстрації для інших людей [R1].
 - Export (FR-PRIV) включає контакти, бо їх ввів користувач.
 

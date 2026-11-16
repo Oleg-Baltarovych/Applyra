@@ -38,7 +38,7 @@ applying and losing track of where and when they applied. Keeps 1–3 CV version
 
 | Release | Name | One line |
 |---|---|---|
-| R0 | Tracker for myself | Google sign-in (allowlist), applications CRM (Kanban/table/detail/timeline, undo), manual job form + paste text, next actions + Today/Overdue (computed on read, no worker), CSV import/export, staging with nightly backups |
+| R0 | Tracker for myself | Google sign-in (allowlist), applications CRM (Kanban/table/detail/timeline, undo), manual job form + paste text, next actions + Today/Overdue (computed on read, no worker), CSV import/export, security headers, one deployed environment on the future prod host (real data, allowlist = author) with nightly backups; synthetic staging from R1 |
 | R1 | Public MVP / portfolio-ready | Outbox + worker, URL capture (JSON-LD + `extract-job` LLM with budgets), stale hints, contacts, interviews, profile & skills, CV documents, job search (no salary filter), dashboard, base analytics, notification centre + email reminders, email+password auth, ephemeral demo, Prometheus/Grafana, production |
 | R2 | Discover & Match | Public-API ingestion (Greenhouse, Lever, Ashby, DOU RSS), dedup, salary normalization (NBU rates) + salary filter, deterministic explainable matching, saved searches, OpenTelemetry |
 | R3 | AI Assistant | Analyze vacancy, CV tailoring suggestions, message drafts, recruiter replies, interview prep, CV parsing, embeddings, evals |
@@ -56,7 +56,7 @@ Details and timeline: `02-releases.md`.
 ## 7. Stack
 
 TypeScript (strict) · pnpm + Turborepo · React + Vite + TanStack Query + Tailwind/shadcn · NestJS · Prisma 7 ·
-PostgreSQL 18 · Redis + BullMQ · Better Auth · S3-compatible storage · Vitest, Testcontainers, Playwright ·
+PostgreSQL 18 · Redis-compatible (Valkey 9) + BullMQ · Better Auth · S3-compatible storage · Vitest, Testcontainers, Playwright ·
 GitHub Actions · Docker Compose on a VPS (Hetzner) + Caddy + Terraform · SPA on Cloudflare Pages · Prometheus/Grafana, Sentry.
 Exact versions: `04-architecture.md` §7.
 

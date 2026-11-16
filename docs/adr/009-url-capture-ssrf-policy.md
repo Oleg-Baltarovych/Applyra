@@ -1,6 +1,7 @@
 # 009. URL capture SSRF policy
 
 - Status: Accepted
+- Amended: 2026-11-16 — transport (API → `capture` queue → worker → safe-fetcher) recorded in ADR 021
 - Date: 2026-11-16
 
 ## Context

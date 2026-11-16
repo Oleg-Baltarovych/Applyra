@@ -25,3 +25,4 @@ Process and template: [000](000-record-architecture-decisions.md). New ADRs: `/a
 | [018](018-deterministic-matching-v1.md) | Deterministic matching v1 | Accepted (R2) | Weighted explainable components with confidence and hard filters |
 | [019](019-exchange-rates-nbu.md) | Exchange rates from NBU | Accepted (R2) | NBU rates (twice daily, last-known fallback) for USD/month salary normalisation; API verified in R2 |
 | [020](020-docs-language-and-structure.md) | Documentation language and structure | Accepted | Spec split into `docs/spec/*.md` (Ukrainian, English overview); code/README/ADR in English |
+| [021](021-url-capture-via-worker-queue.md) | URL capture via a worker queue | Accepted | R1: API enqueues `capture` job (stable jobId) and awaits ≤ 6 s; worker calls safe-fetcher; API stays off `fetch-rpc`; timeout → 504 `CAPTURE_TIMEOUT` |
