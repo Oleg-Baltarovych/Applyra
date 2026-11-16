@@ -191,7 +191,7 @@ R0 включає тільки Google OAuth, ручну форму ваканс�
 | POST | `/me/export` | fresh, no-demo | FR-PRIV | async → `DataExport` (`202`, `{ id }`) |
 | GET | `/me/exports/:id` | user | FR-PRIV | статус + `downloadUrl` (signed, ≤ 5 хв) при `READY` |
 | DELETE | `/me` | fresh | FR-PRIV | `deletedAt` + `USER_DELETION_REQUESTED`, усі сесії revoke → `202` |
-| POST | `/demo/session` | public | FR-DEMO | створює ефемерного demo-користувача (TTL 24 год) + сесію |
+| POST | `/demo/session` | public | FR-DEMO | створює ефемерного demo-користувача (TTL 24 год) + сесію. **З R0** (ADR 022) лише при `DEMO_ENABLED=true`, інакше 404; Turnstile-verify і ліміти (FR-DEMO-05) — R1. Origin check діє |
 | GET | `/jobs` | user | FR-DISC | `JobQuery`: `q`, фільтри без зарплати (FR-DISC-03), `sort=newest\|relevance`; PUBLIC + власні PRIVATE |
 | POST | `/jobs/capture` | user, no-demo | FR-JOB | `{ url?, text? }` → `JobDraft` (не зберігає). Синхронний для клієнта: API ставить job `capture` у чергу `capture` (`jobId` = `capture-<sha256(userId|canonicalUrl)>`, без `:`, `04-architecture.md` §5.4) і чекає ≤ 6 с; worker: SSRF-safe fetch через `safe-fetcher` → JSON-LD → `extract-job` (AI executor) (ADR 021). Помилка → `422 CAPTURE_UNAVAILABLE`; очікування > 6 с → `504 CAPTURE_TIMEOUT` (не зберігається в IK, retry дозволений). IK |
 | PATCH | `/jobs/:id/user-state` | user | FR-DISC | `{ saved?, hidden?, hiddenReason?, note? }` → `UserJob` (A-21); `viewedAt` ставить `GET /jobs/:id` |

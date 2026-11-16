@@ -8,6 +8,7 @@
 - Порядок усередині milestone — за `Depends`; задачі без взаємних залежностей можна брати в будь-якому порядку.
 - `Flow`: `/feature` — plan → approve → implement → review → verify → accept; `direct` — без окремого плану (дрібне, без змін схеми): `/implement docs/plans/mvp-tasks.md <ID>`, AC задачі = кроки плану, далі `/review` + `/verify` + `qa-lead` як зазвичай; `spike` — throwaway-перевірка, результат у `docs/CONTEXT.md` §6 / ADR, код лише якщо придатний; `/e2e`, `/security-audit`, `/ship` — відповідні flow-команди.
 - DoD: R0-задачі — `02-releases.md` §5.1; з M3 — §5.2. Тести з AC — частина задачі, не окремий PR.
+- `later` — розділ `Later — when hosting` (ADR 022): задачі, потрібні лише для hosted-середовища; не плануються, поки не вирішено хостити.
 - `optional` — нижчий пріоритет; береться, якщо milestone іде за графіком. Не виконано → переноситься в `Later`/наступний milestone свідомо (запис у PR-описі релізу).
 - Оцінки — години роботи соло-розробника з Claude Code (включно з review/verify), не «чистий» час агента.
 
@@ -19,14 +20,17 @@
 |---|---|---|---|---|
 | M0 Setup | 12–15 | 29 | 1.5 | 30.5 |
 | M1 Tracker | 22–26 | 41.5 | 1.5 | 43 |
-| M2 Migration | 11–14 | 20 | — | 20 |
-| **R0** | **45–55** | **90.5** | **3** | **93.5** |
+| M2 Migration | 11–14 | 26.5 | — | 26.5 |
+| **R0** | **45–55** | **97** | **3** | **100** |
 | M3 Capture & Notify | 30–35 | 65.5 | — | 65.5 |
 | M4 Profile, Jobs & Extraction | 45–55 | 63 | — | 63 |
-| M5 Insights & Launch | 50–60 | 65 | 10 | 75 |
-| **R1** | **125–150** | **193.5** | **10** | **203.5** |
+| M5 Insights & Launch | 50–60 | 57.5 | 4 | 61.5 |
+| **R1** | **125–150** | **186** | **4** | **190** |
+| Later — when hosting | — | 6 | 6 | 12 |
 
-**Висновок:** core-обсяг R0 ≈ 1.6–2× від оцінки 02, R1 ≈ 1.3–1.5×. Колонка «02 (ціль)» лишається як орієнтир; при відставанні першими знімаються `optional` (правило `mvp.md` §7), але це закриває лише ~3 год R0 / ~10 год R1 — решта розриву вирішується календарем або правкою спеки (варіанти — `mvp.md` §2). Нічого з FR не вирізано.
+**ADR 022 (2026-11-16):** R0 core 90.5 → 97 (−2 год: M0-13 у Later, M0-15 звужено; +8.5 год: M0-17 Terraform validate, M2-12 demo sign-in, M2-13 README, M2-14 devcontainer, seed +0.5); R1 core 193.5 → 186, optional 10 → 4 (M5-17/18/20 у Later, M5-19 закрито, M5-12/21/27 звужено). R0+R1 разом 297 → 290; ще 12 год лежать у Later і не потрібні без хостингу.
+
+**Висновок:** core-обсяг R0 ≈ 1.8–2.2× від оцінки 02, R1 ≈ 1.2–1.5×. Колонка «02 (ціль)» лишається як орієнтир; при відставанні першими знімаються `optional` (правило `mvp.md` §7), але це закриває лише ~3 год R0 / ~4 год R1 — решта розриву вирішується календарем або правкою спеки (варіанти — `mvp.md` §2). Нічого з FR не вирізано.
 
 ---
 
@@ -64,8 +68,9 @@
 ### M0-04 · Docker Compose + env config
 - FR: — · Area: infra · Est: 1h · Depends: M0-01, M0-03 · Flow: direct
 - AC:
-  - `docker compose up -d`: postgres 18 (init ролей з M0-03), сервіс `redis` (image `valkey/valkey:9`), minio, mailpit; healthchecks.
+  - `docker compose up -d`: postgres 18 (init ролей з M0-03), сервіс `redis` (image `valkey/valkey:9`), minio (`cgr.dev/chainguard/minio`, pinned digest — upstream community images припинені), mailpit; healthchecks.
   - `apps/api/src/platform/config/env.schema.ts` (Zod): невалідна/відсутня змінна → процес падає з переліком; `.env.example` з коментарями; web — тільки `VITE_*`.
+  - (ADR 022) `cp .env.example .env` достатньо для старту: `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` і `SENTRY_DSN` опційні (Google provider — лише коли задані обидва; один без іншого → помилка схеми); `DEMO_ENABLED` (boolean, `true` у `.env.example`) — сам endpoint з'являється в M2-12.
 
 ### M0-05 · CI pipeline
 - FR: — · Area: ci · Est: 2h · Depends: M0-01 · Flow: direct
@@ -74,7 +79,7 @@
     1. зараз: lint/prettier/typecheck → unit + coverage `**/*.domain.ts` ≥ 90% → gitleaks + `pnpm audit --audit-level=high`;
     2. integration (Testcontainers, включно з IDOR gate) — вмикає M0-07a;
     3. migrations (drift, squawk, clean apply, якщо змінено `prisma/`) — вмикає M0-08 (перша міграція);
-    4. build images — вмикає M0-14 (Dockerfiles).
+    4. deploy-ready: build images multi-arch + `compose config` + actionlint — вмикає M0-14; `terraform.yml` — M0-17.
   - `permissions: contents: read` top-level; branch protection на `main` з обов'язковими checks.
 - Notes: `11-testing.md` §9 (колонка R0), `09-security-privacy.md` §14.
 
@@ -132,6 +137,7 @@
   - Email поза `AUTH_SIGNUP_ALLOWLIST` → акаунт не створено; існуючий користувач входить без перевірки. Hook кидає `APIError('FORBIDDEN', { code: 'SIGNUP_CLOSED' })` (M0-02): програмний виклик → `403 { code: SIGNUP_CLOSED }`, OAuth callback → redirect на `errorCallbackURL` (`/sign-in`) з `?error=SIGNUP_CLOSED` (не 403 — M0-12 показує «Access is invite-only» за цим параметром); integration перевіряє `302` + `Location`.
   - Idle 7 д / absolute 30 д (перевірка в guard), rotation при вході; cookie `__Host-applyra.session; HttpOnly; Secure; SameSite=Lax`.
   - Integration з mocked Google token endpoint; запит без сесії → 401; helper сесії user A/B (M0-07a) працює через реальний auth-шлях.
+  - (ADR 022) Без `GOOGLE_CLIENT_ID/SECRET` Google provider не реєструється, API стартує (integration).
 - Notes: результат M0-02; ADR 007/008. `POST /api/auth/revoke-sessions` — R1 (M3-09).
 
 ### M0-11 · `/me` + `PATCH /me/settings`
@@ -144,38 +150,42 @@
 - FR: FR-AUTH-01, FR-AUTH-02, FR-PROF-01 · Area: web · Est: 3h · Depends: M0-11 · Flow: /feature
 - AC:
   - Vite 8 + React Router 8 data mode + TanStack Query + Tailwind 4/shadcn, токени `10-frontend-ux.md` §8 (contrast check у тестах); typed API client з contracts.
-  - `/sign-in` (Google; `signIn.social` з `errorCallbackURL: '/sign-in'`): `?error=SIGNUP_CLOSED` → «Access is invite-only», інший `?error=` → загальне повідомлення без сирого коду (`10-frontend-ux.md` §2.1); component-тест на обидва випадки. Захищені маршрути, shell з навігацією `Applications · Today · Settings`, `*` → 404, loading/error стани.
+  - `/sign-in` (Google — лише якщо налаштовано, прапорець `VITE_*`; `signIn.social` з `errorCallbackURL: '/sign-in'`; «Try demo» додає M2-12): `?error=SIGNUP_CLOSED` → «Access is invite-only», інший `?error=` → загальне повідомлення без сирого коду (`10-frontend-ux.md` §2.1); component-тест на обидва випадки. Захищені маршрути, shell з навігацією `Applications · Today · Settings`, `*` → 404, loading/error стани.
   - Перший вхід: timezone з `Intl` зберігається без питань; `/settings/preferences` редагує timezone/пороги/hotkeys; форматування через `Intl`.
   - `index.html` без inline-скриптів (CSP).
 
 **E10 Ops**
 
-### M0-13 · R0 environment provisioning
-- FR: — · Area: infra · Est: 1.5h · Depends: — · Flow: direct
-- AC:
-  - R0-середовище = майбутній **prod**-хост (реальні дані автора, allowlist = автор; D-01 resolved): Hetzner VPS (Docker, Tailscale, host firewall; 22 закритий публічно, 80/443 тільки з Cloudflare), prod DNS `app.`/`api.`, Cloudflare Pages project (prod), R2 bucket prod-бекапів (scoped token без delete), prod Google OAuth client, GitHub Environment `production`.
-  - Runbook `infra/README.md` (кроки відтворювані; Terraform — M5-19). Synthetic-only staging у R0 немає — з'являється в M5-20.
+> M0-13 (provisioning), deploy-частина колишнього M0-14 (тепер M0-14b) і off-site частина M0-15 (M0-15b) — у `Later — when hosting` (ADR 022).
 
-### M0-14 · Deploy pipeline (R0) + SPA `_headers`
-- FR: — · Area: ci, infra, security · Est: 3h · Depends: M0-05, M0-12, M0-13 · Flow: /feature
+### M0-14 · Production images + compose.prod (deploy-ready)
+- FR: — · Area: ci, infra, security · Est: 3h · Depends: M0-05, M0-12 · Flow: /feature
 - AC:
-  - Dockerfiles (створюються тут): `apps/api` — один multi-stage image, non-root, entrypoints `main` / `worker`; `caddy`. Вмикають build-стадію `ci.yml` (M0-05 п. 4).
-  - `deploy-prod.yml` на push `main` (GitHub Environment `production`): image у GHCR (`sha-*`, pinned digest) → `/opt/applyra/.env` з Environment secrets → `compose run --rm migrate` (`migrate deploy` + `REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON "_prisma_migrations" FROM applyra_app;` під `applyra_maintenance`, M0-08) → restart api → `wrangler pages deploy` з `_headers` → health-check smoke. У M5-20 замінюється на `deploy-staging.yml` + `release.yml`.
-  - `compose.yml` + `compose.prod.yml`: caddy, api, postgres, `redis` (`valkey/valkey:9`), backup-cron; мережі `edge`/`internal`/`outbound`.
-  - Spike CSP: `_headers` `09-security-privacy.md` §9.1 реально віддається Pages на custom domain (curl-check у workflow); інакше fallback — Caddy static.
-  - Prod «hello»: sign-in Google → `/applications` (порожньо).
+  - Dockerfiles: `apps/api` — один multi-stage image, non-root, без `pnpm`/`npm` у runtime, base pinned digest, entrypoints `main` / `worker` / `migrate`; `caddy` — reverse proxy + статика `apps/web/dist` з headers ідентичними `_headers` (`09-security-privacy.md` §9.1; snapshot-тест на збіг значень).
+  - `ci.yml` п. 4: buildx `linux/amd64,linux/arm64` (на PR без push; GHCR push — M0-14b), `docker compose -f infra/compose/compose.yml -f infra/compose/compose.prod.yml config -q`, actionlint на `.github/workflows/*`.
+  - `compose.prod.yml`: caddy, api, `migrate` (one-off: `migrate deploy` + `REVOKE … ON "_prisma_migrations" FROM applyra_app;` під `applyra_maintenance`, M0-08), postgres, `redis` (`valkey/valkey:9`); мережі `edge`/`internal`/`outbound`; без backup-cron (M0-15b).
+  - `deploy-prod.yml` — тільки `workflow_dispatch`, Environment `production`, кроки `12-infra-ops.md` §8.2 (GHCR digest → `.env` з secrets → migrate → restart api → `wrangler pages deploy` з `_headers` → health-check); у R0 не запускається. `apps/web/public/_headers` з §9.1.
+  - Локальна перевірка: `docker compose -f … -f compose.prod.yml up` → `https://localhost` (Caddy internal CA) → demo sign-in (після M2-12) / `/health/ready` 200; кроки в `infra/README.md`.
+- Notes: результат spike CSP на Pages custom domain — M0-14b; до того Caddy static — робочий шлях.
 
-### M0-15 · Nightly backup + Sentry + uptime
-- FR: — · Area: infra, obs · Est: 1.5h · Depends: M0-14 · Flow: direct
+### M0-15 · Local backup script + Sentry api (optional DSN)
+- FR: — · Area: infra, obs · Est: 1h · Depends: M0-04, M0-09 · Flow: direct
 - AC:
-  - backup-cron: `pg_dump -Fc` → `age` → R2, lifecycle 14 д; результат → Telegram.
-  - Sentry api (`sendDefaultPii: false`, `beforeSend` scrub); зовнішній uptime-check `/health/ready`.
+  - `pnpm db:backup`: `pg_dump -Fc` (роль `backup`, через `docker compose exec`) у `./backups/` (gitignored), ротація — останні 14 файлів; `pnpm db:restore <file>` — в ізольований контейнер `postgres:18` (`12-infra-ops.md` §5).
+  - Sentry api ініціалізується лише при `SENTRY_DSN` (`sendDefaultPii: false`, `beforeSend` scrub — unit на scrub); без DSN — no-op.
 
-### M0-16 · Spike: R2 presigned PUT
-- FR: FR-DOC-01 · Area: api · Est: 1h · Depends: M0-13 · Flow: spike · **optional**
+### M0-16 · Spike: presigned PUT (MinIO; R2 — when hosting)
+- FR: FR-DOC-01 · Area: api · Est: 1h · Depends: M0-04 · Flow: spike · **optional**
 - AC:
-  - Presigned PUT з підписаними `Content-Length` і `Content-Type`: інший розмір/тип → R2 відхиляє (перевірено на R2 і MinIO). Результат у `CONTEXT.md` §6 / ADR 010.
+  - Presigned PUT з підписаними `Content-Length` і `Content-Type`: інший розмір/тип → MinIO відхиляє. Перевірка на R2 — частина M0-13 (when hosting). Результат у `CONTEXT.md` §6 / ADR 010.
 - Notes: потрібен до M4-14; якщо не встигли в M0 — перший крок M4-14.
+
+### M0-17 · Terraform code + CI validate
+- FR: — · Area: infra, ci · Est: 2h · Depends: M0-05 · Flow: direct
+- AC:
+  - `infra/terraform/{modules,envs/production}`: `hcloud` (server — x86 або ARM `cax`-клас змінною, firewall: 80/443 тільки Cloudflare ranges, 22 закритий; volume; cloud-init: Docker, Tailscale, host firewall), `cloudflare` (DNS `app.`/`api.`, Pages project + custom domain, R2 buckets + lifecycle); S3-backend на R2 оголошено, але не ініціалізується в CI. Providers і версії pinned (`.terraform.lock.hcl`).
+  - `terraform.yml` (PR зі змінами `infra/terraform/**`): `fmt -check -recursive`, `init -backend=false` + `validate`; без credentials і без `plan` (plan/apply — M0-13).
+  - `infra/README.md` → розділ «Deploy-ready / if hosting later» з варіантами `12-infra-ops.md` §2.1.
 
 ---
 
@@ -383,26 +393,50 @@
   - IDOR gate зелений для всіх R0 routes; список `@IdorExempt` переглянуто.
   - Тести: headers API, CORS, cookies, CSV injection, redaction, rate limits — усі R0-рядки `11-testing.md` §5.3.
 
-### M2-08 · Synthetic seed
-- FR: — · Area: db · Est: 1h · Depends: M1-11 · Flow: direct
+### M2-08 · Synthetic seed (realistic)
+- FR: FR-DEMO-01 · Area: db · Est: 1.5h · Depends: M1-11 · Flow: direct
 - AC:
-  - `pnpm db:seed`: детермінований faker, заявки в усіх статусах, події, reminders, вакансії; тільки синтетика. Перевикористовується в M5-12 (demo).
+  - `seedUserData(tx, userId, opts)` + CLI `pnpm db:seed`: детермінований faker (фіксований seed), реалістичний набір — ~40 заявок у всіх статусах з правдоподібним розподілом (більшість APPLIED/REJECTED/GHOSTED, кілька INTERVIEW/OFFER), вигадані компанії/ролі UA-ринку, канали/origin, події за останні ~8 тижнів, reminders (overdue/today/upcoming), вакансії; тільки синтетика (без реальних людей/компаній).
+  - Придатний для скріншотів README (M2-13); `--volume` для k6 (2 000 / 20 000, `11-testing.md` §7). Перевикористовується в M2-12 (demo); integration: seed проходить IDOR-обмеження (дані лише в `userId`).
 
 ### M2-09 · Dogfooding polish buffer
 - FR: — · Area: web, api · Est: 2h · Depends: M2-05 · Flow: /bugfix
 - AC:
   - Імпорт реальної таблиці автора; знайдені баги — окремі `/bugfix` з тестом; loading/error/keyboard доступ на всіх R0 екранах.
 
-### M2-10 · Backup restore test (manual)
+### M2-10 · Backup restore test (manual, local)
 - FR: — · Area: infra, docs · Est: 1h · Depends: M0-15 · Flow: direct
 - AC:
-  - Відновлення останнього `pg_dump` в ізольований контейнер, `prisma migrate status` актуальний, row counts збігаються; runbook `docs/runbooks/restore.md`.
+  - Відновлення останнього локального `pg_dump` (`pnpm db:restore`) в ізольований контейнер, `prisma migrate status` актуальний, row counts збігаються з робочою БД; runbook `docs/runbooks/restore.md` (local; розділ «when hosting» — заглушка з посиланням на M5-18).
+
+**E10 Portfolio (ADR 022)**
+
+### M2-12 · Demo sign-in without Google (local)
+- FR: FR-DEMO-01, FR-DEMO-06 (банер) · Area: api, web, security · Est: 2.5h · Depends: M2-08, M0-12 · Flow: /feature
+- AC:
+  - `POST /demo/session` (`@Public`, Origin check): лише при `DEMO_ENABLED=true`, інакше 404; створює `User` з `demoExpiresAt = now + 24 год` (без `Account`, allowlist не зачіпається) + `seedUserData` в одній транзакції + Better Auth сесію з TTL ≤ `demoExpiresAt` (механізм створення сесії перевірити в плані: plugin `anonymous` vs internal adapter — не з пам'яті).
+  - Env schema: `NODE_ENV=production` + `DEMO_ENABLED=true` без Turnstile-конфігу → процес не стартує (unit). IDOR між двома demo-користувачами (integration); demo-сесія → 200 на `/me`, `demoExpiresAt` у відповіді.
+  - Web: «Try demo» на `/sign-in` (прапорець `VITE_*`), після входу → `/applications`; банер «Demo — data resets in N h» у shell; component-тести (кнопка за прапорцем, банер).
+  - Purge, обмеження і Turnstile — M5-12/M5-13 (R1).
+
+### M2-13 · Portfolio README (screenshots/GIF/video, diagram, badges)
+- FR: — · Area: docs · Est: 2h · Depends: M2-12, M2-04 · Flow: direct (architect)
+- AC:
+  - README: що це (1 абзац), GIF Kanban drag + Undo, скріншоти (Applications, Detail, Today, Import), коротке відео 1–2 хв (посилання), архітектурна діаграма (Mermaid), stack, «Key engineering decisions» → ADR, CI badges, quick start (`cp .env.example .env && docker compose up -d && pnpm dev` → Try demo), кнопка «Open in GitHub Codespaces» (після M2-14), «Deploy-ready» (що перевіряє CI; варіанти хостингу — `12-infra-ops.md` §2.1). Знімки — лише на синтетиці seed.
+- Notes: оновлюється в кінці R1 (M5-27).
+
+### M2-14 · Devcontainer + Codespaces
+- FR: — · Area: repo, infra · Est: 1.5h · Depends: M2-12, M0-04 · Flow: direct
+- AC:
+  - `.devcontainer/devcontainer.json`: Node 24 + corepack/pnpm, docker-in-docker (або compose-based), `postCreateCommand`: `pnpm install --frozen-lockfile`, `cp -n .env.example .env`; `postStartCommand`: `docker compose up -d`, `pnpm db:migrate`; forwarded ports 5173/3000 з labels.
+  - У Codespaces forwarded-хости портів 5173 і 3000 різні (і, ймовірно, різні sites — перевірити PSL для `app.github.dev`), тож cookie/CORS не покладаються на них: SPA і API на одному origin через Vite dev proxy (`/api` → `:3000`), `APP_ORIGIN`/`trustedOrigins` = forwarded-URL з `CODESPACE_NAME`; перевірено вручну: Try demo → Applications. Codespaces оплачує квота відвідувача (README).
 
 ### M2-11 · R0 release
-- FR: — · Area: security, docs · Est: 2h · Depends: усі не-optional задачі R0 — M0-01…M0-06, M0-07a, M0-07b, M0-08…M0-15, M1-01…M1-19, M2-01…M2-10 (поза gate: optional M0-06b, M0-16, M1-20) · Flow: /security-audit → /ship
+- FR: — · Area: security, docs · Est: 2h · Depends: усі не-optional задачі R0 — M0-01…M0-06, M0-07a, M0-07b, M0-08…M0-12, M0-14, M0-15, M0-17, M1-01…M1-19, M2-01…M2-10, M2-12…M2-14 (поза gate: optional M0-06b, M0-16, M1-20; поза R0: `Later — when hosting`) · Flow: /security-audit → /ship
 - AC:
-  - `/security-audit` R0 без відкритих high/critical; README (setup, команди, архітектура коротко); `CONTEXT.md` оновлено.
-  - Тег `v0.1.0`, GitHub milestone R0 закрито; ручний smoke-чекліст пройдено; старт 7-денного exit-критерію.
+  - `/security-audit` R0 без відкритих high/critical (включно з demo sign-in і production-guard `DEMO_ENABLED`); README (M2-13) актуальний; `CONTEXT.md` оновлено.
+  - Deploy-ready checks зелені (multi-arch build, compose config, terraform validate, actionlint); свіжий clone → quick start → Try demo працює без Google credentials.
+  - Тег `v0.1.0`, GitHub milestone R0 закрито; ручний smoke-чекліст пройдено (local); старт 7-денного exit-критерію (local).
 
 ---
 
@@ -446,7 +480,7 @@
 ### M3-04 · Email infrastructure
 - FR: FR-NOTIF-02 · Area: api, worker · Est: 2h · Depends: M3-01 · Flow: /feature
 - AC:
-  - `EmailSender` (Mailpit локально, provider adapter для prod, з M5-20 — і staging), черга `email`, job `send` з ідемпотентним `jobId` (без `:`, `04-architecture.md` §5.4); шаблони (text + HTML).
+  - `EmailSender` (Mailpit локально, provider adapter — для hosted-середовища, when hosting; у R1 перевіряється з sandbox-ключем або лише unit/contract), черга `email`, job `send` з ідемпотентним `jobId` (без `:`, `04-architecture.md` §5.4); шаблони (text + HTML).
   - Вибір Resend vs Postmark зафіксовано (рядок в ADR 011 або новий ADR).
 
 ### M3-05 · Email + password sign-up / sign-in + verification
@@ -812,25 +846,25 @@
 
 **E10 Demo**
 
-### M5-12 · Demo session + restrictions
-- FR: FR-DEMO-01, FR-DEMO-03, FR-DEMO-04, FR-DEMO-05 · Area: api, security · Est: 4h · Depends: M2-08, M4-19, M5-09 · Flow: /feature
+### M5-12 · Demo restrictions + anti-abuse
+- FR: FR-DEMO-03, FR-DEMO-04, FR-DEMO-05 · Area: api, security · Est: 3h · Depends: M2-12, M4-19, M5-09 · Flow: /feature
 - AC:
-  - `POST /demo/session`: Turnstile server-verify, ≤ 3/добу на IP, ≤ 200 активних → дружнє повідомлення; demo-user (`demoExpiresAt`) + синтетичний seed + сесія з TTL користувача; audit `DEMO_CREATED`.
+  - Створення demo — з R0 (M2-12). Тут: Turnstile server-verify, ≤ 3/добу на IP, ≤ 200 активних → дружнє повідомлення; audit `DEMO_CREATED`; з Turnstile-конфігом знімається production-guard M2-12.
   - `no-demo` guard: uploads, capture, email, auth-зміни, export → `403 DEMO_FEATURE_DISABLED`; AI → `StubProvider`.
-  - IDOR між двома demo-користувачами.
+  - IDOR між двома demo-користувачами на R1-routes.
 
-### M5-13 · Demo purge + banner
+### M5-13 · Demo purge + «Request access»
 - FR: FR-DEMO-02, FR-DEMO-06 · Area: worker, web · Est: 2h · Depends: M5-12 · Flow: /feature
 - AC:
-  - Scheduler `deletion:purge-demo` (job `deletion/purge-demo`, `04-architecture.md` §5.4) — той самий pipeline, що delete account (integration).
-  - «Try demo» на sign-in; банер «Demo — data resets in N h» + «Request access» на всіх екранах (gap G-06).
+  - Scheduler `deletion:purge-demo` (job `deletion/purge-demo`, `04-architecture.md` §5.4) — той самий pipeline, що delete account (integration); прибирає й demo-користувачів, накопичених з R0.
+  - CTA «Request access» у demo-банері (банер і «Try demo» — з M2-12; gap G-06).
 
 **E10 Ops & observability**
 
 ### M5-14 · Sentry web/worker + SPA CSP final
 - FR: — · Area: obs, security, web · Est: 2h · Depends: M5-12 · Flow: direct
 - AC:
-  - Sentry web + worker, sourcemaps upload і видалення з `dist`; `_headers` з Turnstile/Sentry/report-to; nightly header check на prod (і staging після M5-20).
+  - Sentry web + worker — лише при DSN (ADR 022); sourcemaps генеруються і видаляються з `dist` (upload у Sentry — у deploy, when hosting); `_headers` і Caddy-static з Turnstile/Sentry/report-to; header check у `nightly.yml` проти `compose.ci.yml` (на hosted — when hosting).
 
 ### M5-15 · Metrics instrumentation
 - FR: — · Area: obs, api, worker · Est: 3h · Depends: M3-02, M4-19 · Flow: /feature
@@ -840,38 +874,19 @@
 ### M5-16 · Prometheus / Grafana / Alertmanager as code
 - FR: — · Area: obs, infra · Est: 4h · Depends: M5-15 · Flow: /feature
 - AC:
-  - Compose: prometheus, grafana (provisioning read-only), alertmanager, node/postgres/redis exporters — тільки `internal`, доступ через Tailscale.
-  - Dashboards (api, queues-outbox, ai-cost, capture, postgres-redis, host); alert rules R1 + `promtool test rules` у CI; routing у Telegram/email.
+  - Compose-профіль `observability` (`docker compose --profile observability up -d`): prometheus, grafana (provisioning read-only), alertmanager, node/postgres/redis exporters — тільки `internal`; local — порти лише `127.0.0.1`, hosted — через Tailscale.
+  - Dashboards (api, queues-outbox, ai-cost, capture, postgres-redis, host); alert rules R1 + `promtool check/test rules` у CI; routing у Telegram/email — receivers з env, без секретів нічого не надсилається (ADR 022).
+  - Скрипт навантаження на seed (`pnpm db:seed --volume` + короткий k6/скрипт) показує живі графіки для скріншота README.
 
-### M5-17 · WAL-G continuous archiving
-- FR: — · Area: infra · Est: 3h · Depends: M0-15 (prod-хост існує з R0) · Flow: /feature · **optional**
-- AC:
-  - Роль `backup`: `ALTER ROLE backup REPLICATION` + `pg_hba.conf` обмежує replication-підключення хостом backup (до M5-17 роль `NOREPLICATION`, `infra/postgres/init/10-roles.sql`).
-  - WAL-G (libsodium), base backup щодня, `archive_timeout = 60s`, retain 14 днів; textfile-метрики свіжості. Без нього RPO лишається 24 год (явно в release notes).
-
-### M5-18 · Restore-test workflow
-- FR: — · Area: ci, infra · Est: 2h · Depends: M0-15 (prod-хост існує з R0) · Flow: /feature
-- AC:
-  - `restore-test.yml` (monthly + manual, Environment `backup-restore`) за `12-infra-ops.md` §5: ефемерний PG на prod-хості, перевірки, повторне застосування tombstones, метрика + Telegram; перший прогін успішний.
-
-### M5-19 · Terraform IaC
-- FR: — · Area: infra · Est: 3h · Depends: M0-13 · Flow: /feature · **optional**
-- AC:
-  - `infra/terraform/{modules,envs/staging,envs/production}` (hcloud, cloudflare DNS/Pages/R2), state у R2; `terraform.yml` (fmt/validate/plan у PR).
-
-### M5-20 · Staging environment + production release workflow
-- FR: — · Area: infra, ci · Est: 3h · Depends: M0-14, M2-08, M5-16 · Flow: /feature
-- AC:
-  - Prod уже існує з R0 (M0-13/14, D-01). Новий synthetic-only staging: окремий registrable domain, окремі секрети/OAuth client/R2 bucket, GitHub Environment `staging`, дані лише з `pnpm db:seed`.
-  - `deploy-prod.yml` (M0-14) замінюється: push `main` → `deploy-staging.yml`; `release.yml` на `v*`: retag digest зі staging → approval (Environment `production`) → backup marker → migrate → rollout з healthcheck → SPA → smoke → Sentry release → Grafana annotation.
+> M5-17 (WAL-G), M5-18 (restore-test workflow), M5-20 (staging + release) — у `Later — when hosting`; M5-19 закрито (Terraform-код — M0-17, plan/apply і remote state — M0-13). ADR 022.
 
 **E2E / QA**
 
-### M5-21 · E2E flows 5, 6 + smoke
-- FR: FR-PRIV-02, FR-DEMO-03 · Area: e2e, ci · Est: 2.5h · Depends: M5-11, M5-13, M5-20 · Flow: /e2e
+### M5-21 · E2E flows 5, 6 + `@smoke` suite
+- FR: FR-PRIV-02, FR-DEMO-03 · Area: e2e, ci · Est: 2h · Depends: M5-11, M5-13 · Flow: /e2e
 - AC:
   - Flow 5 (delete account з re-auth → вхід неможливий), flow 6 (demo → upload вимкнено → вихід).
-  - `@smoke` post-merge на staging і на тег — у production (synthetic акаунт, що видаляє свої дані).
+  - `@smoke` (health, demo sign-in, Applications, створити й видалити заявку, headers) post-merge проти `compose.ci.yml`; запуск проти hosted-середовища — M5-20 (when hosting).
 
 ### M5-22 · OpenAPI ↔ route table + oasdiff
 - FR: — · Area: contracts, ci · Est: 2h · Depends: M4-09 · Flow: /feature
@@ -879,14 +894,14 @@
   - OpenAPI з nestjs-zod; тест: кожен route задокументований, немає «примарних» шляхів; `oasdiff breaking` проти `main` у CI.
 
 ### M5-23 · k6 + Lighthouse nightly
-- FR: — · Area: ci, obs · Est: 2h · Depends: M5-20 · Flow: direct · **optional**
+- FR: — · Area: ci, obs · Est: 2h · Depends: M3-23, M2-08 · Flow: direct · **optional**
 - AC:
-  - `nightly.yml`: k6 (read, search, transitions на seed 2 000 / 20 000) і Lighthouse (Dashboard, Applications) з thresholds NFR; падіння → issue.
+  - `nightly.yml` проти `compose.ci.yml` у CI: k6 (read, search, transitions на seed 2 000 / 20 000) і Lighthouse (Dashboard, Applications) з thresholds NFR як орієнтир (runner ≠ prod); падіння → issue. На staging — when hosting.
 
 ### M5-24 · Admin TOTP + Bull Board
 - FR: — · Area: api, security · Est: 2h · Depends: M3-09 · Flow: /feature · **optional**
 - AC:
-  - TOTP обов'язковий для `ADMIN`; Bull Board за admin-guard тільки через Tailscale; не-admin → 404; audit `ADMIN_ACCESS`.
+  - TOTP обов'язковий для `ADMIN`; Bull Board за admin-guard, не через Caddy (local — `127.0.0.1`, hosted — Tailscale); не-admin → 404; audit `ADMIN_ACCESS`.
 
 ### M5-25 · Accessibility + responsive pass
 - FR: — · Area: web · Est: 3h · Depends: M5-04, M4-12 · Flow: /feature (ui-reviewer)
@@ -900,17 +915,59 @@
 - AC:
   - Сторінка privacy policy з таблицею сховищ/retention (`09-security-privacy.md` §12), включно з backups/LLM/email; `/bot` для `ApplyraBot` UA; посилання з sign-in і footer.
 
-### M5-27 · README, screenshots, ADRs, demo script
-- FR: — · Area: docs · Est: 3h · Depends: M5-13, M5-16 · Flow: direct (architect)
+### M5-27 · README refresh (R1), ADRs, demo script
+- FR: — · Area: docs · Est: 2h · Depends: M2-13, M5-13, M5-16 · Flow: direct (architect)
 - AC:
-  - README: що це, demo-лінк, скріншоти (Kanban, Detail, Jobs, Dashboard, Grafana), архітектурна діаграма, стек, як запустити, тести/CI, security highlights.
+  - README з M2-13 оновлено: скріншоти/GIF R1 (Jobs, Dashboard, Analytics, capture, Grafana), нове відео 2 хв, діаграма з worker/outbox/safe-fetcher, security highlights; Codespaces-шлях перевірено на R1.
   - ADR-індекс актуальний (рішення спайків, провайдер LLM, email-провайдер); 2-хвилинний demo-сценарій у `docs/demo.md`.
 
 ### M5-28 · R1 release
-- FR: — · Area: security, docs · Est: 3h · Depends: усі не-optional задачі R1 — M3-01, M3-02, M3-02b, M3-03…M3-25, M4-01…M4-23, M5-01…M5-16, M5-18, M5-20…M5-22, M5-25…M5-27 (поза gate: optional M5-17, M5-19, M5-23, M5-24) · Flow: /security-audit → /ship
+- FR: — · Area: security, docs · Est: 3h · Depends: усі не-optional задачі R1 — M3-01, M3-02, M3-02b, M3-03…M3-25, M4-01…M4-23, M5-01…M5-16, M5-21, M5-22, M5-25…M5-27 (поза gate: optional M5-23, M5-24; поза R1: `Later — when hosting`) · Flow: /security-audit → /ship
 - AC:
   - `/security-audit` повний (OWASP API мапінг, SSRF, uploads, demo) без відкритих high/critical; fixes — окремими PR.
-  - CI зелений, Grafana показує живі метрики prod; тег `v1.0.0`; exit-критерій R1 перевірено на незнайомій людині.
+  - CI зелений (включно з deploy-ready checks); Grafana (local профіль) показує метрики на seed-навантаженні; тег `v1.0.0`; exit-критерій R1 (README/Codespaces → demo за 2 хв) перевірено на незнайомій людині.
+
+---
+
+## Later — when hosting
+
+ADR 022: виконуються лише після рішення хостити (варіант — `12-infra-ops.md` §2.1). ID збережено; GitHub milestone `Later`, label `later`. Не входять у gate M2-11/M5-28 і в підсумок годин R0/R1. Порядок: M0-13 → M0-14b → M0-15b → (M5-18, M5-17, M5-20 — за потреби).
+
+### M0-13 · Hosting provisioning (terraform apply) · `later`
+- FR: — · Area: infra · Est: 1.5h · Depends: M0-17 · Flow: direct
+- AC:
+  - Обрано варіант хостингу (Oracle A1 / Hetzner); R2-bucket для Terraform state, `init` з backend, `terraform.yml` + `plan` у PR, `apply` manual з approval.
+  - VPS (Docker, Tailscale, host firewall; 22 закритий публічно, 80/443 тільки з Cloudflare), DNS `app.`/`api.`, Pages project, R2 buckets (documents/exports/backups, scoped tokens без delete), prod Google OAuth client, GitHub Environment `production` + secrets; перевірка presigned PUT на R2 (залишок M0-16). Runbook `infra/README.md`.
+
+### M0-14b · First live deploy + Pages `_headers` check · `later`
+- FR: — · Area: ci, infra, security · Est: 1.5h · Depends: M0-13, M0-14 · Flow: /feature
+- AC:
+  - `deploy-prod.yml`: тригер push `main`, images у GHCR (`sha-*`, pinned digest); перший прогін зелений; health-check smoke.
+  - Spike CSP: `_headers` реально віддається Pages на custom domain (curl-check у workflow); інакше — SPA з Caddy static (уже є з M0-14). Prod «hello»: sign-in Google → `/applications`.
+
+### M0-15b · Off-site backups to R2 + uptime + Telegram · `later`
+- FR: — · Area: infra, obs · Est: 1h · Depends: M0-14b · Flow: direct
+- AC:
+  - backup-cron у `compose.prod.yml`: `pg_dump -Fc` → `age` → R2, lifecycle 14 д; результат → Telegram. Зовнішній uptime-check `/health/ready`. Перший ручний restore з R2 (runbook M2-10, розділ «when hosting»).
+
+### M5-17 · WAL-G continuous archiving · `later` · **optional**
+- FR: — · Area: infra · Est: 3h · Depends: M0-15b · Flow: /feature
+- AC:
+  - Роль `backup`: `ALTER ROLE backup REPLICATION` + `pg_hba.conf` обмежує replication-підключення хостом backup (до M5-17 роль `NOREPLICATION`, `infra/postgres/init/10-roles.sql`).
+  - WAL-G (libsodium), base backup щодня, `archive_timeout = 60s`, retain 14 днів; textfile-метрики свіжості. Без нього RPO лишається 24 год.
+
+### M5-18 · Restore-test workflow · `later`
+- FR: — · Area: ci, infra · Est: 2h · Depends: M0-15b · Flow: /feature
+- AC:
+  - `restore-test.yml` (monthly + manual, Environment `backup-restore`) за `12-infra-ops.md` §5: ефемерний PG на prod-хості, перевірки, повторне застосування tombstones, метрика + Telegram; перший прогін успішний.
+
+### M5-20 · Staging environment + production release workflow · `later` · **optional**
+- FR: — · Area: infra, ci · Est: 3h · Depends: M0-14b, M2-08, M5-16 · Flow: /feature
+- AC:
+  - Synthetic-only staging: окремий registrable domain, окремі секрети/OAuth client/R2 bucket, GitHub Environment `staging`, дані лише з `pnpm db:seed`; demo з Turnstile (M5-12).
+  - Auto-тригер `deploy-prod.yml` замінюється: push `main` → `deploy-staging.yml`; `release.yml` на `v*`: retag digest зі staging → approval (Environment `production`) → backup marker → migrate → rollout з healthcheck → SPA → `@smoke` (M5-21) → Sentry release + sourcemaps → Grafana annotation; nightly header check / k6 / Lighthouse — на staging.
+
+Закрито (not planned): **M5-19 · Terraform IaC** — код і CI validate → M0-17 (R0), remote state + plan/apply → M0-13.
 
 ---
 
@@ -962,11 +1019,11 @@
 | FR-REM-06 | M3-18, M5-06 | | FR-IMP-04 | M2-01, M2-02 |
 | FR-REM-07 | M3-16 | | FR-IMP-05 | M2-03, M2-05 |
 | FR-INT-01 | M3-14, M3-15 | | FR-IMP-06 | M2-03 |
-| FR-INT-02 | M3-14 | | FR-DEMO-01 | M5-12 |
+| FR-INT-02 | M3-14 | | FR-DEMO-01 | M2-08, M2-12 |
 | FR-INT-03 | M3-15 | | FR-DEMO-02 | M5-13 |
 | FR-INT-04 | M3-15 | | FR-DEMO-03 | M5-12, M5-21 |
 | FR-INT-05 | M3-14, M5-03 | | FR-DEMO-04 | M5-12 |
 | | | | FR-DEMO-05 | M5-12 |
-| | | | FR-DEMO-06 | M5-13 |
+| | | | FR-DEMO-06 | M2-12, M5-13 |
 
 Не покрито свідомо: немає. Поза R0/R1 (не плануються): FR-PROF-06, FR-DISC-06/07, FR-MATCH-*, FR-AI-02/04, FR-NOTIF-05, FR-DASH-05, FR-ANL-06.

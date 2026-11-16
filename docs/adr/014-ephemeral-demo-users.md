@@ -1,6 +1,7 @@
 # 014. Ephemeral demo users
 
 - Status: Accepted
+- Amended: 2026-11-16 — by ADR 022: demo sign-in is also the no-Google sign-in path for local/Codespaces from R0 (`DEMO_ENABLED=true` in local by default; FR-DEMO-01 in R0); Turnstile/limits/restrictions/purge stay R1 and are required before demo is enabled on any public host
 - Date: 2026-11-16
 
 ## Context

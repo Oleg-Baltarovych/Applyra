@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Amended: 2026-11-16 — cost aligned with `docs/spec/12-infra-ops.md` §2 (~€20–30/month with two VPSs from R1; R0 runs one VPS); R0 has no staging (decision D-01)
+- Amended: 2026-11-16 — by ADR 022: nothing is hosted in R0/R1; this plan (one Hetzner VPS, ~€5–10/month, staging optional) is the paid fallback "when hosting"; Terraform/Compose/images stay in the repo, validated in CI, not applied; D-01 superseded
 - Date: 2026-11-16
 
 ## Context

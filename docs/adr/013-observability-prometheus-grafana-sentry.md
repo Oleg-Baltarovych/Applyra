@@ -1,6 +1,7 @@
 # 013. Observability: Prometheus + Grafana, Sentry, OpenTelemetry later
 
 - Status: Accepted
+- Amended: 2026-11-16 — by ADR 022: Sentry SDKs are initialised only when `SENTRY_DSN` is set (no hosted Sentry required); Prometheus/Grafana/Alertmanager run as a local Compose profile in R1; uptime checks and release tagging on deploy — "when hosting"
 - Date: 2026-11-16
 
 ## Context

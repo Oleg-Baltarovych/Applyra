@@ -7,7 +7,7 @@
 | Реліз | Основна навігація (sidebar; на mobile — bottom bar) | Додатково |
 |---|---|---|
 | R0 | `Applications · Today · Settings` | Import CSV (з Applications і Settings), Cmd+K (тільки пошук по заявках + «Add application»; R0 optional — може зсунутися в R1) |
-| R1 | `Dashboard · Jobs · Applications · Analytics · Profile (вкл. Documents) · Settings` | дзвіночок Notifications, «Try demo» на sign-in, Cmd+K з jobs |
+| R1 | `Dashboard · Jobs · Applications · Analytics · Profile (вкл. Documents) · Settings` | дзвіночок Notifications, Cmd+K з jobs («Try demo» на sign-in — з R0, ADR 022) |
 | R2 | + `Discover` у Jobs (каталог, saved searches) | match-бейджі в Jobs |
 | R3 | AI-дії в контексті (Job detail, Application detail), окремого пункту немає | — |
 
@@ -19,7 +19,7 @@ Landing після входу: R0 — `/today` (якщо є due/overdue) іна�
 
 | Route | Екран | Реліз |
 |---|---|---|
-| `/sign-in` | Google (R0); email+password, «Try demo» (R1). Сторінка — `errorCallbackURL` для OAuth: `?error=SIGNUP_CLOSED` → банер «Access is invite-only» (FR-AUTH-02); інший `?error=` → загальне «Sign-in failed, try again» (сирий код не показується); параметр прибирається з URL після показу | R0 |
+| `/sign-in` | Google (R0, якщо client налаштовано); «Try demo» (R0, якщо `DEMO_ENABLED`; банер «Demo — data resets in N h» на всіх екранах demo, ADR 022); email+password (R1). Жоден метод не доступний → повідомлення з посиланням на README. Сторінка — `errorCallbackURL` для OAuth: `?error=SIGNUP_CLOSED` → банер «Access is invite-only» (FR-AUTH-02); інший `?error=` → загальне «Sign-in failed, try again» (сирий код не показується); параметр прибирається з URL після показу | R0 |
 | `/onboarding` | §3 | R0 |
 | `/applications` | Kanban (default), `?view=table` — Table | R0 |
 | `/applications/:id` | Detail drawer поверх списку (nested route); на mobile — повна сторінка | R0 |

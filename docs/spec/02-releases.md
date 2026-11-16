@@ -5,7 +5,7 @@
 ## 1. Принципи
 
 - Соло-розробка, **~15–20 год/тиждень**. Оцінки — орієнтир, не зобов'язання.
-- Кожен реліз окремо деплоїться і корисний сам по собі (D1, див. `01-product.md` §3).
+- Кожен реліз окремо придатний до деплою (**deploy-ready**, ADR 022) і корисний сам по собі (D1, див. `01-product.md` §3). Постійно розгорнутого середовища в R0/R1 немає; хостинг — `Later — when hosting`.
 - Обсяг релізу визначається тегами `R0…R3` у `03-functional.md`; цей файл — зведення і порядок. При розбіжності правильний тег у `03-functional.md`.
 - Нове, що не влазить, → `Later`, а не в поточний реліз.
 - Єдине джерело строків — таблиця §3. Інші файли посилаються на неї.
@@ -19,7 +19,7 @@
 | Входить | Вимоги |
 |---|---|
 | Monorepo, Docker Compose, CI: lint, typecheck, unit + integration (IDOR applications), build | `11-testing.md`, `12-infra-ops.md` |
-| Auth: **тільки Google OAuth**, сесії, allowlist реєстрації | FR-AUTH (R0) |
+| Auth: **тільки Google OAuth** (опційний у local), сесії, allowlist реєстрації; **demo sign-in без Google** (local/Codespaces, `DEMO_ENABLED`) з синтетичним seed | FR-AUTH (R0), FR-DEMO-01 (R0), ADR 022 |
 | `UserSettings`: timezone (з браузера), пороги stale, `hotkeysEnabled` | FR-PROF (R0) |
 | Ручна форма вакансії; «paste text» зберігається як опис (без fetch і без LLM) | FR-JOB (R0) |
 | Applications: CRUD **з delete**, Kanban (DnD + «Move to…»), Table, простий Detail (поля, notes, timeline) | FR-APP (R0) |
@@ -28,19 +28,20 @@
 | Next action + списки **Today / Overdue / Upcoming** — рахуються при читанні, без worker | FR-REM (R0) |
 | CSV-імпорт (preview → commit, мапінг колонок і статусів) | FR-IMP (R0) |
 | Синхронний експорт CSV/JSON | FR-IMP (R0) |
-| Deploy R0-середовища на майбутній prod-хост (реальні дані автора, allowlist = автор; VPS: api + postgres + redis, **без worker-контейнера**; SPA — Cloudflare Pages) + нічний `pg_dump`. Synthetic staging — з R1 (D-01) | `12-infra-ops.md` §1 |
-| Security headers / CSP (API + `_headers` SPA); Sentry для api (web/worker — R1) | `09-security-privacy.md` §9, `11-testing.md` §5, `12-infra-ops.md` §9 |
+| **Deploy-ready, не hosted** (ADR 022): production image api (multi-stage, non-root, multi-arch) + caddy, `compose.prod.yml` (api + postgres + redis, **без worker-контейнера**), Terraform (Hetzner + Cloudflare), `deploy-prod.yml` (dispatch-only) — усе перевіряється в CI, не застосовується. Автор використовує R0 локально; локальний `pg_dump`-скрипт + ручний restore | `12-infra-ops.md` §1, §5, §8 |
+| Local one-command start + `pnpm db:seed` (реалістична синтетика), devcontainer / «Open in GitHub Codespaces», portfolio README (скріншоти/GIF/відео, діаграма, badges) | ADR 022, `01-product.md` §5.1 |
+| Security headers / CSP (API + `_headers` SPA, у compose — Caddy з тими самими значеннями); Sentry SDK для api за DSN (web/worker — R1) | `09-security-privacy.md` §9, `11-testing.md` §5, `12-infra-ops.md` §9 |
 | Onboarding: «Import CSV / Add first job»; навігація: Applications · Today · Settings | FR-DASH (R0), `10-frontend-ux.md` |
 
 **Не входить у R0 (перенесено в R1):** URL fetcher (SSRF + JSON-LD) · in-app notification centre · email + password і reset · stale-підказки · contacts · interviews · Playwright E2E · outbox + worker · Prometheus/Grafana.
 
-**Exit criteria:** усі поточні відгуки автора в Applyra; 7 днів щоденного використання без повернення до таблиці; нічний бекап відновлюється вручну хоча б раз.
+**Exit criteria:** усі поточні відгуки автора в Applyra (local); 7 днів щоденного використання без повернення до таблиці; локальний бекап відновлено вручну хоча б раз; свіжий clone → `docker compose up -d && pnpm dev` → demo sign-in працює без Google credentials; deploy-ready checks у CI зелені.
 
 ### 2.2. R1 — «Public MVP / Portfolio-ready» (≈125–150 год, ~8 тижнів)
 
 | Блок | Зміст |
 |---|---|
-| Platform | outbox + BullMQ worker, AuditLog, Prometheus + Grafana (dashboards/alerts as code), Sentry web + worker |
+| Platform | outbox + BullMQ worker, AuditLog, Prometheus + Grafana (dashboards/alerts as code, local Compose-профіль), Sentry web + worker (за DSN) |
 | Auth | email + password + reset + email verification, політика паролів (≥12 + HIBP), revoke сесій, re-auth для чутливих дій |
 | Capture | URL fetcher (SSRF-safe) + JSON-LD, `extract-job` (LLM) як fallback з підтвердженням, політика доменів |
 | CRM | stale-підказки, custom reminders, редагування/видалення подій, contacts, interviews + `.ics` |
@@ -49,9 +50,9 @@
 | Insights | Dashboard, Analytics (base) |
 | Notifications | in-app центр, email-нагадування, daily digest, quiet hours |
 | Privacy | повний async експорт (zip), видалення акаунта, AI settings |
-| Demo & launch | ефемерний demo, synthetic staging + production release flow (тег `v*` + approval), README зі скріншотами, ADR актуальні (000–021 уже є, нові — за потреби), restore-тест бекапу, Playwright E2E, privacy policy |
+| Demo & launch | ефемерний demo: обмеження, Turnstile/ліміти, purge, банер (створення — з R0); README оновлено R1-екранами і Grafana, ADR актуальні (000–022 уже є, нові — за потреби), Playwright E2E, privacy policy. Staging, release flow, restore-тест — `Later — when hosting` (ADR 022) |
 
-**Exit criteria:** незнайомий рекрутер/інженер відкриває посилання, заходить у demo і за 2 хвилини розуміє, що робить продукт; CI зелений; Grafana-дашборд показує живі метрики prod.
+**Exit criteria:** незнайомий рекрутер/інженер відкриває репозиторій (README з відео/скріншотами) або Codespaces, заходить у demo і за 2 хвилини розуміє, що робить продукт; CI зелений (включно з deploy-ready checks); Grafana (local профіль) показує метрики на seed-навантаженні.
 
 ### 2.3. R2 — «Discover & Match» (≈60–80 год, ~4 тижні)
 
@@ -77,18 +78,20 @@
 
 Browser extension (MV3) · AI-чат із діями (tool calling + confirm) · Google Calendar sync · Skill Gap Analyzer · Salary analytics · Company notes/intelligence · similarity-dedup + manual review · UA-локалізація · монетизація.
 
+**When hosting** (ADR 022; лише після рішення хостити, варіанти — `12-infra-ops.md` §2.1): `terraform apply` + секрети, перший live deploy (`deploy-prod.yml` на push `main`) і перевірка `_headers` на Pages custom domain, off-site бекапи в R2 + Telegram, зовнішній uptime-check, WAL-G, scheduled restore test, staging + release flow `v*`, live `@smoke`, demo з Turnstile на публічному хості.
+
 ## 3. Єдиний таймлайн (milestones)
 
 Тижні рахуються від старту, при 15–20 год/тиждень. Реліз = останній milestone блоку.
 
 | Milestone | Тижні | Год | Зміст | Реліз |
 |---|---|---|---|---|
-| M0 Setup | 1 | 12–15 | monorepo, CI, compose, Google OAuth + allowlist, `UserSettings`, deploy «hello» (R0-середовище на prod-хості), нічний `pg_dump`; **spike версій**: NestJS 12 (fallback 11) з `nestjs-zod` і `@thallesp/nestjs-better-auth`, BullMQ 6 ↔ `@nestjs/bullmq` (інакше власна обгортка) — див. `04-architecture.md` §7 | |
+| M0 Setup | 1 | 12–15 | monorepo, CI, compose, Google OAuth + allowlist, `UserSettings`, production images + `compose.prod.yml` + Terraform (deploy-ready, перевірка в CI), локальний `pg_dump`-скрипт; **spike версій**: NestJS 12 (fallback 11) з `nestjs-zod` і `@thallesp/nestjs-better-auth`, BullMQ 6 ↔ `@nestjs/bullmq` (інакше власна обгортка) — див. `04-architecture.md` §7 | |
 | M1 Tracker | 2–3 | 22–26 | applications CRUD + delete, Kanban, Table, Detail, timeline, transitions + idempotency + undo, ручна вакансія, next action, Today/Overdue | |
-| M2 Migration | 4 | 11–14 | CSV import (preview → commit), експорт CSV/JSON, IDOR-тести applications, полірування для щоденного використання | **R0** (кінець тижня 4) |
+| M2 Migration | 4 | 11–14 | CSV import (preview → commit), експорт CSV/JSON, IDOR-тести applications, полірування для щоденного використання, seed + demo sign-in без Google, devcontainer/Codespaces, portfolio README | **R0** (кінець тижня 4) |
 | M3 Capture & Notify | 5–6 | 30–35 | outbox + worker, URL fetcher + JSON-LD, notification centre, stale-підказки, custom reminders, email+password+reset, contacts, interviews, Playwright E2E | |
 | M4 Profile, Jobs & Extraction | 7–9 | 45–55 | profile + skills, documents, Jobs search/filters, `extract-job` + golden set → **вибір LLM-провайдера** | |
-| M5 Insights & Launch | 10–12 | 50–60 | dashboard, analytics, email + digest, privacy (export/delete), demo, Prometheus/Grafana, security pass, restore-тест, prod, README, ADR | **R1** (кінець тижня 12) |
+| M5 Insights & Launch | 10–12 | 50–60 | dashboard, analytics, email + digest, privacy (export/delete), demo (обмеження, purge), Prometheus/Grafana (local профіль), security pass, README refresh, ADR | **R1** (кінець тижня 12) |
 | M6 Ingestion | 13–14 | 30–40 | adapters, normalization, salary + курси + salary-фільтр Jobs, dedup, source health | |
 | M7 Matching | 15–16 | 30–40 | matching v1, feedback, saved searches + digest, OTel | **R2** (кінець тижня 16) |
 | M8 AI | 17–19 | 45–60 | решта AI tasks, evals `analyze-job`, embeddings | **R3** (кінець тижня 19) |
@@ -110,7 +113,7 @@ Browser extension (MV3) · AI-чат із діями (tool calling + confirm) ·
 | E07 Profile & Skills | profile CRUD, skills seed (≥300 з aliases), autocomplete, languages, preferences, hard filters | R1 |
 | E08 Documents | presigned PUT (підписані `Content-Length`/`Content-Type`), magic bytes, карантин, версії, parse у child process, download URLs, видалення | R1 |
 | E09 Jobs search, Dashboard, Analytics | search_vector migration, JobQuery, фільтри (без зарплати), keyset pagination, dashboard, funnel, channels | R1 |
-| E10 Platform & Ops | outbox + relay, AuditLog, export/delete pipelines, demo (ефемерний), Sentry, pino redaction, Prometheus/Grafana, CSP/headers, backups + restore-тест | R0 (backups, CSP/headers, Sentry api) / R1 |
+| E10 Platform & Ops | outbox + relay, AuditLog, export/delete pipelines, demo (ефемерний), Sentry, pino redaction, Prometheus/Grafana, CSP/headers, deploy-ready (images, compose.prod, Terraform, CI checks), local backups, devcontainer; when hosting — provisioning, deploy, R2-бекапи, WAL-G, restore-тест, staging | R0 (deploy-ready, local backups, CSP/headers, Sentry api, demo sign-in) / R1 / Later |
 | E11 Ingestion | adapter contract, Greenhouse/Lever/Ashby/DOU, normalization, salary parser, курси НБУ, salary-фільтр/сортування Jobs, dedup, source health, admin | R2 |
 | E12 Matching | skill extraction, компоненти, агрегація, golden set, тригери, UI, feedback, saved searches, OTel | R2 |
 | E13 AI | AIProvider, task registry, executor, AiRun, бюджети (`AiUsageDaily`, `AiGlobalUsageDaily`), `extract-job` (R1), решта задач, evals, embeddings | R1 / R3 |
@@ -160,3 +163,4 @@ Browser extension (MV3) · AI-чат із діями (tool calling + confirm) ·
 - S-15 / P-16: ефемерний demo в R1.
 - Q4: вибір LLM-провайдера в M4 за golden set.
 - DoD розділено на R0 (полегшений) і R1+ (повний); епіки перейменовано `E01…E13`.
+- ADR 022 (2026-11-16): R0/R1 deploy-ready, не hosted (D-01 superseded); demo sign-in (FR-DEMO-01) — у R0 для local/Codespaces; exit criteria R0/R1 без prod-хоста; хостинг-задачі — §2.5 «When hosting».
