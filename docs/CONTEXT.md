@@ -2,12 +2,12 @@
 
 > Living map for AI agents and humans. Goal: orient in a new session without re-reading code or the whole spec.
 > Keep it terse and current. Update in the same commit that changes structure, modules, commands, or decisions.
-> Last updated: 2026-11-16 (M0-04)
+> Last updated: 2026-11-17 (M0-05)
 
 ## 1. Status
-- Phase: **M0** — monorepo scaffold (M0-01) + api stack spike (M0-02): Nest 11 bootstrap, Better Auth wiring, `/health/live`; local compose + Zod env config (M0-04).
-- Done: AI tooling (see `docs/AI-WORKFLOW.md`); spec review (`docs/SPEC-REVIEW.md`) → split spec v2.1 + ADR 000–021; MVP plan (`docs/plans/mvp.md`, `docs/plans/mvp-tasks.md`); pre-coding consistency pass over spec/ADRs; M0-01 monorepo scaffold (pnpm 11 + Turborepo 2 + TS 6.0 + ESLint 10 boundaries); M0-03 Prisma 7 + PG 18 roles spike (`infra/postgres/init/10-roles.sql`); M0-04 local compose (`compose.yaml` → `infra/compose/compose.yml`) + `.env.example` + `platform/config`; M0-02 spike (NestJS 11 fallback, ESM api; BullMQ 6 + `@nestjs/bullmq` verified on Valkey 9, deps removed until R1 / M3-01).
-- Next: M0-05 (CI), then M0-07a → M0-08 → M0-09 → M0-10 (`docs/plans/mvp-tasks.md`).
+- Phase: **M0** — monorepo scaffold (M0-01) + api stack spike (M0-02): Nest 11 bootstrap, Better Auth wiring, `/health/live`; local compose + Zod env config (M0-04); CI stage 1 (M0-05).
+- Done: AI tooling (see `docs/AI-WORKFLOW.md`); spec review (`docs/SPEC-REVIEW.md`) → split spec v2.1 + ADR 000–021; MVP plan (`docs/plans/mvp.md`, `docs/plans/mvp-tasks.md`); pre-coding consistency pass over spec/ADRs; M0-01 monorepo scaffold (pnpm 11 + Turborepo 2 + TS 6.0 + ESLint 10 boundaries); M0-03 Prisma 7 + PG 18 roles spike (`infra/postgres/init/10-roles.sql`); M0-04 local compose (`compose.yaml` → `infra/compose/compose.yml`) + `.env.example` + `platform/config`; M0-02 spike (NestJS 11 fallback, ESM api; BullMQ 6 + `@nestjs/bullmq` verified on Valkey 9, deps removed until R1 / M3-01); M0-05 CI stage 1 (`.github/workflows/ci.yml`).
+- Next: M0-06 (CodeQL + osv-scanner), M0-07a → M0-08 → M0-09 → M0-10 (`docs/plans/mvp-tasks.md`).
 - Current release target: **R0 "Tracker for myself"** (`docs/spec/02-releases.md`).
 
 ## 2. Repo map
@@ -38,6 +38,7 @@ docs/
            procedures (new-endpoint, prisma-migration, adr, ai-task) · shadcn (vendored, skills-lock.json)
   hooks/   guard-paths.mjs (blocks .env / applied migrations) · format.mjs (prettier on edited file)
 root                   package.json (scripts → turbo) · pnpm-workspace.yaml (allowBuilds) · turbo.json · eslint.config.js (re-exports @applyra/config/eslint) · .prettierrc.json
+.github/               workflows/ci.yml (M0-05: jobs lint · typecheck · unit · secrets (gitleaks) · audit · actionlint; stages 2–4 = TODO(M0-07a/M0-08/M0-14/M0-17)) · actions/setup/ (composite: pnpm from packageManager, Node from engines, store cache, frozen install)
 .mcp.json              playwright-test MCP → node e2e/node_modules/@playwright/test/cli.js (local pinned version)
 ```
 
@@ -107,7 +108,13 @@ _(append one line per non-obvious discovery: what, where, why)_
 - Never copy the test-only `emailAndPassword: { enabled: true }` from `apps/api/test/auth-bootstrap.test.ts` into real config (R0 = Google only).
 - M0-02 BullMQ 6: Redis driver is an optional peer — install `ioredis` (or pass a node-redis client). Queue names must not contain `:` (throws); custom `jobId` must not contain `:` or be an integer; job names and scheduler ids may contain `:` (scheduler jobs get id `repeat:<schedulerId>:<ts>`). Convention (applied across docs): one kebab-case queue per owning module + job name, e.g. queue `matching` / job `match-job`, queue `email` / job `send`; scheduler ids `<queue>:<job>[:<key>]` — full list in `04-architecture.md` §5.4. `upsertJobScheduler` twice with the same id → one scheduler; `@Processor`/`WorkerHost` runs scheduled jobs on Valkey 9.
 - M0-07a: turbo strict env mode strips undeclared env vars — declare non-secret vars in the task `env`, secrets via `passThroughEnv`; never `globalPassThroughEnv: ["*"]`.
-- M0-05: CI must run `pnpm format:check` (Prettier ignores docs/ and .claude/). `lint` has no `^build` dependency (rules are not type-aware).
+- M0-05: CI runs `pnpm format:check` (Prettier ignores docs/ and .claude/). `lint` has no `^build` dependency (rules are not type-aware).
+- M0-05 local = CI: `pnpm install --frozen-lockfile && pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm audit --audit-level=high`; gitleaks `MSYS_NO_PATHCONV=1 docker run --rm --user "$(id -u):$(id -g)" -v "$(pwd -W):/repo:ro" -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/repo ghcr.io/gitleaks/gitleaks:v8.30.1 git /repo --redact --verbose` (expect "16+ commits scanned", not 0); actionlint `MSYS_NO_PATHCONV=1 docker run --rm --user "$(id -u):$(id -g)" -v "$(pwd -W):/repo:ro" -w /repo rhysd/actionlint:1.7.12 -color` (Git Bash; drop `MSYS_NO_PATHCONV`/`-W` on Linux/macOS). CI pins both images by digest (bump tag + digest together).
+- M0-05 domain coverage gate lives in `apps/api`: its `test` script is `vitest run --coverage` (v8, `include: src/**/*.domain.ts`, `thresholds: { perFile: true, lines: 90, branches: 90 }`) — so `pnpm test` enforces it; an un-imported domain file counts as 0% and fails. A single-file run (`pnpm --filter @applyra/api exec vitest run <file>`) skips coverage. A future `*.domain.ts` outside apps/api needs the same config in its package.
+- M0-05 gitleaks runs as the CLI container (not gitleaks-action: no licence key question, same command locally), non-root + `:ro` mount; git rejects a checkout owned by another uid ("dubious ownership") → `safe.directory` via `GIT_CONFIG_*` env. **gitleaks fails open**: if git errors it logs `ERR … dubious ownership`, reports "0 commits scanned" and exits 0 — the CI step tees the log and fails on any ` ERR ` line. Actions use major tags (checkout@v7, setup-node@v7, pnpm/action-setup@v6) until M0-06b pins SHAs.
+- M0-05 api test split: default `vitest.config.ts` = in-process tests (`src/**/*.spec.ts`, `test/*.test.ts`, no Docker) → `pnpm test` / CI `unit`; Testcontainers tests go in `apps/api/test/integration/**` (excluded there) → `pnpm --filter @applyra/api test:integration` (`vitest.integration.config.ts`, `--passWithNoTests` until M0-07a adds globalSetup + the CI `integration` job).
+- M0-05 audit policy: never `|| true` / `continue-on-error` on `audit`. A temporary exception = `pnpm audit --ignore <GHSA-id>` (writes `auditConfig.ignoreGhsas` in `pnpm-workspace.yaml`, verified pnpm 11) with the GHSA id + reason + expiry date in a comment and in the PR body; remove on expiry or when a fix lands.
+- M0-05 branch protection on `main` deferred: repo is private on the free plan (no protection rules). Once public or on a paid plan, require checks: `lint`, `typecheck`, `unit`, `secrets (gitleaks)`, `audit`, `actionlint` (+ each later stage job as it is enabled). Check names = job `name:` — renaming a job breaks the rule.
 - Windows dev machine: hooks are Node scripts (no bash/jq). Git Bash heredocs with quotes break — write scripts to files.
 - Project agents/skills load only when the Claude Code session starts in the `Applyra` folder.
 - `.claude/hooks/guard-paths.mjs` blocks Read/Edit/Write of `.env*` (except `.env.example`) and any Bash command mentioning a `.env` file — false positives possible, rephrase or ask the user; migration files are immutable once tracked by git (untracked `--create-only` migrations may be edited).

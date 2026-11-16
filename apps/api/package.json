@@ -10,7 +10,8 @@
     "dev": "node scripts/dev.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests"
   },
   "dependencies": {
     "@applyra/contracts": "workspace:*",
@@ -32,6 +33,7 @@
     "@types/express": "^5.0.6",
     "@types/node": "^24.19.2",
     "@types/supertest": "^7.2.1",
+    "@vitest/coverage-v8": "^4.1.12",
     "eslint": "^10.15.0",
     "supertest": "^7.3.2",
     "typescript": "~6.0.3",
