@@ -93,6 +93,96 @@ jobs:
           fi
       - run: pnpm test:integration
 
+  # ── Stage 3: migrations (11-testing.md §5.5, §9; 12-infra-ops.md §6) ──────────────────────────
+  # Runs on every PR (no path filter: a required check behind a path filter never reports and blocks the PR).
+  migrations:
+    name: migrations
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SQUAWK_VERSION: v2.73.0 # 2026-11-15; bump version + sha256 together (asset squawk-linux-x64)
+      SQUAWK_SHA256: 9ae3747ca5eafa48b4d5c535fc64b61e0735a763164193644aa6436cc97c4274
+      # Same tag as apps/api/test/support/images.ts and compose (digests with M0-06b).
+      POSTGRES_IMAGE: postgres:18.7
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the guard and squawk diff against the base commit
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Resolve base commit
+        id: base
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          base="${PR_BASE:-${PUSH_BEFORE:-}}"
+          # New branch push / manual run: no usable "before" → compare with the parent commit.
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base="$(git rev-parse HEAD~1)"
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+      # Applied migrations are immutable (05 §9, ADR 016): any modified, deleted or renamed file fails.
+      - name: Guard applied migrations
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          mb="$(git merge-base "$BASE" HEAD)"
+          changed="$(git diff --name-status --no-renames "$mb" HEAD -- apps/api/prisma/migrations/ | grep -v '^A' || true)"
+          if [ -n "$changed" ]; then
+            echo "$changed"
+            echo "::error::applied migrations are immutable — add a new migration instead"
+            exit 1
+          fi
+      - name: squawk (added migration.sql)
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          mapfile -t added < <(git diff --name-only --diff-filter=A "$(git merge-base "$BASE" HEAD)" HEAD -- 'apps/api/prisma/migrations/*/migration.sql')
+          if [ "${#added[@]}" -eq 0 ]; then
+            echo "No new migrations."
+            exit 0
+          fi
+          curl -sSfL -o "$RUNNER_TEMP/squawk" "https://github.com/sbdchd/squawk/releases/download/${SQUAWK_VERSION}/squawk-linux-x64"
+          echo "${SQUAWK_SHA256}  $RUNNER_TEMP/squawk" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/squawk"
+          "$RUNNER_TEMP/squawk" --config .squawk.toml "${added[@]}"
+      # Throwaway Postgres on 127.0.0.1 with per-run passwords (masked); role passwords reach psql via exec env.
+      - name: Start Postgres + roles
+        run: |
+          for name in SUPERUSER APP MAINTENANCE BACKUP METRICS; do
+            value="$(openssl rand -hex 24)"
+            echo "::add-mask::$value"
+            echo "PW_$name=$value" >> "$GITHUB_ENV"
+            export "PW_$name=$value"
+          done
+          # Non-root (the image's postgres user owns PGDATA, so no gosu/capabilities needed). Secrets are passed as
+          # `-e NAME` (value inherited from this shell's env), never in argv.
+          POSTGRES_PASSWORD="$PW_SUPERUSER" docker run -d --name migrations-pg --user postgres \
+            --cap-drop ALL --security-opt no-new-privileges \
+            -e POSTGRES_PASSWORD -p 127.0.0.1:5432:5432 "$POSTGRES_IMAGE" >/dev/null
+          for _ in $(seq 1 30); do
+            docker exec migrations-pg pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && break
+            sleep 1
+          done
+          docker exec migrations-pg psql -v ON_ERROR_STOP=1 -U postgres -c 'CREATE DATABASE applyra' -c 'CREATE DATABASE applyra_shadow' >/dev/null
+          docker cp infra/postgres/init/10-roles.sql migrations-pg:/tmp/10-roles.sql
+          APPLYRA_APP_PASSWORD="$PW_APP" APPLYRA_MAINTENANCE_PASSWORD="$PW_MAINTENANCE" \
+            APPLYRA_BACKUP_PASSWORD="$PW_BACKUP" APPLYRA_METRICS_PASSWORD="$PW_METRICS" \
+            docker exec -e APPLYRA_APP_PASSWORD -e APPLYRA_MAINTENANCE_PASSWORD -e APPLYRA_BACKUP_PASSWORD \
+            -e APPLYRA_METRICS_PASSWORD migrations-pg psql -v ON_ERROR_STOP=1 -U postgres -d applyra -f /tmp/10-roles.sql
+      - name: Clean apply + REVOKE (pnpm db:migrate)
+        run: |
+          export MAINTENANCE_DATABASE_URL="postgresql://applyra_maintenance:${PW_MAINTENANCE}@127.0.0.1:5432/applyra"
+          pnpm db:migrate
+      - name: Drift (migrate diff --exit-code)
+        working-directory: apps/api
+        run: |
+          export SHADOW_DATABASE_URL="postgresql://postgres:${PW_SUPERUSER}@127.0.0.1:5432/applyra_shadow"
+          export MAINTENANCE_DATABASE_URL="postgresql://applyra_maintenance:${PW_MAINTENANCE}@127.0.0.1:5432/applyra"
+          pnpm exec prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code
+
   secrets:
     name: secrets (gitleaks)
     runs-on: ubuntu-latest
@@ -178,8 +268,6 @@ jobs:
             rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
             -color
 
-  # ── Stage 3 — TODO(M0-08): `migrations` job, only when `apps/api/prisma/**` changed — drift check
-  #    (`prisma migrate diff --exit-code`), squawk, clean apply as applyra_maintenance + _prisma_migrations REVOKE.
   # ── Stage 4 — TODO(M0-14): `deploy-ready` job — buildx multi-arch images (linux/amd64,linux/arm64, no push
   #    on PR), `docker compose -f … config -q` for compose.yml / compose.prod.yml, deploy-prod.yml lint.
   #    TODO(M0-17): separate `terraform.yml` (PRs touching infra/terraform/**): fmt -check, init -backend=false, validate.

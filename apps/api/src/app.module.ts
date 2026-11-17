@@ -8,6 +8,7 @@ import {
 } from './modules/auth/index.js';
 import { HealthModule } from './modules/health/index.js';
 import { ConfigModule, type Env } from './platform/config/index.js';
+import { PrismaModule } from './platform/prisma/di.js';
 
 export interface AppModuleOptions {
   /** Validated environment (loadEnv() in main.ts); exposed app-wide as ConfigService. */
@@ -21,7 +22,12 @@ export class AppModule {
   static forRoot({ env, auth = authOptionsFromConfig }: AppModuleOptions): DynamicModule {
     return {
       module: AppModule,
-      imports: [ConfigModule.forRoot(env), AuthModule.forRootAsync(auth), HealthModule],
+      imports: [
+        ConfigModule.forRoot(env),
+        PrismaModule,
+        AuthModule.forRootAsync(auth),
+        HealthModule,
+      ],
       providers: [
         // nestjs-zod: validate createZodDto bodies/query/params; @ZodResponse serializes responses.
         { provide: APP_PIPE, useClass: ZodValidationPipe },

@@ -1,0 +1,11 @@
+# squawk (migration linter) — 12-infra-ops.md §6, CI job `migrations` (M0-08). Runs on migration.sql files added
+# by a PR. Version + sha256 are pinned in .github/workflows/ci.yml.
+pg_version = "18.0"
+# Prisma applies each migration.sql as one multi-statement script → one implicit transaction.
+assume_in_transaction = true
+# Every excluded rule needs a reason line here.
+excluded_rules = [
+  # Ints here are bounded settings/counters guarded by CHECK constraints (e.g. 1..180 days); ids are UUID v7.
+  # Prisma Int = 32-bit; a column that can grow (counters of events, bytes) uses BigInt explicitly in review.
+  "prefer-bigint-over-int",
+]

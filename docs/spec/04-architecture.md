@@ -165,7 +165,7 @@ flowchart TD
 
 Уточнення реалізації (M0-01, `packages/config/eslint.base.js`, тест `packages/config/test/boundaries.test.ts`):
 - Правило 2: заборонені лише I/O core-модулі (`fs`, `net`, `http(s)`, `http2`, `tls`, `dgram`, `dns`, `child_process`, `cluster`, `worker_threads`, `os`, `process`, `stream`, `readline`, `vm`, `v8`, `inspector`, з префіксом `node:` і без); чисті (`crypto`, `util`, `assert`, `path`, `url`, `buffer`) дозволені.
-- Правило 4: `platform/prisma/**` імпортують тільки `*.repository.ts` і `platform/**`; виняток — `*.service.ts` може імпортувати `platform/prisma/transaction.ts` (`run(fn)` з непрозорим `Tx`, без Prisma client API).
+- Правило 4: `platform/prisma/**` імпортують тільки `*.repository.ts` і `platform/**`; виняток — `*.service.ts` може імпортувати `platform/prisma/transaction.ts` (`run(fn)` з непрозорим `Tx`, без Prisma client API). Виняток для композиції (M0-08): корінь застосунку (`src/*.ts`: `app.module.ts`, `main.ts`) і `modules/auth/auth.options.ts` (store Better Auth = persistence модуля auth, `prismaAdapter(PRISMA)`) можуть імпортувати лише `platform/prisma/di.ts` (`PrismaModule`, `PRISMA`, тип `AppPrisma`), не згенерований клієнт.
 - Unit-тести (`*.spec.ts` / `*.test.ts` поруч із кодом) звільнені від правил 1–4, `no-cycle` діє; integration-тести — у `apps/api/test/**` (поза `src`, правила 1–4 не застосовуються).
 
 ### 4.2. Напрям залежностей

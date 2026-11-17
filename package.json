@@ -14,7 +14,9 @@
     "test": "turbo run test",
     "test:integration": "turbo run test:integration",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "db:migrate": "pnpm --filter @applyra/api db:migrate",
+    "db:migration": "pnpm --filter @applyra/api db:migration"
   },
   "devDependencies": {
     "@applyra/config": "workspace:*",

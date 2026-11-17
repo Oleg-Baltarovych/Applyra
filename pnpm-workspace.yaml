@@ -17,3 +17,6 @@ allowBuilds:
   cpu-features: false # optional native CPU detection for ssh2 (node-gyp); ssh2 works without it
   ssh2: false # install.js only tries to compile an optional crypto binding (JS fallback); SSH Docker hosts only
   protobufjs: false # postinstall only prints a version-scheme warning (dockerode → @grpc/proto-loader)
+  # Prisma 7 (M0-08, apps/api):
+  prisma: false # preinstall only prints an unsupported-Node-version warning (engines field + CI pin cover it)
+  '@prisma/engines': false # postinstall pre-downloads the schema engine; the CLI downloads it lazily on first use

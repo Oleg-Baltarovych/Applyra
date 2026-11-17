@@ -167,7 +167,7 @@ Thresholds = NFR з `12-infra-ops.md` §12; на CI-runner — орієнтир 
 | IDOR suite + coverage gate (§4) | PR | ✓ | ✓ | ✓ |
 | contract tests (responses) | PR | ✓ | ✓ | ✓ |
 | OpenAPI ↔ routes, `oasdiff breaking` | PR | — | ✓ | ✓ |
-| migrations: drift, squawk, clean apply | PR (якщо змінено `prisma/`) | ✓ | ✓ | ✓ |
+| migrations: immutability guard, drift, squawk (нові `migration.sql`), clean apply + REVOKE | PR (кожен, без path filter: required check за path filter не звітує й блокує PR; M0-08) | ✓ | ✓ | ✓ |
 | security headers, CORS, cookies | PR | ✓ | ✓ | ✓ |
 | SSRF / upload fixtures | PR | — | ✓ | ✓ |
 | frontend tests + contrast check | PR | ✓ | ✓ | ✓ |
