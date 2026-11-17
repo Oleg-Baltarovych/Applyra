@@ -311,7 +311,7 @@ e2e/          Playwright (окремий workspace package)
 | `typecheck` | `^build`, `db:generate` | так | `tsc --noEmit` |
 | `lint` | `^build` | так | включно з boundaries |
 | `test` | `^build`, `db:generate` | так | Vitest unit (без мережі/Docker) |
-| `test:int` | `^build`, `db:generate` | так (inputs src + migrations) | Testcontainers, див. `11-testing.md` |
+| `test:integration` | `^build` (+ `db:generate` з M0-08) | ні (результат залежить від Docker-образів, не від inputs) | Testcontainers, див. `11-testing.md` §3; strict env: лише `passThroughEnv` Docker/Testcontainers-змінних (M0-07a) |
 | `e2e` | `build` | ні | Playwright проти compose |
 | `dev` | `^build` | ні, `persistent` | web + api + worker |
 
@@ -367,7 +367,7 @@ Major-версії фіксуються в `package.json`/`engines`; Renovate т
 | Metrics | prom-client | 15.x ◌ | `/metrics` для Prometheus (R1) |
 | Tracing | OpenTelemetry JS SDK | 2.x ◌ | R2: HTTP → BullMQ → worker |
 | Unit/integration | Vitest | 4.x ✓ | один runner для web і api; decorator metadata для Nest дає Oxc (Vite 8) з tsconfig — SWC-плагін не потрібен (M0-02) |
-| DB tests | Testcontainers | 11.x ◌ | справжній PG/Valkey у тестах |
+| DB tests | Testcontainers (`@testcontainers/postgresql`, `@testcontainers/valkey`) | 12.x ✓ | справжній PG/Valkey у тестах; Node ≥ 22.22, Ryuk увімкнений (M0-07a) |
 | E2E | Playwright | 1.65+ ✓ | e2e + agents (`e2e/`) |
 | API mocks (web) | MSW | 2.x ◌ | мок мережі в тестах web |
 
