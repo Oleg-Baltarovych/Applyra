@@ -65,6 +65,34 @@ jobs:
       # In-process tests only; apps/api/test/integration/** (Docker) is excluded and runs in `integration`.
       - run: pnpm test
 
+  # ── Stage 2: integration (Testcontainers) ─────────────────────────────────────────────────────
+  # apps/api/test/integration/** (11-testing.md §3): one Postgres + one Valkey container per run, template DB
+  # built by infra/postgres/init/10-roles.sql (+ migrations from M0-08), one DB + Redis prefix per Vitest worker.
+  # ubuntu-latest has Docker; Ryuk (Testcontainers reaper) removes the containers. Credentials are generated
+  # per run, nothing comes from secrets. Later: IDOR gate (M0-07b) and contract tests run here too.
+  integration:
+    name: integration
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Ryuk image Testcontainers 12.2.1 uses by default (reaper.js), pinned by digest. Bump with testcontainers
+      # (tag + digest together; M0-06b Renovate). Never set DEBUG=testcontainers* here: it may log container env.
+      RYUK_CONTAINER_IMAGE: testcontainers/ryuk:0.14.0@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # Ryuk is what removes containers when a run is killed — never run CI without it.
+      - name: Require Ryuk
+        run: |
+          if [ -n "${TESTCONTAINERS_RYUK_DISABLED:-}" ] && [ "${TESTCONTAINERS_RYUK_DISABLED}" != "false" ]; then
+            echo "::error::TESTCONTAINERS_RYUK_DISABLED is set; the integration job requires Ryuk"
+            exit 1
+          fi
+      - run: pnpm test:integration
+
   secrets:
     name: secrets (gitleaks)
     runs-on: ubuntu-latest
@@ -150,9 +178,6 @@ jobs:
             rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
             -color
 
-  # ── Stage 2 — TODO(M0-07a): `integration` job — `pnpm --filter @applyra/api test:integration`
-  #    (apps/api/test/integration/**, Vitest + Testcontainers: Postgres 18, Valkey 9), incl. the IDOR gate
-  #    (M0-07b) and contract tests; needs Docker on the runner (ubuntu-latest has it).
   # ── Stage 3 — TODO(M0-08): `migrations` job, only when `apps/api/prisma/**` changed — drift check
   #    (`prisma migrate diff --exit-code`), squawk, clean apply as applyra_maintenance + _prisma_migrations REVOKE.
   # ── Stage 4 — TODO(M0-14): `deploy-ready` job — buildx multi-arch images (linux/amd64,linux/arm64, no push

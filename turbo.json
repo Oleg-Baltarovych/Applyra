@@ -17,6 +17,24 @@
     "test": {
       "dependsOn": ["^build"]
     },
+    "test:integration": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "env": [],
+      "passThroughEnv": [
+        "DOCKER_HOST",
+        "DOCKER_CONTEXT",
+        "DOCKER_CONFIG",
+        "DOCKER_CERT_PATH",
+        "DOCKER_TLS_VERIFY",
+        "TESTCONTAINERS_RYUK_DISABLED",
+        "TESTCONTAINERS_HOST_OVERRIDE",
+        "TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE",
+        "RYUK_CONTAINER_IMAGE",
+        "HOME",
+        "USERPROFILE"
+      ]
+    },
     "dev": {
       "dependsOn": ["^build"],
       "cache": false,

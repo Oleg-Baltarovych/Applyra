@@ -34,15 +34,15 @@ R0 свідомо легший (P-01): unit + integration + IDOR для applicat
 
 | Елемент | Правило |
 |---|---|
-| Контейнери | **один набір на прогін**: Vitest `globalSetup` стартує Postgres 18, Redis, MinIO (`cgr.dev/chainguard/minio`, pinned digest — як у local compose, `12-infra-ops.md` §1) (Testcontainers), передає URL через `provide()`; `teardown` зупиняє |
-| Template DB | у `globalSetup`: `prisma migrate deploy` + raw SQL у `applyra_template` один раз |
-| DB на worker | кожен Vitest worker: `CREATE DATABASE test_w<id> TEMPLATE applyra_template`; між test-файлами — drop + re-clone (~100 ms) → ізоляція per file |
+| Контейнери | **один набір на прогін**: Vitest `globalSetup` стартує Postgres 18 і Valkey 9 (Testcontainers; ті самі образи, що в local compose — drift-тест `apps/api/test/images.test.ts`), передає хост/порти й згенеровані на прогін паролі через `provide()`; `teardown` зупиняє, Ryuk прибирає при обриві. MinIO додається з M4-14 (перший storage-тест; Chainguard digest з compose) |
+| Template DB | у `globalSetup`, один раз: `infra/postgres/init/10-roles.sql` (паролі через env `exec`) → `prisma migrate deploy` як `applyra_maintenance` + REVOKE на `_prisma_migrations` (з M0-08) → `IS_TEMPLATE true, ALLOW_CONNECTIONS false` |
+| DB на worker | кожен Vitest worker (`VITEST_POOL_ID`): `CREATE DATABASE test_w<id> TEMPLATE applyra_template OWNER applyra_maintenance` під advisory lock; між test-файлами — drop + re-clone (~100 ms) → ізоляція per file. ACL бази (`REVOKE … FROM PUBLIC`, `GRANT CONNECT`) TEMPLATE не копіює — накладається заново, smoke-тест порівнює `datacl` клону і template |
 | Redis | окремий BullMQ `prefix` і key prefix на worker (`t<id>:`); `FLUSHDB`-подібне очищення по prefix між файлами |
 | MinIO | bucket на worker (`test-w<id>`) |
 | Час | fake timers / інжектований `Clock`; seeded faker |
 | Дані | factories/builders (`test/factories/*`), без спільних глобальних fixtures |
 | Prisma | ніколи не мокається в integration; Prisma Extension «запит без `userId`» → fail у тестах (див. `09-security-privacy.md` §2) |
-| Локально | `pnpm test:int` перевикористовує контейнери (`TESTCONTAINERS_REUSE_ENABLE=true`) |
+| Локально | `pnpm test:integration` — ефемерні контейнери на кожен прогін (паролі генеруються на прогін; reuse потребував би стабільного пароля в env контейнера). Reuse — opt-in пізніше, лише якщо cold start > 15 с (M0-07a) |
 
 ## 4. IDOR suite, генерований з route table (T-02)
 

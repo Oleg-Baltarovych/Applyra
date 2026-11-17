@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
-    "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests"
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "@applyra/contracts": "workspace:*",
@@ -30,11 +30,16 @@
   "devDependencies": {
     "@applyra/config": "workspace:*",
     "@nestjs/testing": "^11.2.10",
+    "@testcontainers/postgresql": "^12.2.1",
+    "@testcontainers/valkey": "^12.2.1",
     "@types/express": "^5.0.6",
     "@types/node": "^24.19.2",
+    "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.1",
     "@vitest/coverage-v8": "^4.1.12",
     "eslint": "^10.15.0",
+    "ioredis": "^6.0.0",
+    "pg": "^8.23.1",
     "supertest": "^7.3.2",
     "typescript": "~6.0.3",
     "vitest": "^4.1.12"

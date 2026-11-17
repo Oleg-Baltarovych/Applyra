@@ -13,3 +13,7 @@ minimumReleaseAge: 1440
 # strictDepBuilds (default true) fails `pnpm install` on any unreviewed build script.
 allowBuilds:
   esbuild: true # postinstall verifies the platform binary; used by tsup (packages/contracts)
+  # Testcontainers (M0-07a, apps/api dev only) — all three denied, nothing they ship needs the build:
+  cpu-features: false # optional native CPU detection for ssh2 (node-gyp); ssh2 works without it
+  ssh2: false # install.js only tries to compile an optional crypto binding (JS fallback); SSH Docker hosts only
+  protobufjs: false # postinstall only prints a version-scheme warning (dockerode → @grpc/proto-loader)

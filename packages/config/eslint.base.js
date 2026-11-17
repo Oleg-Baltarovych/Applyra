@@ -46,6 +46,37 @@ const ioCoreModules = [
 
 const processEnvMessage =
   'Read configuration through ConfigService; only apps/api/src/platform/config may read process.env.';
+const testProcessEnvMessage =
+  'Build app config with testEnv() and read runner vars via test/support/runner-env.ts; only it may read process.env in apps/api/test.';
+
+/**
+ * process.env, process['env'], const { env } = process, globalThis.process.env, require('process'), env imports.
+ * @param {string} message
+ * @returns {import('eslint').Linter.RulesRecord}
+ */
+const processEnvRules = (message) => ({
+  'no-restricted-properties': ['error', { object: 'process', property: 'env', message }],
+  'no-restricted-syntax': [
+    'error',
+    // globalThis.process.env / global.process.env (the rule above matches only a bare `process`).
+    { selector: "MemberExpression[object.property.name='process'][property.name='env']", message },
+    {
+      selector: "CallExpression[callee.name='require'][arguments.0.value=/^(node:)?process$/]",
+      message,
+    },
+  ],
+  // import { env } / import process (default) / import * as process from 'node:process'.
+  'no-restricted-imports': [
+    'error',
+    {
+      paths: ['process', 'node:process'].map((name) => ({
+        name,
+        importNames: ['env', 'default'],
+        message,
+      })),
+    },
+  ],
+});
 
 const isRepository = { file: { categories: 'repository' } };
 const isService = { file: { categories: 'service' } };
@@ -200,40 +231,17 @@ export default defineConfig(
     rules: { '@typescript-eslint/no-extraneous-class': ['error', { allowWithDecorator: true }] },
   },
   // Config (12-infra-ops.md §7): only platform/config reads the process environment; the rest injects ConfigService.
-  // Scope is apps/api/src on purpose: apps/api/test/** and *.config.ts (vitest, later prisma) are not covered.
   {
     files: withFixture('apps/api/src/**/*.ts'),
     ignores: withFixture('apps/api/src/platform/config/**'),
-    rules: {
-      // process.env, process['env'], const { env } = process.
-      'no-restricted-properties': [
-        'error',
-        { object: 'process', property: 'env', message: processEnvMessage },
-      ],
-      'no-restricted-syntax': [
-        'error',
-        // globalThis.process.env / global.process.env (the rule above matches only a bare `process`).
-        {
-          selector: "MemberExpression[object.property.name='process'][property.name='env']",
-          message: processEnvMessage,
-        },
-        {
-          selector: "CallExpression[callee.name='require'][arguments.0.value=/^(node:)?process$/]",
-          message: processEnvMessage,
-        },
-      ],
-      // import { env } / import process (default) / import * as process from 'node:process'.
-      'no-restricted-imports': [
-        'error',
-        {
-          paths: ['process', 'node:process'].map((name) => ({
-            name,
-            importNames: ['env', 'default'],
-            message: processEnvMessage,
-          })),
-        },
-      ],
-    },
+    rules: processEnvRules(processEnvMessage),
+  },
+  // Tests (M0-07a): app config only via testEnv(); runner vars (VITEST_POOL_ID) only via runner-env.ts.
+  // apps/api/*.config.ts (vitest, later prisma) live outside test/ and are not covered.
+  {
+    files: withFixture('apps/api/test/**/*.ts'),
+    ignores: withFixture('apps/api/test/support/runner-env.ts'),
+    rules: processEnvRules(testProcessEnvMessage),
   },
   // Rule 6: no import cycles between (or inside) backend modules.
   {

@@ -1,5 +1,6 @@
 // Guards the module-boundary rules of docs/spec/04-architecture.md §4.1 (rules 1–8) and the
-// process.env ban outside apps/api/src/platform/config (12-infra-ops.md §7).
+// process.env ban outside apps/api/src/platform/config (12-infra-ops.md §7) and, in apps/api/test, outside
+// test/support/runner-env.ts (M0-07a).
 // Lints a fixture tree that mirrors the repo layout with the real root ESLint config and asserts
 // the exact findings per file: each boundaries message ends with "(rule N)".
 import { readdirSync } from 'node:fs';
@@ -34,6 +35,10 @@ const processEnv = (ruleId: string) => ({
   ruleId,
   message: expect.stringContaining('only apps/api/src/platform/config may read process.env'),
 });
+const testProcessEnv = (ruleId: string) => ({
+  ruleId,
+  message: expect.stringContaining('only it may read process.env in apps/api/test'),
+});
 const cycle = { ruleId: 'import-x/no-cycle', message: expect.stringContaining('cycle') };
 
 const clean = [
@@ -51,6 +56,7 @@ const clean = [
   `${api}/modules/alpha/alpha.controller.ts`,
   `${api}/modules/beta/beta.service.ts`, // → another module's index.ts
   `${api}/modules/beta/beta.spec.ts`, // unit test → another module's internal file (exempt)
+  'apps/api/test/support/runner-env.ts', // the only reader of process.env in apps/api/test
   'apps/web/src/contracts-ok.ts',
   'packages/contracts/src/index.ts',
 ];
@@ -86,6 +92,7 @@ const violations: [file: string, expected: object[]][] = [
   [`${api}/modules/beta/process-env-computed.ts`, [processEnv('no-restricted-properties')]],
   [`${api}/platform/process-env-default-import.ts`, [processEnv('no-restricted-imports')]],
   [`${api}/platform/process-env-namespace-import.ts`, [processEnv('no-restricted-imports')]],
+  ['apps/api/test/integration/process-env.ts', [testProcessEnv('no-restricted-properties')]],
   [
     `${api}/process-env-require.ts`,
     [
