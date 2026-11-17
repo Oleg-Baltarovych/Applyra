@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { AuthService, type UserSession } from '@thallesp/nestjs-better-auth';
 import { AppException } from '../../platform/http/index.js';
 import type { Auth } from './auth.config.js';
+import { AUTH_METADATA } from './auth-metadata.js';
 import { isBeyondAbsoluteLifetime } from './session-lifetime.domain.js';
 
 interface SessionRequest {
@@ -24,8 +25,7 @@ export class SessionLifetimeGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const targets = [context.getHandler(), context.getClass()];
-    // Metadata keys of @thallesp/nestjs-better-auth's AllowAnonymous / OptionalAuth.
-    if (this.reflector.getAllAndOverride<boolean>('PUBLIC', targets)) return true;
+    if (this.reflector.getAllAndOverride<boolean>(AUTH_METADATA.public, targets)) return true;
 
     const request = context.switchToHttp().getRequest<SessionRequest>();
     const current = request.session?.session;
@@ -35,7 +35,7 @@ export class SessionLifetimeGuard implements CanActivate {
     await authContext.internalAdapter.deleteSession(current.token);
     request.session = null;
     request.user = null;
-    if (this.reflector.getAllAndOverride<boolean>('OPTIONAL', targets)) return true;
+    if (this.reflector.getAllAndOverride<boolean>(AUTH_METADATA.optional, targets)) return true;
     throw new AppException('UNAUTHENTICATED', 'Session expired');
   }
 }

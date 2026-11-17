@@ -53,12 +53,22 @@ const processEnvMessage =
 const testProcessEnvMessage =
   'Build app config with testEnv() and read runner vars via test/support/runner-env.ts; only it may read process.env in apps/api/test.';
 
+const adapterRouteMessage =
+  'Register routes in Nest controllers, not on the HTTP adapter: auth guards and the IDOR gate only see controllers (M0-07b).';
+/** app.getHttpAdapter().get/post/…(…) — a route outside Nest controllers (no guards, invisible to the route table). */
+const adapterRouteSyntax = {
+  selector:
+    "CallExpression[callee.property.name=/^(get|post|put|patch|delete|all|options|head|use)$/][callee.object.type='CallExpression'][callee.object.callee.property.name='getHttpAdapter']",
+  message: adapterRouteMessage,
+};
+
 /**
  * process.env, process['env'], const { env } = process, globalThis.process.env, require('process'), env imports.
  * @param {string} message
+ * @param {object[]} [extraSyntax] more no-restricted-syntax entries (one rule key per file: later blocks override it)
  * @returns {import('eslint').Linter.RulesRecord}
  */
-const processEnvRules = (message) => ({
+const processEnvRules = (message, extraSyntax = []) => ({
   'no-restricted-properties': ['error', { object: 'process', property: 'env', message }],
   'no-restricted-syntax': [
     'error',
@@ -68,6 +78,7 @@ const processEnvRules = (message) => ({
       selector: "CallExpression[callee.name='require'][arguments.0.value=/^(node:)?process$/]",
       message,
     },
+    ...extraSyntax,
   ],
   // import { env } / import process (default) / import * as process from 'node:process'.
   'no-restricted-imports': [
@@ -246,7 +257,11 @@ export default defineConfig(
   {
     files: withFixture('apps/api/src/**/*.ts'),
     ignores: withFixture('apps/api/src/platform/config/**'),
-    rules: processEnvRules(processEnvMessage),
+    rules: processEnvRules(processEnvMessage, [adapterRouteSyntax]),
+  },
+  {
+    files: withFixture('apps/api/src/platform/config/**/*.ts'),
+    rules: { 'no-restricted-syntax': ['error', adapterRouteSyntax] },
   },
   // Tests (M0-07a): app config only via testEnv(); runner vars (VITEST_POOL_ID) only via runner-env.ts.
   // apps/api/*.config.ts (vitest, later prisma) live outside test/ and are not covered.
