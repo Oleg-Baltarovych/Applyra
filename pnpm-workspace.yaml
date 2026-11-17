@@ -20,3 +20,12 @@ allowBuilds:
   # Prisma 7 (M0-08, apps/api):
   prisma: false # preinstall only prints an unsupported-Node-version warning (engines field + CI pin cover it)
   '@prisma/engines': false # postinstall pre-downloads the schema engine; the CLI downloads it lazily on first use
+
+# Temporary `pnpm audit` exceptions (policy: docs/CONTEXT.md §6, M0-05). Each: GHSA id + reason + expiry; delete on expiry
+# or when a fix lands. pnpm does not expire these itself (and ignores the GHSA for every version), so the date below is
+# the contract; mirror entry in osv-scanner.toml enforces it via `effectiveUntil`.
+auditConfig:
+  ignoreGhsas:
+    # picomatch <= 4.0.7 ReDoS (HIGH), no patched release (checked 2026-11-18). Dev/test tooling only (eslint plugins,
+    # vite/vitest, tsup); globs from our own config, never user input. Expires 2026-12-15. User decision 2026-11-18.
+    - GHSA-fc5q-39xc-vjpf
