@@ -134,7 +134,7 @@
 - FR: FR-AUTH-01, FR-AUTH-02, FR-AUTH-03, FR-AUTH-04 · Area: api, security · Est: 3h · Depends: M0-08, M0-09 · Flow: /feature
 - AC:
   - Google OAuth (PKCE) через Better Auth; sign-out інвалідує сесію на сервері.
-  - Email поза `AUTH_SIGNUP_ALLOWLIST` → акаунт не створено; існуючий користувач входить без перевірки. Hook кидає `APIError('FORBIDDEN', { code: 'SIGNUP_CLOSED' })` (M0-02): програмний виклик → `403 { code: SIGNUP_CLOSED }`, OAuth callback → redirect на `errorCallbackURL` (`/sign-in`) з `?error=SIGNUP_CLOSED` (не 403 — M0-12 показує «Access is invite-only» за цим параметром); integration перевіряє `302` + `Location`.
+  - Email поза `AUTH_SIGNUP_ALLOWLIST` → акаунт не створено; існуючий користувач входить без перевірки. Hook кидає `APIError('FORBIDDEN', { code: 'SIGNUP_CLOSED' })` (M0-02): програмний виклик → `403 { code: SIGNUP_CLOSED }`, OAuth callback → redirect на `errorCallbackURL` (`${WEB_ORIGIN}/sign-in`) з `?error=SIGNUP_CLOSED` (не 403 — M0-12 показує «Access is invite-only» за цим параметром); integration перевіряє `302` + `Location`.
   - Idle 7 д / absolute 30 д (перевірка в guard), rotation при вході; cookie `__Host-applyra.session; HttpOnly; Secure; SameSite=Lax`.
   - Integration з mocked Google token endpoint; запит без сесії → 401; helper сесії user A/B (M0-07a) працює через реальний auth-шлях.
   - (ADR 022) Без `GOOGLE_CLIENT_ID/SECRET` Google provider не реєструється, API стартує (integration).
@@ -150,7 +150,7 @@
 - FR: FR-AUTH-01, FR-AUTH-02, FR-PROF-01 · Area: web · Est: 3h · Depends: M0-11 · Flow: /feature
 - AC:
   - Vite 8 + React Router 8 data mode + TanStack Query + Tailwind 4/shadcn, токени `10-frontend-ux.md` §8 (contrast check у тестах); typed API client з contracts.
-  - `/sign-in` (Google — лише якщо налаштовано, прапорець `VITE_*`; `signIn.social` з `errorCallbackURL: '/sign-in'`; «Try demo» додає M2-12): `?error=SIGNUP_CLOSED` → «Access is invite-only», інший `?error=` → загальне повідомлення без сирого коду (`10-frontend-ux.md` §2.1); component-тест на обидва випадки. Захищені маршрути, shell з навігацією `Applications · Today · Settings`, `*` → 404, loading/error стани.
+  - `/sign-in` (Google — лише якщо налаштовано, прапорець `VITE_*`; `signIn.social` з абсолютними `callbackURL`/`errorCallbackURL` на `WEB_ORIGIN` (`errorCallbackURL: `${WEB_ORIGIN}/sign-in`` — відносний шлях резолвиться на origin API, M0-10); «Try demo» додає M2-12): `?error=SIGNUP_CLOSED` → «Access is invite-only»; `?error=account_not_linked` (Better Auth: непідтверджений Google email для існуючої адреси, M0-10 / 09 §4.4) → повідомлення «підтвердіть email у Google»; інший `?error=` → загальне повідомлення без сирого коду (`10-frontend-ux.md` §2.1); component-тест на всі три випадки. Захищені маршрути, shell з навігацією `Applications · Today · Settings`, `*` → 404, loading/error стани.
   - Перший вхід: timezone з `Intl` зберігається без питань; `/settings/preferences` редагує timezone/пороги/hotkeys; форматування через `Intl`.
   - `index.html` без inline-скриптів (CSP).
 

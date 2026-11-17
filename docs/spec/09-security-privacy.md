@@ -60,8 +60,8 @@
 | Контроль | Значення |
 |---|---|
 | Домени | SPA `https://app.<domain>`, API `https://api.<domain>` — same-site (див. `12-infra-ops.md` §3). Staging (опційно, when hosting; тільки synthetic) — окремий registrable domain. У R0/R1 hosted-середовищ немає (ADR 022, `12-infra-ops.md` §1) |
-| Session cookie | `__Host-applyra.session` (Better Auth `advanced.cookiePrefix`), `HttpOnly; Secure; SameSite=Lax; Path=/`, без `Domain` |
-| Інші cookies | тільки Better Auth (state/PKCE для OAuth), той самий префікс `__Host-` |
+| Session cookie | `__Host-applyra.session` (Better Auth `advanced.cookies.session_token.name`; `useSecureCookies: false`, інакше `__Secure-__Host-…`; `Secure` через `defaultCookieAttributes` — і на `http://localhost`: Chrome/Firefox так, Safari ні), `HttpOnly; Secure; SameSite=Lax; Path=/`, без `Domain` |
+| Інші cookies | тільки Better Auth (state/PKCE для OAuth), `advanced.cookiePrefix: "__Host-applyra"` → `__Host-applyra.state` |
 | Origin check | Better Auth `trustedOrigins = [APP_ORIGIN]` для `/api/auth/*`; власний `OriginGuard` для решти мутацій: `POST/PUT/PATCH/DELETE` без `Origin` або з `Origin ∉ allowlist` → 403 `CSRF_ORIGIN` |
 | Content-Type | мутації приймають тільки `application/json` → інакше 415. Виняток — явний `@AcceptsMultipart()` (CSV import), Origin check однаково діє |
 | CORS | `Access-Control-Allow-Origin: https://app.<domain>` (точний збіг, без wildcard), `Allow-Credentials: true`, `Allow-Methods: GET,POST,PUT,PATCH,DELETE`, `Allow-Headers: Content-Type, Idempotency-Key`, `Max-Age: 600` |
@@ -75,7 +75,7 @@
 |---|---|
 | Google OAuth (OIDC, PKCE) — provider реєструється лише при заданих `GOOGLE_CLIENT_ID/SECRET` | [R0] |
 | Demo sign-in (`POST /demo/session`, FR-DEMO-01) — вхід без Google для local/Codespaces за `DEMO_ENABLED`; на публічному хості — тільки з контролями §11 | [R0] (anti-abuse — [R1]) |
-| Sign-up allowlist (`AUTH_SIGNUP_ALLOWLIST` — список email; решта: Google OAuth → redirect на `errorCallbackURL` = `/sign-in` з `?error=SIGNUP_CLOSED`, прямий API sign-up (email, R1) → 403 `SIGNUP_CLOSED`). `callbackURL`/`errorCallbackURL` Better Auth перевіряє проти `trustedOrigins` (без open redirect) | [R0] |
+| Sign-up allowlist (`AUTH_SIGNUP_ALLOWLIST` — список email; решта: Google OAuth → redirect на `errorCallbackURL` = `${WEB_ORIGIN}/sign-in` (абсолютний) з `?error=SIGNUP_CLOSED`, прямий API sign-up (email, R1) → 403 `SIGNUP_CLOSED`). `callbackURL`/`errorCallbackURL` Better Auth перевіряє проти `trustedOrigins` (без open redirect) | [R0] |
 | Email + password, email verification, reset password | [R1] |
 | Invite-only / публічна реєстрація | [R1] — див. `02-releases.md` |
 | TOTP (Better Auth `twoFactor`) — обов'язковий для `ADMIN` | [R1] |
@@ -89,7 +89,14 @@
 | Rotation | токен оновлюється не частіше 1/добу (`updateAge = 1d`) і завжди після sign-in, зміни пароля, підвищення привілеїв (TOTP) |
 | Fresh session | `freshAge = 10 хв`: delete account, data export, зміна email/пароля, unlink Google, вимкнення TOTP — інакше 403 `FRESH_SESSION_REQUIRED` → UI просить re-auth |
 | Revoke | зміна/reset пароля → `revokeOtherSessions`; «Sign out everywhere» у Settings; видалення акаунта → всі сесії |
-| OAuth-токени | Google access/refresh токени не потрібні після логіну — не зберігаються або `encryptOAuthTokens: true` |
+| OAuth-токени | `account.encryptOAuthTokens: true` (M0-10): ключ виводиться з `BETTER_AUTH_SECRET` — ротація секрету інвалідує і сесії, і збережені OAuth-токени |
+
+### 4.2a. Rate limit і client IP [R0, M0-10]
+
+- `/api/auth/*`: `sign-in/social` 10/хв на IP, `callback/*` 20/хв, решта 100/хв; лічильники в Redis (`auth:rl:<ip>|<path>`, 429 + `X-Retry-After`). Redis недоступний → **fail-open** + warn (R0, лише Google); парольні маршрути R1 — **fail-closed**.
+- IP = Express `req.ip`: адреса сокета або запис `X-Forwarded-For`, доданий довіреним проксі (`TRUST_PROXY_HOPS`, 0 локально; за Caddy — 1, M0-14). `platform/http` перезаписує `x-applyra-client-ip` (клієнтське значення відкидається), Better Auth читає лише його (`advanced.ipAddress.ipAddressHeaders`) — клієнт не може обрати собі bucket.
+- Усі мутації `/api/auth/*` вимагають `Origin = WEB_ORIGIN` (403 `CSRF_ORIGIN`, наш middleware): Better Auth сам перевіряє Origin лише за наявності cookie (login CSRF на `sign-in/social`). GET callback не зачіпається.
+- Абсолютний TTL 30 д: `databaseHooks.session.update.before` обрізає `expiresAt` до `createdAt + 30 д` (Better Auth сам перестає визнавати сесію, і `get-session` теж) + Nest `SessionLifetimeGuard` як defence in depth.
 
 ### 4.3. Паролі та enumeration [R1]
 
@@ -100,7 +107,7 @@
 
 ### 4.4. Google account linking (S-07)
 
-Better Auth `accountLinking: { enabled: true, trustedProviders: [] }`. Linking Google до наявного email-акаунта — тільки якщо `email_verified = true` у Google ID token **і** локальний email підтверджений. Інакше → 409 `ACCOUNT_LINK_REQUIRES_VERIFICATION` (увійти паролем і прив'язати з Settings).
+Better Auth `accountLinking: { enabled: true, trustedProviders: [] }`. Linking Google до наявного email-акаунта — тільки якщо `email_verified = true` у Google ID token **і** локальний email підтверджений. Інакше → 409 `ACCOUNT_LINK_REQUIRES_VERIFICATION` (увійти паролем і прив'язати з Settings). На OAuth callback це redirect з кодом Better Auth `?error=account_not_linked` (M0-10, `accountLinking: { enabled: true, trustedProviders: [], allowDifferentEmails: false }`); SPA показує його як `ACCOUNT_LINK_REQUIRES_VERIFICATION`.
 
 ## 5. URL capture — SSRF (S-01, S-02, S-03) [R1]
 

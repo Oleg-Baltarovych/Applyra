@@ -8,6 +8,7 @@ function run(path: string, headers: Record<string, string>) {
   const sent: { status?: number; body?: unknown } = {};
   const res = {
     setHeader: vi.fn(),
+    once: vi.fn(),
     status(code: number) {
       sent.status = code;
       return this;
@@ -32,8 +33,9 @@ describe('authBodyLimit', () => {
     });
   });
 
-  it('answers a declared Content-Length over 1 MB with 413', () => {
-    const { sent } = run('/api/auth', { 'content-length': String(1024 * 1024 + 1) });
+  // 1–8 MB is drained first, then 413 (over a real socket: test/http-platform.test.ts).
+  it('answers a declared Content-Length beyond the drain cap with 413 at once', () => {
+    const { sent } = run('/api/auth', { 'content-length': String(8 * 1024 * 1024 + 1) });
     expect(sent).toMatchObject({ status: 413, body: { code: 'PAYLOAD_TOO_LARGE' } });
   });
 

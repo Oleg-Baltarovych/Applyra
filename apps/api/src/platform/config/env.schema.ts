@@ -31,6 +31,16 @@ const port = nonEmpty(
     ),
 );
 
+/** Reverse proxies in front of the api whose X-Forwarded-For entry is trusted (Express `trust proxy`). Unset = 0. */
+const proxyHops = nonEmpty(
+  z
+    .string({ error: reason() })
+    .regex(/^\d+$/, { error: 'must be a whole number 0-10' })
+    .transform(Number)
+    .pipe(z.number().int().max(10, { error: 'must be a whole number 0-10' }))
+    .optional(),
+).transform((value) => value ?? 0);
+
 /** Optional string: an empty value means unset. */
 const optionalString = nonEmpty(z.string().optional());
 
@@ -65,6 +75,11 @@ export const envSchema = z
       }),
     ),
     PORT: port,
+    /**
+     * 0 = the client IP is the socket address (direct exposure, local dev); behind Caddy (M0-14) = 1. Feeds req.ip →
+     * the Better Auth rate-limit key (09 §4.3); X-Forwarded-For from the client is never trusted beyond these hops.
+     */
+    TRUST_PROXY_HOPS: proxyHops,
     /** Runtime role `applyra_app` (12 §4). Migrations use MAINTENANCE_DATABASE_URL via the Prisma CLI, not the api. */
     DATABASE_URL: url(/^postgres(ql)?$/, 'postgresql://'),
     REDIS_URL: url(/^rediss?$/, 'redis:// or rediss://'),

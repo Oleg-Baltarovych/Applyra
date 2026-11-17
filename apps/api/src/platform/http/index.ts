@@ -1,6 +1,7 @@
 // Public API of platform/http: error shape, request id, CSRF/content-type policy, app-level HTTP setup.
 export { type AppErrorCode, AppException } from './app-exception.js';
 export { JSON_BODY_LIMIT_BYTES } from './auth-body-limit.js';
+export { CLIENT_IP_HEADER } from './auth-request-policy.js';
 export { configureHttp } from './configure-http.js';
 export { AcceptsMultipart } from './http-policy.guard.js';
 export { HttpModule } from './http.module.js';

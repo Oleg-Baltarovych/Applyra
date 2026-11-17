@@ -38,10 +38,21 @@ const envOf = (source: Record<string, string | undefined>) => {
 };
 
 describe('parseEnv', () => {
+  it('reads TRUST_PROXY_HOPS as a whole number 0-10 (unset/empty = 0)', () => {
+    expect(envOf({ ...valid, TRUST_PROXY_HOPS: '1' }).TRUST_PROXY_HOPS).toBe(1);
+    expect(envOf({ ...valid, TRUST_PROXY_HOPS: '' }).TRUST_PROXY_HOPS).toBe(0);
+    for (const bad of ['-1', '1.5', '11', 'one']) {
+      expect(errorsOf({ ...valid, TRUST_PROXY_HOPS: bad })).toEqual([
+        'TRUST_PROXY_HOPS: must be a whole number 0-10',
+      ]);
+    }
+  });
+
   it('parses a valid environment into typed values', () => {
     expect(envOf(valid)).toEqual({
       NODE_ENV: 'development',
       PORT: 3000,
+      TRUST_PROXY_HOPS: 0,
       DATABASE_URL: valid.DATABASE_URL,
       REDIS_URL: valid.REDIS_URL,
       BETTER_AUTH_SECRET: SECRET,

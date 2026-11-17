@@ -52,7 +52,7 @@
 | 404 | `NOT_FOUND` | ресурсу немає або він чужий |
 | 409 | `CONFLICT_ACTIVE_APPLICATION` | порушено `application_user_job_active_uq` (`05-data-model.md` §6.1); `details.existingApplicationId` — UI пропонує заархівувати стару й повторити |
 | 409 | `INVALID_TRANSITION` | `toStatus` = поточний статус або заявка заархівована |
-| 409 | `ACCOUNT_LINK_REQUIRES_VERIFICATION` | linking Google без `email_verified` з обох сторін (S-07, FR-AUTH-08) |
+| 409 | `ACCOUNT_LINK_REQUIRES_VERIFICATION` | linking Google без `email_verified` з обох сторін (S-07, FR-AUTH-08); на OAuth callback — redirect `?error=account_not_linked` (код Better Auth, M0-10) |
 | 409 | `CONFLICT_DUPLICATE_JOB` | приватна вакансія з тим самим `canonicalUrl` уже є (`details.existingJobId`) |
 | 409 | `CONFLICT_STATE` | недопустима дія в поточному стані (commit простроченого імпорту, delete не останнього `STATUS_CHANGED`, undo після 15 с у R0) |
 | 409 | `IDEMPOTENCY_IN_PROGRESS` | паралельний запит з тим самим ключем ще виконується |
@@ -73,7 +73,7 @@
 | 504 | `CAPTURE_TIMEOUT` | job черги `capture` не завершився за 6 с (worker зайнятий/недоступний; ADR 021) → UI: «Try again» або «Paste the job text instead». Timeout самої сторінки — `CAPTURE_UNAVAILABLE` |
 | 503 | `UNAVAILABLE` | `/health/ready` не готовий, режим обслуговування |
 
-`/api/auth/*` повертає коди Better Auth (напр. enumeration-safe `INVALID_CREDENTIALS`, `09-security-privacy.md` §4.3); `SIGNUP_CLOSED` і `ACCOUNT_LINK_REQUIRES_VERIFICATION` мапляться hook-ами Better Auth у цей каталог. На OAuth callback (`/api/auth/callback/*`) Better Auth не віддає JSON-помилку: код приходить у SPA як `?error=<CODE>` на `errorCallbackURL` (M0-02); статус із таблиці діє лише для програмних викликів. Ролі без доступу (admin) отримують `404`, окремого коду для ролі немає. Конвенція (M0-09): сервіси й guards кидають `AppException` з кодом каталогу (специфічні 403 — `CSRF_ORIGIN`, `FRESH_SESSION_REQUIRED`, `DEMO_FEATURE_DISABLED`, `SIGNUP_CLOSED` — тільки так); голий `ForbiddenException` → `404 NOT_FOUND` (+ warn у лозі); голий `HttpException` 409/422/502 (кілька кодів, жодного загального) → `500 INTERNAL_ERROR` + warn. Помилки власного middleware на `/api/auth/*` (413 ліміту тіла) мають цю форму, а не форму Better Auth.
+`/api/auth/*` повертає коди Better Auth (напр. enumeration-safe `INVALID_CREDENTIALS`, `09-security-privacy.md` §4.3); `SIGNUP_CLOSED` і `ACCOUNT_LINK_REQUIRES_VERIFICATION` мапляться hook-ами Better Auth у цей каталог. На OAuth callback (`/api/auth/callback/*`) Better Auth не віддає JSON-помилку: код приходить у SPA як `?error=<CODE>` на `errorCallbackURL` (M0-02); статус із таблиці діє лише для програмних викликів. Ролі без доступу (admin) отримують `404`, окремого коду для ролі немає. Конвенція (M0-09): сервіси й guards кидають `AppException` з кодом каталогу (специфічні 403 — `CSRF_ORIGIN`, `FRESH_SESSION_REQUIRED`, `DEMO_FEATURE_DISABLED`, `SIGNUP_CLOSED` — тільки так); голий `ForbiddenException` → `404 NOT_FOUND` (+ warn у лозі); голий `HttpException` 409/422/502 (кілька кодів, жодного загального) → `500 INTERNAL_ERROR` + warn. Помилки власного middleware на `/api/auth/*` (413 ліміту тіла, 403 `CSRF_ORIGIN` для мутації без `Origin = WEB_ORIGIN`, M0-10) мають цю форму, а не форму Better Auth.
 
 ## 4. Idempotency-Key (A-07, S-18)
 
@@ -126,7 +126,7 @@ R0 включає тільки Google OAuth, ручну форму ваканс�
 
 | Method | Path | Auth | FR | Notes |
 |---|---|---|---|---|
-| POST | `/api/auth/sign-in/social` | public | FR-AUTH | `{ provider: "google", callbackURL, errorCallbackURL: "/sign-in" }` → redirect URL |
+| POST | `/api/auth/sign-in/social` | public | FR-AUTH | `{ provider: "google", callbackURL, errorCallbackURL }` → `{ url, redirect }` (Google authorize URL, PKCE S256 + state). Обидва URL — **абсолютні** на `WEB_ORIGIN` (`errorCallbackURL: `${WEB_ORIGIN}/sign-in``): відносний `/sign-in` Better Auth віддає в `Location` як є, і браузер резолвить його на origin API (M0-10). Без `errorCallbackURL` — `onAPIError.errorURL` = `${WEB_ORIGIN}/sign-in`. Rate limit R0: 10/хв на IP; `callback/*` 20/хв; решта `/api/auth/*` 100/хв (Redis, 429 + `X-Retry-After`) |
 | GET | `/api/auth/callback/google` | public | FR-AUTH | Better Auth; linking тільки при `email_verified` (S-07). Помилки — redirect на `errorCallbackURL?error=<CODE>`, не JSON: email поза allowlist → `?error=SIGNUP_CLOSED` (FR-AUTH-02) |
 | POST | `/api/auth/sign-out` | user | FR-AUTH | |
 | GET | `/api/auth/get-session` | user | FR-AUTH | |
