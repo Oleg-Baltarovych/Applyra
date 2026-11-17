@@ -9,7 +9,7 @@ export const SIGNUP_CLOSED = 'SIGNUP_CLOSED';
 export interface AuthConfig {
   /** AUTH_SIGNUP_ALLOWLIST (FR-AUTH-02). Empty = nobody can sign up. */
   signupAllowlist: readonly string[];
-  /** Better Auth store: Prisma adapter from M0-08; memory adapter until then and in unit tests. */
+  /** Better Auth store: Prisma adapter (auth.options.ts); the memory adapter in in-process tests. */
   database: BetterAuthOptions['database'];
   /** ≥ 32 chars. Required: without it Better Auth would fall back to env or a public default secret. */
   secret: string;
@@ -43,6 +43,7 @@ export function createAuth(config: AuthConfig) {
       additionalFields: {
         // input: false — never settable from sign-up/update-user request bodies.
         role: { type: ['USER', 'ADMIN'], required: false, defaultValue: 'USER', input: false },
+        deletedAt: { type: 'date', required: false, input: false }, // soft delete (05 §2.3, 09)
         demoExpiresAt: { type: 'date', required: false, input: false },
       },
     },

@@ -1,0 +1,105 @@
+// Applyra database schema — source of truth for columns (05-data-model.md keeps the principles).
+// R0 baseline (M0-08): auth tables + UserSettings. Later models arrive with their release's migration
+// (05 §3: items marked // R1 / // R2 / // R3 in the spec are not here yet).
+// Raw SQL Prisma cannot express (extensions, f_unaccent, CHECK constraints) lives in the migrations (05 §7).
+
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/platform/prisma/generated"
+  moduleFormat    = "esm"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql" // url — prisma.config.ts (CLI) / @prisma/adapter-pg (runtime)
+}
+
+// ---------- R0 ----------
+
+enum Role {
+  USER
+  ADMIN
+}
+
+/// R0 · Better Auth core + additionalFields (role, deletedAt, demoExpiresAt)
+model User {
+  id            String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  role          Role      @default(USER)
+  deletedAt     DateTime? @db.Timestamptz(3) // soft delete → hard delete ≤ 24 h (09)
+  demoExpiresAt DateTime? @db.Timestamptz(3) // ADR 022 / ADR 014: ephemeral demo user, TTL 24 h
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(3)
+
+  sessions Session[]
+  accounts Account[]
+  settings UserSettings?
+
+  @@index([deletedAt])
+  @@index([demoExpiresAt])
+}
+
+/// R0 · Better Auth
+model Session {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  token     String   @unique
+  expiresAt DateTime @db.Timestamptz(3)
+  ipAddress String? // PII → retention (05 §8)
+  userAgent String?
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// R0 · Better Auth (R0: providerId = "google"; "credential" — R1)
+model Account {
+  id                    String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  accountId             String
+  providerId            String
+  userId                String    @db.Uuid
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime? @db.Timestamptz(3)
+  refreshTokenExpiresAt DateTime? @db.Timestamptz(3)
+  scope                 String?
+  password              String? // Better Auth core field; hash, used from R1 (email + password)
+  createdAt             DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+/// R0 · Better Auth (OAuth state; R1 — email verification, reset)
+model Verification {
+  id         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  identifier String
+  value      String
+  expiresAt  DateTime @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([identifier])
+  @@index([expiresAt])
+}
+
+/// R0 · A-06, P-03 (R1 fields — quiet hours, AI opt-in — come with their migration). Ranges: CHECK user_settings_ranges_chk.
+model UserSettings {
+  userId                  String   @id @db.Uuid
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  timezone                String   @default("UTC") // IANA; from the browser on first sign-in. Only TZ source
+  staleFollowUpDays       Int      @default(7) // APPLIED/SCREENING without activity → "Follow up" hint
+  staleDaysAfterInterview Int      @default(10) // INTERVIEW/TEST_TASK without activity → "Follow up"
+  staleGhostDays          Int      @default(21) // "Mark as ghosted?" hint (only the user sets it)
+  hotkeysEnabled          Boolean  @default(true) // WCAG 2.1.4 (P-14); server-side switch
+  updatedAt               DateTime @updatedAt @db.Timestamptz(3)
+}

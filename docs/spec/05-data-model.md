@@ -23,19 +23,24 @@
 
 ### 2.1. `prisma.config.ts`
 
-У Prisma 7 `url` у блоці `datasource` схеми не задається: URL підключення, шлях до схеми й міграцій та shadow DB живуть у `prisma.config.ts`. `.env` автоматично не завантажується, тому файл починається з `import "dotenv/config"`.
+У Prisma 7 `url` у блоці `datasource` схеми не задається: URL підключення, шлях до схеми й міграцій та shadow DB живуть у `prisma.config.ts`. CLI працює від `applyra_maintenance` (`MAINTENANCE_DATABASE_URL`). `.env` автоматично не завантажується; кореневий env-файл читається `process.loadEnvFile` лише коли `MAINTENANCE_DATABASE_URL` не задано (явне середовище — Testcontainers, CI, `migrate` — завжди має пріоритет; без `dotenv`). `env()` з `prisma/config` не використовується: він падає без змінної навіть на `prisma generate` (M0-08). Міграції застосовує лише `pnpm db:migrate` (`migrate deploy` + REVOKE на `_prisma_migrations`).
 
 ```ts
-// apps/api/prisma.config.ts
-import "dotenv/config";
-import { defineConfig, env } from "prisma/config";
+// apps/api/prisma.config.ts (скорочено)
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { defineConfig } from "prisma/config";
+
+const rootEnvFile = fileURLToPath(new URL("../../.env", import.meta.url));
+if (process.env.MAINTENANCE_DATABASE_URL === undefined && existsSync(rootEnvFile)) process.loadEnvFile(rootEnvFile);
+const shadowDatabaseUrl = process.env.SHADOW_DATABASE_URL;
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: { path: "prisma/migrations" },
   datasource: {
-    url: env("DATABASE_URL"),
-    shadowDatabaseUrl: process.env.SHADOW_DATABASE_URL ?? "",
+    url: process.env.MAINTENANCE_DATABASE_URL ?? "",
+    ...(shadowDatabaseUrl ? { shadowDatabaseUrl } : {}),
   },
 });
 ```
@@ -255,7 +260,7 @@ model Account {
   accessTokenExpiresAt  DateTime? @db.Timestamptz(3)
   refreshTokenExpiresAt DateTime? @db.Timestamptz(3)
   scope                 String?
-  password              String?                  // hash; R1 (email+password)
+  password              String?                  // hash; колонка — R0 (core-поле Better Auth, M0-08), використовується з R1 (email+password)
   createdAt             DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt             DateTime  @updatedAt @db.Timestamptz(3)
 

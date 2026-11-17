@@ -43,6 +43,9 @@ const cycle = { ruleId: 'import-x/no-cycle', message: expect.stringContaining('c
 
 const clean = [
   `${api}/main.ts`,
+  `${api}/app.module.ts`, // composition root → platform/prisma/di.ts (rule 4 exception)
+  `${api}/modules/auth/auth.options.ts`, // Better Auth store → platform/prisma/di.ts (rule 4 exception)
+  `${api}/platform/prisma/di.ts`,
   `${api}/platform/clock.ts`,
   `${api}/platform/health.ts`, // platform → platform/prisma
   `${api}/platform/prisma/prisma.service.ts`, // platform/prisma → @prisma/client
@@ -76,6 +79,8 @@ const violations: [file: string, expected: object[]][] = [
   [`${api}/modules/beta/prisma-client.service.ts`, [boundary(4)]],
   [`${api}/modules/beta/prisma-wrapper.service.ts`, [boundary(4)]], // only transaction.ts is allowed
   [`${api}/modules/beta/generated-client.service.ts`, [boundary(4)]],
+  [`${api}/modules/beta/prisma-di.service.ts`, [boundary(4)]], // di.ts exception is not for services
+  [`${api}/generated-leak.ts`, [boundary(4)]], // app root: di.ts only, never the generated client
   ['apps/web/src/api-relative.ts', [boundary(5)]],
   ['apps/web/src/api-package.ts', [boundary(5)]],
   [`${api}/modules/gamma/gamma.service.ts`, [cycle]],

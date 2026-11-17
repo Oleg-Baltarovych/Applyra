@@ -1,4 +1,5 @@
-// The production composition (AppModule + env-driven auth config) boots from a validated env alone.
+// The production composition (AppModule + env-driven auth config) boots from a validated env alone — no database
+// connection is opened at boot (Prisma connects on the first query).
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { AuthService } from '@thallesp/nestjs-better-auth';
@@ -8,6 +9,7 @@ import { AppModule } from '../src/app.module.js';
 import type { Auth } from '../src/modules/auth/auth.config.js';
 import { SIGNUP_CLOSED, authOptionsFromConfig } from '../src/modules/auth/index.js';
 import { ConfigService } from '../src/platform/config/index.js';
+import { PRISMA } from '../src/platform/prisma/index.js';
 import { testEnv } from './support/test-env.js';
 
 const WEB_ORIGIN = 'http://app.localhost:5173';
@@ -34,6 +36,8 @@ describe('AppModule with the env-driven config', () => {
   /**
    * The env-driven config has no email + password (R0 = Google only, M0-10), so drive user creation
    * through Better Auth's own adapter: it runs the same databaseHooks.user.create as an OAuth sign-up.
+   * Only the rejection runs here (the hook throws before any query; the app connects to Postgres lazily, so this
+   * file needs no database). The admitted case persists → test/integration/auth-persistence.test.ts.
    */
   const createUser = async (email: string) => {
     const context = await app.get<AuthService<Auth>>(AuthService).instance.$context;
@@ -59,7 +63,7 @@ describe('AppModule with the env-driven config', () => {
   });
 
   it('builds the auth config from the env', async () => {
-    const auth = await authOptionsFromConfig.useFactory(app.get(ConfigService));
+    const auth = await authOptionsFromConfig.useFactory(app.get(ConfigService), app.get(PRISMA));
 
     expect(auth).toMatchObject({
       secret: 'test-only-secret-never-used-outside-tests-0123456789',
@@ -75,10 +79,5 @@ describe('AppModule with the env-driven config', () => {
       statusCode: 403,
       body: { code: SIGNUP_CLOSED },
     });
-  });
-
-  it('admits an allowlisted email regardless of case (case-folding in the domain check)', async () => {
-    const user = await createUser('owner@example.COM');
-    expect(user).toMatchObject({ email: 'owner@example.com' });
   });
 });
