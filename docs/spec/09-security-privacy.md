@@ -171,19 +171,19 @@ URL capture переїхав у R1 (див. `02-releases.md`). Fetcher — ок�
 
 ### 9.2. API (`api.<domain>`, Nest + helmet)
 
-`Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` · `Cache-Control: no-store` на всіх приватних відповідях · HSTS, `nosniff`, `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-site` · без `X-Powered-By` · помилки без stack trace (формат — `06-api.md`).
+`Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` · `Cache-Control: no-store` на всіх приватних відповідях · HSTS, `nosniff`, `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-site` · без `X-Powered-By` · помилки без stack trace (формат — `06-api.md`). Тіло: JSON-only, 1 MB (`06-api.md` §5); Better Auth читає тіла `/api/auth/*` без ліміту, тому власний middleware на цьому префіксі: `Content-Length` > 1 MB → 413, нечисловий → 400, chunked — байти рахуються на потоці, понад 1 MB → 413 і з'єднання закривається (форма помилки — `06-api.md` §3, не Better Auth).
 
 Тест: точні значення headers — integration + nightly проти `compose.ci.yml`; nightly на hosted-середовищі — when hosting (див. `11-testing.md` §5).
 
 ## 10. Логи та redaction
 
-pino `redact` (censor `[REDACTED]`), єдиний список у `apps/api/src/platform/logging/redact.ts`, покритий unit-тестом:
+pino `redact` (censor `[REDACTED]`), єдиний список у `apps/api/src/platform/logging/redact.ts`, покритий unit-тестом. Ключі ловляться на глибині 0–2 (`k`, `*.k`, `*.*.k` — pino-шляхи не рекурсивні), тому логуються лише пласкі контекстні об'єкти; request-логи містять тільки `method`, `path` (без query), `statusCode`, `requestId` — без headers і тіл (M0-09):
 
 | Категорія | Шляхи |
 |---|---|
-| Секрети | `password`, `newPassword`, `currentPassword`, `token`, `accessToken`, `refreshToken`, `idToken`, `secret`, `code` (OAuth), `totp` |
+| Секрети | `password`, `newPassword`, `currentPassword`, `token`, `accessToken`, `refreshToken`, `idToken`, `secret`, `totp`; OAuth `code` — лише `body.code`, `query.code`, `oauth.code` (не поле помилки: `errorCode`/`err.code` лишаються) |
 | Headers | `req.headers.authorization`, `req.headers.cookie`, `res.headers["set-cookie"]`, `x-api-key` |
-| Контент користувача | `parsedText`, `notes`, `note`, `description`, `coverLetter`, `message`, `body.text`, промпти й AI-виводи (ніколи не логуються) |
+| Контент користувача | `parsedText`, `notes`, `note`, `description`, `coverLetter`, `body.message`, `body.text` (`message` — контент користувача лише в тілі запиту; `err.message` лишається, email-подібні підрядки в серіалізованій помилці маскуються), промпти й AI-виводи (ніколи не логуються) |
 | PII | `email` → маска `o***@domain`; `phone`; `contact.*`; `telegramChatId`; IP → обрізаний /24 (/48 IPv6) |
 | URL | query-string presigned URLs (`X-Amz-*`) обрізається |
 

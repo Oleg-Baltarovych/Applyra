@@ -1,13 +1,11 @@
 // M0-02 spike evidence kept as a regression test: Nest 11 + nestjs-zod 5 + @thallesp/nestjs-better-auth.
 // Better Auth runs on its memory adapter here; the Prisma-backed auth integration test arrives in M0-10.
 import { Body, Controller, Get, type INestApplication, Module, Post } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import { memoryAdapter } from 'better-auth/adapters/memory';
 import { createZodDto } from 'nestjs-zod';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { AppModule } from '../src/app.module.js';
 import { createAuth } from '../src/modules/auth/auth.config.js';
 import {
   type AuthConfig,
@@ -15,9 +13,12 @@ import {
   Session,
   type UserSession,
 } from '../src/modules/auth/index.js';
+import { createHttpApp } from './support/http-app.js';
 import { testEnv } from './support/test-env.js';
 
 const BASE_URL = 'http://localhost:3000';
+// testEnv() default; non-auth mutations need it as Origin (HttpPolicyGuard, M0-09).
+const WEB_ORIGIN = 'http://localhost:5173';
 const ALLOWED = 'owner@example.com';
 // Better Auth's response to update-user with only an input: false field (pinned by observation).
 const UPDATE_USER_ROLE_STATUS = 400;
@@ -67,21 +68,15 @@ describe('API bootstrap: auth guard, body parsing, sign-up allowlist', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        AppModule.forRoot({
-          env: testEnv(),
-          auth: {
-            imports: [TestConfigModule],
-            inject: [TEST_AUTH_CONFIG],
-            useFactory: (config: AuthConfig) => config,
-          },
-        }),
-      ],
+    app = await createHttpApp({
+      env: testEnv(),
+      auth: {
+        imports: [TestConfigModule],
+        inject: [TEST_AUTH_CONFIG],
+        useFactory: (config: AuthConfig) => config,
+      },
       controllers: [ProbeController],
-    }).compile();
-    app = moduleRef.createNestApplication({ bodyParser: false });
-    await app.init();
+    });
   });
 
   afterAll(async () => {
@@ -111,7 +106,10 @@ describe('API bootstrap: auth guard, body parsing, sign-up allowlist', () => {
   });
 
   it('runs the guard before body validation on a private route', async () => {
-    const res = await request(app.getHttpServer()).post('/probe/echo').send({ name: '' });
+    const res = await request(app.getHttpServer())
+      .post('/probe/echo')
+      .set('Origin', WEB_ORIGIN)
+      .send({ name: '' });
     expect(res.status).toBe(401);
   });
 
@@ -135,6 +133,7 @@ describe('API bootstrap: auth guard, body parsing, sign-up allowlist', () => {
 
     const echo = await request(app.getHttpServer())
       .post('/probe/echo')
+      .set('Origin', WEB_ORIGIN)
       .set('Cookie', cookie)
       .send({ name: 'Ada' });
     expect(echo.status).toBe(201);
@@ -142,6 +141,7 @@ describe('API bootstrap: auth guard, body parsing, sign-up allowlist', () => {
 
     const invalid = await request(app.getHttpServer())
       .post('/probe/echo')
+      .set('Origin', WEB_ORIGIN)
       .set('Cookie', cookie)
       .send({ name: '', extra: true });
     expect(invalid.status).toBe(400);

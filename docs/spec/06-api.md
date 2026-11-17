@@ -33,7 +33,7 @@
   "details": { "existingApplicationId": "0190…" }, "requestId": "0190…" }
 ```
 
-`details` — масив `[{ path, message }]` для `VALIDATION_ERROR`, для інших кодів — об'єкт. `requestId` збігається із заголовком `X-Request-Id`.
+`details` — масив `[{ path, message }]` для `VALIDATION_ERROR` (`path` — шлях Zod через крапку, `items.0.title`, = ім'я поля RHF; `""` — усе тіло), для інших кодів — об'єкт або `null` (поле присутнє завжди, §1). `requestId` збігається із заголовком `X-Request-Id` (вхідний `X-Request-Id` з 8–64 символів `[A-Za-z0-9-]` повторюється, інакше — новий UUID v7). Схема — `ApiError` у `contracts`.
 
 ### 3.1. Каталог кодів (A-19)
 
@@ -73,7 +73,7 @@
 | 504 | `CAPTURE_TIMEOUT` | job черги `capture` не завершився за 6 с (worker зайнятий/недоступний; ADR 021) → UI: «Try again» або «Paste the job text instead». Timeout самої сторінки — `CAPTURE_UNAVAILABLE` |
 | 503 | `UNAVAILABLE` | `/health/ready` не готовий, режим обслуговування |
 
-`/api/auth/*` повертає коди Better Auth (напр. enumeration-safe `INVALID_CREDENTIALS`, `09-security-privacy.md` §4.3); `SIGNUP_CLOSED` і `ACCOUNT_LINK_REQUIRES_VERIFICATION` мапляться hook-ами Better Auth у цей каталог. На OAuth callback (`/api/auth/callback/*`) Better Auth не віддає JSON-помилку: код приходить у SPA як `?error=<CODE>` на `errorCallbackURL` (M0-02); статус із таблиці діє лише для програмних викликів. Ролі без доступу (admin) отримують `404`, окремого коду для ролі немає.
+`/api/auth/*` повертає коди Better Auth (напр. enumeration-safe `INVALID_CREDENTIALS`, `09-security-privacy.md` §4.3); `SIGNUP_CLOSED` і `ACCOUNT_LINK_REQUIRES_VERIFICATION` мапляться hook-ами Better Auth у цей каталог. На OAuth callback (`/api/auth/callback/*`) Better Auth не віддає JSON-помилку: код приходить у SPA як `?error=<CODE>` на `errorCallbackURL` (M0-02); статус із таблиці діє лише для програмних викликів. Ролі без доступу (admin) отримують `404`, окремого коду для ролі немає. Конвенція (M0-09): сервіси й guards кидають `AppException` з кодом каталогу (специфічні 403 — `CSRF_ORIGIN`, `FRESH_SESSION_REQUIRED`, `DEMO_FEATURE_DISABLED`, `SIGNUP_CLOSED` — тільки так); голий `ForbiddenException` → `404 NOT_FOUND` (+ warn у лозі); голий `HttpException` 409/422/502 (кілька кодів, жодного загального) → `500 INTERNAL_ERROR` + warn. Помилки власного middleware на `/api/auth/*` (413 ліміту тіла) мають цю форму, а не форму Better Auth.
 
 ## 4. Idempotency-Key (A-07, S-18)
 
