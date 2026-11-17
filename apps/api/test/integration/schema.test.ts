@@ -1,30 +1,14 @@
 // Migrations in the template (M0-08): raw SQL from 05 §7 works, "_prisma_migrations" is read-only for the app role,
 // and the set of tables the app role may UPDATE/DELETE is an explicit, reviewed allowlist.
 import { describe, expect, it } from 'vitest';
-import { sqlState, withPg } from './support/pg.js';
+import { appPrivilegesOnMigrationsAt, sqlState, withPg } from './support/pg.js';
 import { applyMigrations } from './support/postgres.js';
 import { testInfra } from './support/test-infra.js';
 
 const asApp = <T>(run: Parameters<typeof withPg<T>>[1]) => withPg(testInfra().databaseUrl, run);
 const asMaintenance = <T>(run: Parameters<typeof withPg<T>>[1]) =>
   withPg(testInfra().maintenanceUrl, run);
-const TABLE_PRIVILEGES = [
-  'SELECT',
-  'INSERT',
-  'UPDATE',
-  'DELETE',
-  'TRUNCATE',
-  'REFERENCES',
-  'TRIGGER',
-  'MAINTAIN',
-];
-const appPrivilegesOnMigrations = () =>
-  asMaintenance((db) =>
-    db.query<{ p: string }>(
-      `SELECT p FROM unnest($1::text[]) AS p WHERE has_table_privilege('applyra_app', '"_prisma_migrations"', p)`,
-      [TABLE_PRIVILEGES],
-    ),
-  ).then((r) => r.rows.map((row) => row.p));
+const appPrivilegesOnMigrations = () => appPrivilegesOnMigrationsAt(testInfra().maintenanceUrl);
 
 /**
  * Tables where applyra_app may UPDATE or DELETE. A new table fails the test until it is listed here — review its
