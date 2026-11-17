@@ -5,6 +5,7 @@ import {
   type ModuleMetadata,
 } from '@nestjs/common';
 import { AuthModule as BetterAuthModule } from '@thallesp/nestjs-better-auth';
+import { JSON_BODY_LIMIT_BYTES } from '../../platform/http/index.js';
 import { type AuthConfig, createAuth } from './auth.config.js';
 
 export interface AuthModuleAsyncOptions {
@@ -18,7 +19,7 @@ export interface AuthModuleAsyncOptions {
 /**
  * Mounts Better Auth on /api/auth/* and registers its global AuthGuard: every route is private
  * unless marked @Public(). Requires NestFactory.create(..., { bodyParser: false }); the package
- * re-adds JSON/urlencoded parsers for non-auth routes.
+ * re-adds the JSON parser (1 MB) for non-auth routes.
  * Config is resolved through DI so the Zod config service (M0-04) and the Prisma adapter (M0-08)
  * plug in via `imports`/`inject`.
  */
@@ -33,6 +34,11 @@ export class AuthModule {
           inject: options.inject ?? [],
           useFactory: async (...deps: unknown[]) => ({
             auth: createAuth(await options.useFactory(...deps)),
+            // CORS is owned by platform/http configureHttp (exact WEB_ORIGIN, PATCH, Idempotency-Key, max-age).
+            disableTrustedOriginsCors: true,
+            // Parsers the adapter adds for non-/api/auth routes: JSON only, 1 MB (06-api.md §5). No urlencoded:
+            // closes the HTML-form CSRF route on top of the Origin check.
+            bodyParser: { json: { limit: JSON_BODY_LIMIT_BYTES }, urlencoded: { enabled: false } },
           }),
         }),
       ],

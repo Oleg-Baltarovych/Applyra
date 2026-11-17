@@ -362,7 +362,9 @@ Major-версії фіксуються в `package.json`/`engines`; Renovate т
 | Cache/queue store | Valkey (Redis-сумісний) | 9.x ✓ | BSD-ліцензія, drop-in для BullMQ |
 | Queue | BullMQ | 6.x ✓ | job schedulers (`upsertJobScheduler`); repeatable jobs у v6 видалено. `@nestjs/bullmq` 12.x ✓ (peer `bullmq ^6`, Nest 10–12; перевірено M0-02 на Valkey 9) + `ioredis` 6 (у BullMQ 6 драйвер — optional peer) |
 | Auth | Better Auth + `@thallesp/nestjs-better-auth` | 1.7.x ✓ / 2.x (2.8) ✓ | див. нижче |
-| Logging | pino + nestjs-pino | 10.x / 4.x ◌ | JSON-логи, redaction |
+| Logging | pino + pino-http + nestjs-pino | 10.x / 11.x / 5.x ✓ | JSON-логи, redaction (M0-09: nestjs-pino 5 — Nest ≥ 11.0.8, Node ≥ 22.12) |
+| HTTP security | helmet | 8.x ✓ | API-заголовки `09-security-privacy.md` §9.2 (M0-09) |
+| Redis client | ioredis | 6.x ✓ | runtime з R0: readiness PING (M0-09), Better Auth rate-limit store (M0-10), BullMQ (R1) |
 | Errors | Sentry (`@sentry/nestjs`, `@sentry/react`) | 11.x ✓ | помилки + release tracking |
 | Metrics | prom-client | 15.x ◌ | `/metrics` для Prometheus (R1) |
 | Tracing | OpenTelemetry JS SDK | 2.x ◌ | R2: HTTP → BullMQ → worker |
