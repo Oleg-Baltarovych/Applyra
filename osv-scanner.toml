@@ -43,3 +43,17 @@ ecosystem = "npm"
 vulnerability.ignore = true
 effectiveUntil = 2026-12-15
 reason = "GHSA-g3hv-75wg-m249: dev/test-only via testcontainers → archiver-utils 5.0.2 → glob 10.5.0"
+
+[[PackageOverrides]]
+# GHSA-fc5q-39xc-vjpf: picomatch ReDoS through single-branch repeated extglobs, HIGH (CVSS 8.7), affects <= 4.0.7,
+# no patched release yet (checked 2026-11-17). Paths (`pnpm why picomatch -r`): dev/test tooling only — ESLint
+# plugins (eslint-plugin-boundaries via @boundaries/*, typescript-eslint via tinyglobby/fdir), vite/vitest, tsup;
+# better-auth reaches it only through its OPTIONAL `vitest` peer, which pnpm resolves to our dev vitest — not part of
+# a production install. Patterns come from our own config files, never user input. Recheck for a picomatch >= 4.0.8 /
+# 5.x release and bump; delete this entry. User decision 2026-11-17.
+name = "picomatch"
+version = "4.0.7"
+ecosystem = "npm"
+vulnerability.ignore = true
+effectiveUntil = 2026-12-15
+reason = "GHSA-fc5q-39xc-vjpf: dev/test tooling only (eslint, vite/vitest, tsup); globs from our config; no fix released"
