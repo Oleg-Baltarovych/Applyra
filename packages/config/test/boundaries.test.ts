@@ -35,6 +35,10 @@ const processEnv = (ruleId: string) => ({
   ruleId,
   message: expect.stringContaining('only apps/api/src/platform/config may read process.env'),
 });
+const adapterRoute = {
+  ruleId: 'no-restricted-syntax',
+  message: expect.stringContaining('not on the HTTP adapter'),
+};
 const testProcessEnv = (ruleId: string) => ({
   ruleId,
   message: expect.stringContaining('only it may read process.env in apps/api/test'),
@@ -97,6 +101,7 @@ const violations: [file: string, expected: object[]][] = [
   [`${api}/modules/beta/process-env-computed.ts`, [processEnv('no-restricted-properties')]],
   [`${api}/platform/process-env-default-import.ts`, [processEnv('no-restricted-imports')]],
   [`${api}/platform/process-env-namespace-import.ts`, [processEnv('no-restricted-imports')]],
+  [`${api}/platform/adapter-route.ts`, [adapterRoute]],
   ['apps/api/test/integration/process-env.ts', [testProcessEnv('no-restricted-properties')]],
   [
     `${api}/process-env-require.ts`,

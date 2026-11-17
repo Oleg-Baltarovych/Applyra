@@ -48,7 +48,7 @@ R0 свідомо легший (P-01): unit + integration + IDOR для applicat
 
 **Мета:** неможливо додати приватний endpoint без IDOR-перевірки.
 
-1. Тестовий bootstrap піднімає Nest app і через `DiscoveryService` + `MetadataScanner` + `Reflector` будує route table: `{ method, path, isPublic, roles, controller, handler }`.
+1. Тестовий bootstrap піднімає Nest app і через `DiscoveryService` + `MetadataScanner` + `Reflector` будує route table: `{ method, path, isPublic, isOptional, roles, idorExempt, controller, handler }` (`apps/api/test/support/route-table.ts`, M0-07b).
 2. `test/idor/fixtures.ts` — мапа `"<METHOD> <path>" → fixture`, де fixture створює ресурс для user A і повертає `{ params, query?, body? }`.
 3. Генерований тест для кожного не-`@Public` route, запит від user B:
 
