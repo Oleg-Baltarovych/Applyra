@@ -322,6 +322,16 @@ describe('JSON body limit (06 §5)', () => {
     expectApiError(res, 413, 'PAYLOAD_TOO_LARGE');
   });
 
+  it('answers a large declared body on /api/auth/* with a readable 413 (body drained, no ECONNRESET)', async () => {
+    // Regression: answering before the body was read made the kernel RST the socket while the client was writing.
+    for (let i = 0; i < 3; i += 1) {
+      const res = await post('/api/auth/sign-in/social')
+        .set('Content-Type', 'application/json')
+        .send(bodyOf(8 * LIMIT));
+      expectApiError(res, 413, 'PAYLOAD_TOO_LARGE');
+    }
+  });
+
   /** A chunked POST (no Content-Length) written in 64 KB pieces over a real socket. */
   const chunkedAuthPost = async (bytes: number) => {
     const server = app.getHttpServer() as import('node:http').Server;

@@ -10,6 +10,7 @@ import type { Auth } from '../src/modules/auth/auth.config.js';
 import { SIGNUP_CLOSED, authOptionsFromConfig } from '../src/modules/auth/index.js';
 import { ConfigService } from '../src/platform/config/index.js';
 import { PRISMA } from '../src/platform/prisma/index.js';
+import { REDIS } from '../src/platform/redis/index.js';
 import { testEnv } from './support/test-env.js';
 
 const WEB_ORIGIN = 'http://app.localhost:5173';
@@ -63,12 +64,17 @@ describe('AppModule with the env-driven config', () => {
   });
 
   it('builds the auth config from the env', async () => {
-    const auth = await authOptionsFromConfig.useFactory(app.get(ConfigService), app.get(PRISMA));
+    const auth = await authOptionsFromConfig.useFactory(
+      app.get(ConfigService),
+      app.get(PRISMA),
+      app.get(REDIS),
+    );
 
     expect(auth).toMatchObject({
       secret: 'test-only-secret-never-used-outside-tests-0123456789',
       baseURL: 'http://localhost:3000',
-      trustedOrigins: [WEB_ORIGIN],
+      webOrigin: WEB_ORIGIN,
+      google: { clientId: expect.any(String), clientSecret: expect.any(String) },
     });
     // R0 = Google OAuth only (M0-10): the env-driven config never enables email + password.
     expect(auth.emailAndPassword).toBeUndefined();

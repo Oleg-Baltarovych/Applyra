@@ -3,7 +3,8 @@
 - Status: Accepted
 - Date: 2026-11-16
 - Amended: 2026-11-16 — M0-02: Better Auth 1.7.25 + `@thallesp/nestjs-better-auth` 2.8 on NestJS 11 work without peer overrides; `generateId` → UUID v7 (`uuid` v7) for all auth models, `additionalFields` `role`/`demoExpiresAt` with `input: false`; allowlist hook must throw `APIError` with code `SIGNUP_CLOSED` (OAuth → `errorURL?error=SIGNUP_CLOSED`, programmatic → 403); `user.validateUserInfo` rejected because it also gates returning OAuth sign-ins
-- Amended: 2026-11-16 — Google sign-up rejection is a redirect, not 403: the SPA passes `errorCallbackURL: '/sign-in'` and the sign-in page maps `?error=SIGNUP_CLOSED` to "Access is invite-only"; 403 `SIGNUP_CLOSED` applies only to direct API sign-up (email, R1) (FR-AUTH-02, `docs/spec/06-api.md` §7.1)
+- Amended: 2026-11-16 — Google sign-up rejection is a redirect, not 403: the SPA passes an absolute `errorCallbackURL` = `${WEB_ORIGIN}/sign-in` (a relative path resolves on the API origin — M0-10) and the sign-in page maps `?error=SIGNUP_CLOSED` to "Access is invite-only"; 403 `SIGNUP_CLOSED` applies only to direct API sign-up (email, R1) (FR-AUTH-02, `docs/spec/06-api.md` §7.1)
+- Amended: 2026-11-17 — M0-10: OAuth tokens are stored encrypted (`account.encryptOAuthTokens`) with a key derived from `BETTER_AUTH_SECRET` — rotating the secret invalidates sessions and stored OAuth tokens alike; absolute 30 d session cap = `databaseHooks.session.update.before` clamp + Nest `SessionLifetimeGuard`; rate-limit client IP from Express `req.ip` (`TRUST_PROXY_HOPS`), never from a client-supplied header
 
 ## Context
 - Rule: no home-grown cryptography; sessions in HttpOnly cookies, revoke all sessions (see `docs/spec/09-security-privacy.md`).

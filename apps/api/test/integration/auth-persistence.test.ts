@@ -2,15 +2,17 @@
 // applyra_app, incl. the HTTP surface for the input: false fields (S-06: no privilege escalation via sign-up or
 // update-user). Rows are asserted with plain SQL, independent of Better Auth's own reads.
 import type { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import { AuthService } from '@thallesp/nestjs-better-auth';
+import type { Redis } from 'ioredis';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { AppModule } from '../../src/app.module.js';
 import type { Auth, AuthConfig } from '../../src/modules/auth/auth.config.js';
 import { authOptionsFromConfig, SIGNUP_CLOSED } from '../../src/modules/auth/index.js';
 import { ConfigService } from '../../src/platform/config/index.js';
 import type { AppPrisma } from '../../src/platform/prisma/index.js';
+import { GOOGLE_IDENTITIES } from '../support/google-oauth-mock.js';
+import { createHttpApp } from '../support/http-app.js';
+import { signInAs } from '../support/session.js';
 import { testEnv } from '../support/test-env.js';
 import { withPg } from './support/pg.js';
 import { testInfra } from './support/test-infra.js';
@@ -18,6 +20,7 @@ import { testInfra } from './support/test-infra.js';
 const OWNER = 'owner@example.com';
 const HTTP_USER = 'http@example.com';
 const HTTP_REJECTED = 'rejected@example.com';
+const WEB_ORIGIN = testEnv().WEB_ORIGIN;
 
 interface UserRow {
   id: string;
@@ -50,27 +53,27 @@ describe('Better Auth persistence (Prisma adapter)', () => {
     );
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        AppModule.forRoot({
-          env: testEnv({
-            DATABASE_URL: testInfra().databaseUrl,
-            AUTH_SIGNUP_ALLOWLIST: `Owner@Example.com, ${HTTP_USER}, ${HTTP_REJECTED}`,
-          }),
-          // The production options (Prisma adapter) + email/password, ONLY here: it drives the HTTP sign-up without
-          // an OAuth mock. Never copy into real config (R0 = Google only).
-          auth: {
-            inject: authOptionsFromConfig.inject ?? [],
-            useFactory: async (config: ConfigService, prisma: AppPrisma): Promise<AuthConfig> => ({
-              ...(await authOptionsFromConfig.useFactory(config, prisma)),
-              emailAndPassword: { enabled: true },
-            }),
-          },
+    // The production HTTP composition (configureHttp: client IP header, Origin policy) — as in main.ts.
+    app = await createHttpApp({
+      env: testEnv({
+        DATABASE_URL: testInfra().databaseUrl,
+        REDIS_URL: testInfra().redisUrl,
+        AUTH_SIGNUP_ALLOWLIST: `Owner@Example.com, ${HTTP_USER}, ${HTTP_REJECTED}, ${GOOGLE_IDENTITIES['code-A'].email}`,
+      }),
+      // The production options (Prisma adapter) + email/password, ONLY here: it drives the HTTP sign-up without
+      // an OAuth mock. Never copy into real config (R0 = Google only).
+      auth: {
+        inject: authOptionsFromConfig.inject ?? [],
+        useFactory: async (
+          config: ConfigService,
+          prisma: AppPrisma,
+          redis: Redis,
+        ): Promise<AuthConfig> => ({
+          ...(await authOptionsFromConfig.useFactory(config, prisma, redis)),
+          emailAndPassword: { enabled: true },
         }),
-      ],
-    }).compile();
-    app = moduleRef.createNestApplication({ bodyParser: false });
-    await app.init();
+      },
+    });
     // Shared fixture: the allowlisted owner (case differs from the allowlist entry on purpose).
     ownerId = (await createUser('owner@example.COM')).id;
   });
@@ -123,22 +126,16 @@ describe('Better Auth persistence (Prisma adapter)', () => {
     const signUp = (email: string, extra: Record<string, unknown>) =>
       request(app.getHttpServer())
         .post('/api/auth/sign-up/email')
+        .set('Origin', WEB_ORIGIN)
         .send({ email, password: 'correct-horse-battery-staple', name: 'Http User', ...extra });
-    let cookie: string[] = [];
 
-    beforeAll(async () => {
+    it('email sign-up of an allowlisted but unverified address is SIGNUP_CLOSED (403) and writes no row', async () => {
+      // The allowlist requires a provider-verified email (M0-10), so R1 email sign-up cannot bypass it.
       const res = await signUp(HTTP_USER, { role: 'ADMIN' });
-      expect(res.status).toBe(200);
-      cookie = res.get('Set-Cookie') ?? [];
-    });
 
-    it('sign-up drops a client-supplied role (row: USER, deletedAt/demoExpiresAt NULL)', async () => {
-      expect(await userRow(HTTP_USER)).toMatchObject({
-        role: 'USER',
-        deletedAt: null,
-        demoExpiresAt: null,
-        version: 7,
-      });
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: SIGNUP_CLOSED });
+      expect(await userRow(HTTP_USER)).toBeUndefined();
     });
 
     it.each([
@@ -155,17 +152,25 @@ describe('Better Auth persistence (Prisma adapter)', () => {
       },
     );
 
-    it('update-user cannot raise the role (400, row unchanged)', async () => {
-      expect(cookie.length).toBeGreaterThan(0);
-      const before = await userRow(HTTP_USER);
+    it('a Google sign-up is role USER; update-user cannot raise the role (400, row unchanged)', async () => {
+      const { cookie } = await signInAs(app, 'A');
+      const email = GOOGLE_IDENTITIES['code-A'].email;
+      const before = await userRow(email);
+      expect(before).toMatchObject({
+        role: 'USER',
+        deletedAt: null,
+        demoExpiresAt: null,
+        version: 7,
+      });
 
       const res = await request(app.getHttpServer())
         .post('/api/auth/update-user')
+        .set('Origin', WEB_ORIGIN)
         .set('Cookie', cookie)
         .send({ role: 'ADMIN' });
 
       expect(res.status).toBe(400);
-      expect(await userRow(HTTP_USER)).toEqual(before);
+      expect(await userRow(email)).toEqual(before);
     });
   });
 });

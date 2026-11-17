@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
 import { ConfigService } from '../config/index.js';
 import { authBodyLimit } from './auth-body-limit.js';
+import { authRequestPolicy } from './auth-request-policy.js';
 import { requestIdMiddleware } from './request-id.middleware.js';
 
 function noStore(_req: Request, res: Response, next: NextFunction): void {
@@ -18,6 +19,12 @@ function noStore(_req: Request, res: Response, next: NextFunction): void {
  */
 export function configureHttp(app: INestApplication, config: ConfigService): void {
   app.useLogger(app.get(Logger));
+  // req.ip: socket address, or the X-Forwarded-For entry added by the trusted proxy hops (0 = none).
+  const hops = config.get('TRUST_PROXY_HOPS');
+  (app.getHttpAdapter().getInstance() as { set(key: string, value: unknown): void }).set(
+    'trust proxy',
+    hops === 0 ? false : hops,
+  );
   app.use(requestIdMiddleware);
   app.use(
     helmet({
@@ -39,4 +46,5 @@ export function configureHttp(app: INestApplication, config: ConfigService): voi
     maxAge: 600,
   });
   app.use(authBodyLimit);
+  app.use(authRequestPolicy(config.get('WEB_ORIGIN')));
 }
