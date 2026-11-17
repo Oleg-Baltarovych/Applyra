@@ -6,20 +6,6 @@
 # version until expiry — keep the expiry short.
 
 [[PackageOverrides]]
-# GHSA-g3hv-75wg-m249 (CVE-2026-118764): minimatch ReDoS via globparts amplification, moderate, fixed 11.0.1.
-# Single path (checked 2026-11-17, `pnpm why minimatch`): 10.2.6 only via @typescript-eslint/typescript-estree
-# 8.72.2 (`minimatch ^10.2.2`) — dev-time lint tooling, globs from our own config, never user input; the
-# other copy is 11.0.8 (not affected). Fix: typescript-eslint + @typescript-eslint/parser >= 8.73.0
-# (`minimatch ^11.0.1`), published 2026-11-16, blocked by pnpm `minimumReleaseAge` on 2026-11-17 → bump,
-# then delete this entry.
-name = "minimatch"
-version = "10.2.6"
-ecosystem = "npm"
-vulnerability.ignore = true
-effectiveUntil = 2026-12-01
-reason = "GHSA-g3hv-75wg-m249: dev-only lint dependency; fix = typescript-eslint >= 8.73.0 once past minimumReleaseAge"
-
-[[PackageOverrides]]
 # GHSA-3g3m-2fjr-6pw4: glob, moderate, fixed only in 14.0.2. Single path (M0-07a, 2026-11-17):
 # @testcontainers/* 12.2.1 → testcontainers → archiver 7.0.1 → archiver-utils 5.0.2 (`glob ^10`) — dev/test
 # only, never in a runtime image; Testcontainers uses archiver only for copyFilesToContainer with our fixed path
