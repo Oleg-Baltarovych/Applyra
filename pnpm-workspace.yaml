@@ -9,6 +9,10 @@ packages:
 # `minimumReleaseAgeExclude: ['<name>@<exact version>']` with a comment + removal date, and delete it afterwards.
 minimumReleaseAge: 1440
 
+# pnpm comes from a global `npm i -g pnpm` (Node 25+ has no corepack); a different global version self-switches to
+# `packageManager` (downloads it). Explicit so nobody flips it to `error`, which would force the exact pnpm globally. ADR 024.
+pmOnFail: download
+
 # pnpm 11: dependency build scripts are denied unless approved here (`onlyBuiltDependencies` was removed in v11).
 # strictDepBuilds (default true) fails `pnpm install` on any unreviewed build script.
 allowBuilds:

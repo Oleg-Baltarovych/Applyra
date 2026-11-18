@@ -335,8 +335,8 @@ Major-версії фіксуються в `package.json`/`engines`; Renovate т
 
 | Шар | Вибір | Версія | Чому |
 |---|---|---|---|
-| Runtime | Node.js LTS | 24.x ✓ | LTS до 2028-04; 26 тільки став LTS (2026-10) — перейти, коли екосистема наздожене |
-| Package manager | pnpm (corepack) | 11.x ✓ | workspaces, `minimumReleaseAge` за замовчуванням — захист supply chain |
+| Runtime | Node.js LTS | 26.x ✓ | Active LTS з 2026-10, EOL 2029-04; `engines.node ^26.13.1` (ADR 024) |
+| Package manager | pnpm (глобально через npm, пін = `packageManager`, `pmOnFail: download`; без corepack — ADR 024) | 11.x ✓ | workspaces, `minimumReleaseAge` за замовчуванням — захист supply chain |
 | Monorepo | Turborepo | 2.x (2.11) ✓ | кеш тасків локально і в CI |
 | Language | TypeScript strict | 6.0 ✓ | 7.0 (Go) GA, але стабільний programmatic API (typescript-eslint) — лише в 7.1 |
 | UI | React | 19.x ✓ | стабільна гілка, 20 не вийшов |
