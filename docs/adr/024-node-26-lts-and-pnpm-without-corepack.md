@@ -29,4 +29,8 @@
 ## Consequences
 - Positive: Active LTS until 2027-10, EOL 2029-04; #145 class of crash gone (to be confirmed by the loop); one pnpm mechanism everywhere, no corepack shims; Temporal and newer V8 (14.6) available.
 - Negative / trade-offs: Prisma 7 is not vendor-listed for 26 (risk covered by tests); `pmOnFail: download` fetches pnpm from the npm registry at first use (same trust as `action-setup`; `packageManager` pins the version); contributors on Node 24 get an engines warning (pnpm `engineStrict` is off) — the README states 26.
-- Follow-ups: TS `target`/`lib` es2024 → es2025 (separate change); check whether Node 26 `crypto.randomUUIDv7()` can replace the `uuid` dep (04 §7.2 note 5 says Node has none — re-verify); M0-14 picks the exact image tag/digest; M2-14 devcontainer uses Node 26 + npm-global pnpm.
+- Follow-ups: TS `target`/`lib` es2024 → es2025 (separate change); check whether Node 26 `crypto.randomUUIDv7()` can replace the `uuid` dep (04 §7.2 note 5 says Node has none — re-verify); M0-14 picks the exact image tag/digest (done, see below); M2-14 devcontainer uses Node 26 + npm-global pnpm.
+
+## Resolution (M0-14, 2026-11-18)
+- Runtime base = `gcr.io/distroless/nodejs26-debian13:nonroot` pinned by multi-arch index digest: Node 26.13.1 (= engines), amd64 + arm64, uid 65532, no shell / npm / corepack by construction (09 §14 holds without `rm -rf`), libssl present for the Prisma schema engine. The `node:26-trixie-slim` fallback was not needed.
+- Build stages = `node:26.13.1-trixie-slim@sha256:…`; pnpm via `npm i -g pnpm@<packageManager>` in build stages only. Both refs live in `infra/docker/Dockerfile` FROM lines (Renovate dockerfile manager).

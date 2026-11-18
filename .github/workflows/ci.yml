@@ -270,6 +270,89 @@ jobs:
             rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
             -color
 
-  # ── Stage 4 — TODO(M0-14): `deploy-ready` job — buildx multi-arch images (linux/amd64,linux/arm64, no push
-  #    on PR), `docker compose -f … config -q` for compose.yml / compose.prod.yml, deploy-prod.yml lint.
-  #    TODO(M0-17): separate `terraform.yml` (PRs touching infra/terraform/**): fmt -check, init -backend=false, validate.
+  # ── Stage 4: deploy-ready (M0-14; 12-infra-ops.md §8.1, ADR 022: checked, never applied) ─────────────────────
+  # Production images build for both architectures, the prod compose stack is valid and the amd64 images pass the
+  # smoke (non-root, no npm/pnpm/corepack, migrate on a network without egress, /health/ready, SPA headers via Caddy).
+  # No push: GHCR + provenance/SBOM arrive with M0-14b (then `packages: write` on that job only).
+  deploy-ready:
+    name: deploy-ready
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BAKE_FILE: infra/docker/docker-bake.hcl
+      COMPOSE_FILES: -f infra/compose/compose.yml -f infra/compose/compose.prod.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: hadolint (Dockerfile + shellcheck of RUN)
+        run: |
+          docker run --rm -i --cap-drop ALL --security-opt no-new-privileges \
+            hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d \
+            hadolint --failure-threshold warning - < infra/docker/Dockerfile
+      # Env from the generator (random secrets, *.applyra.localhost) — no committed env with dummy secrets.
+      - name: compose config (dev + prod)
+        run: |
+          node infra/compose/gen-prod-env.mjs --out "$RUNNER_TEMP/prod.env"
+          docker compose --env-file .env.example config -q
+          # shellcheck disable=SC2086 # COMPOSE_FILES is a list of flags
+          docker compose $COMPOSE_FILES --env-file "$RUNNER_TEMP/prod.env" --profile migrate config --format json > "$RUNNER_TEMP/prod.json"
+          services="$(jq -r '.services | keys | sort | join(",")' "$RUNNER_TEMP/prod.json")"
+          [ "$services" = "api,caddy,migrate,postgres,redis" ] || { echo "::error::prod services: $services"; exit 1; }
+          jq -e '[.services.postgres, .services.redis] | all(.ports == null or .ports == [])' "$RUNNER_TEMP/prod.json" >/dev/null \
+            || { echo "::error::postgres/redis must not publish ports in prod"; exit 1; }
+          jq -e '.networks.internal.internal == true' "$RUNNER_TEMP/prod.json" >/dev/null \
+            || { echo "::error::network internal must be internal: true"; exit 1; }
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: bake linux/amd64 (load)
+        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
+        with:
+          source: .
+          files: ${{ env.BAKE_FILE }}
+          load: true
+          # cache-to here too: the amd64 layers are saved even if the smoke or the arm64 build fails later.
+          set: |
+            *.platform=linux/amd64
+            *.cache-from=type=gha,scope=deploy-ready
+            *.cache-to=type=gha,mode=max,scope=deploy-ready
+      - name: api image — non-root, no package managers, Node >= engines
+        run: |
+          engines="$(jq -r '.engines.node' package.json)" # e.g. ^26.13.1
+          min="${engines#^}"
+          user="$(docker image inspect applyra/api:local --format '{{.Config.User}}')"
+          [ "$user" = "65532:65532" ] || { echo "::error::api image user is '$user'"; exit 1; }
+          cid="$(docker create applyra/api:local)"
+          docker export "$cid" | tar -t > "$RUNNER_TEMP/api-fs.txt"
+          docker rm "$cid" >/dev/null
+          if grep -E '(^|/)(npm|npx|pnpm|pnpx|corepack)(\.c?js)?$|/node_modules/(npm|pnpm|corepack)/' "$RUNNER_TEMP/api-fs.txt"; then
+            echo "::error::package manager found in the api image"
+            exit 1
+          fi
+          grep -q 'schema-engine-' "$RUNNER_TEMP/api-fs.txt" || { echo "::error::no Prisma schema engine baked"; exit 1; }
+          version="$(docker run --rm applyra/api:local --version)"
+          # Caret range: same major as the minimum and >= it (sort -V puts the higher version last).
+          ver="${version#v}"
+          highest="$(printf '%s\n%s\n' "$ver" "$min" | sort -V | tail -n 1)"
+          if [ "${ver%%.*}" != "${min%%.*}" ] || [ "$highest" != "$ver" ]; then
+            echo "::error::api image Node $version does not satisfy engines $engines"
+            exit 1
+          fi
+          echo "api image: user $user, Node $version"
+      - name: smoke (migrate, health, SPA headers via Caddy)
+        run: bash infra/compose/smoke.sh "$RUNNER_TEMP/prod.env"
+      - name: bake linux/amd64 + linux/arm64 (cache only, no push)
+        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
+        with:
+          source: .
+          files: ${{ env.BAKE_FILE }}
+          set: |
+            *.platform=linux/amd64,linux/arm64
+            *.output=type=cacheonly
+            *.cache-from=type=gha,scope=deploy-ready
+            *.cache-to=type=gha,mode=max,scope=deploy-ready
+
+  # TODO(M0-17): separate `terraform.yml` (PRs touching infra/terraform/**): fmt -check, init -backend=false, validate.

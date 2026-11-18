@@ -16,7 +16,7 @@
 | LLM key | dev key з низьким лімітом / stub | окремий key, жорсткий місячний cap у провайдера | окремий key |
 | Email | Mailpit | provider sandbox / allowlist отримувачів | provider prod |
 | Storage | MinIO — image `cgr.dev/chainguard/minio` pinned by digest (офіційні community-images MinIO припинені); той самий у Testcontainers; S3 API / ADR 010 без змін | R2 bucket `applyra-staging-*` | R2 bucket `applyra-prod-*` |
-| Домен | `localhost:5173` / `:3000` | окремий registrable domain (`<staging-domain>`) | `<domain>` |
+| Домен | `localhost:5173` / `:3000`; локальний prod-стек (M0-14, `infra/README.md`): `app.applyra.localhost` / `api.applyra.localhost` / `applyra.localhost` (Caddy internal CA; same-site як prod `app.`/`api.`) | окремий registrable domain (`<staging-domain>`) | `<domain>` |
 | Sentry | вимкнено (SDK ініціалізується лише при `SENTRY_DSN`) | `environment=staging` | `environment=production` |
 
 Секрети не шаряться між середовищами; R2-токени — scoped на bucket(и) свого середовища.
@@ -77,14 +77,15 @@
 | Мережа | Сервіси | Примітка |
 |---|---|---|
 | `edge` | caddy, api | тільки Caddy публікує 80/443 |
-| `internal` (`internal: true`) | api, worker, migrate, postgres, redis, prometheus, exporters, grafana | без виходу в інтернет; api/worker виходять назовні через `outbound` |
-| `outbound` | api, worker | вихід до LLM, email, R2, джерел ingestion (R2) |
+| `internal` (`internal: true`) | api, worker, migrate, postgres, redis, prometheus, exporters, grafana | без виходу в інтернет; api виходить назовні через `edge`, worker — через `outbound` |
+| `outbound` | worker (з M3-01) | вихід до LLM, email, R2, джерел ingestion (R2). api виходить назовні через `edge` (звичайна bridge-мережа; окрема `outbound` для api нічого не додає — M0-14); worker не входить в `edge` |
 | `fetch-rpc` | worker, safe-fetcher, prometheus | тільки RPC worker → fetcher [R1]; api сюди не входить (capture — через чергу `capture`, ADR 021); prometheus — лише scrape safe-fetcher `:9466` |
 | `egress` | safe-fetcher | тільки інтернет; host-правила `DOCKER-USER` дропають з її subnet трафік до RFC 1918, `100.64/10`, `169.254/16`, IP хоста (SSRF — `09-security-privacy.md` §5) |
 
 - Postgres, Redis, Prometheus, Grafana, Bull Board, `/metrics` — **не публікуються** на host-порти й не маршрутизуються Caddy.
 - Адмін-доступ: SSH і Grafana/Bull Board/Prometheus — тільки через Tailscale (публічний порт 22 закритий); Bull Board додатково за admin-guard (S-19).
-- Реальний IP клієнта: Caddy довіряє `CF-Connecting-IP` тільки з Cloudflare ranges.
+- Реальний IP клієнта: Caddy довіряє `CF-Connecting-IP` тільки з Cloudflare ranges (M0-14b). Без Cloudflare Caddy не довіряє вхідному `X-Forwarded-For` і замінює його адресою peer (перевірено M0-14) → api `TRUST_PROXY_HOPS=1`.
+- Valkey у prod вимагає пароль (`REDIS_PASSWORD`; `requirepass` у конфіг-файлі в tmpfs, не в argv; healthcheck через `REDISCLI_AUTH`), local dev — без пароля. Кожен сервіс `compose.prod.yml`: `cap_drop: ALL`, `no-new-privileges`, non-root, `read_only` + tmpfs, де image дозволяє (api, caddy, redis); тільки caddy публікує 80/443 (non-root через `sysctls: net.ipv4.ip_unprivileged_port_start: 80`).
 
 ## 4. PostgreSQL 18 (рішення 5)
 
@@ -156,7 +157,7 @@
 
 | Workflow | Тригер | Стадії |
 |---|---|---|
-| `ci.yml` | PR, push `main` | install (`--frozen-lockfile`) → lint/typecheck → unit → integration + IDOR → contracts → migrations check → **deploy-ready**: build images multi-arch (`linux/amd64,linux/arm64`, buildx; на PR без push), `docker compose -f … config -q` для `compose.yml`/`compose.prod.yml`, actionlint на workflows → supply chain → e2e (R1+). Gates — `11-testing.md` §9 |
+| `ci.yml` | PR, push `main` | install (`--frozen-lockfile`) → lint/typecheck → unit → integration + IDOR → contracts → migrations check → **deploy-ready** (job `deploy-ready`, M0-14): hadolint, `docker compose … config` для `compose.yml`/`compose.prod.yml` (+ jq: сервіси, без портів postgres/redis, `internal: true`), bake `linux/amd64` → перевірки api image (non-root, без npm/pnpm/corepack, Node ≥ engines) → `infra/compose/smoke.sh` (migrate без egress, `/health/ready`, SPA headers через Caddy) → bake `linux/amd64,linux/arm64` (cache only, без push); actionlint — окремий job → supply chain → e2e (R1+). Gates — `11-testing.md` §9 |
 | `terraform.yml` | PR зі змінами `infra/terraform/**` | `terraform fmt -check -recursive`, `init -backend=false` + `validate` (без credentials) |
 | `deploy-prod.yml` | **тільки `workflow_dispatch`** (Environment `production`, без секретів до hosting) | кроки §8.2 для одного prod-хоста; у R0/R1 не запускається — лише lint (actionlint) у `ci.yml` |
 | `nightly.yml` | cron | `pnpm audit`, header check проти `compose.ci.yml`; R1+: k6 + Lighthouse проти `compose.ci.yml` (орієнтир, не NFR-вимірювання), AI evals (manual/nightly) |

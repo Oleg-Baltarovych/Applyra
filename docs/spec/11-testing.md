@@ -172,7 +172,7 @@ Thresholds = NFR з `12-infra-ops.md` §12; на CI-runner — орієнтир 
 | SSRF / upload fixtures | PR | — | ✓ | ✓ |
 | frontend tests + contrast check | PR | ✓ | ✓ | ✓ |
 | build (images, multi-arch amd64 + arm64) | PR | ✓ | ✓ | ✓ |
-| deploy-ready: `docker compose config` (`compose.yml`, `compose.prod.yml`), `terraform fmt -check` + `validate`, actionlint (ADR 022) | PR | ✓ | ✓ | ✓ |
+| deploy-ready: hadolint, `docker compose config` (`compose.yml`, `compose.prod.yml`), amd64 smoke prod-стеку (`infra/compose/smoke.sh`), `terraform fmt -check` + `validate` (M0-17), actionlint (ADR 022) | PR | ✓ | ✓ | ✓ |
 | supply chain: `pnpm audit`, osv-scanner, gitleaks, SAST Semgrep CE (CodeQL — коли репо публічне, ADR 023) | PR + weekly | ✓ | ✓ | ✓ |
 | Playwright e2e проти compose | PR | — | ✓ | ✓ |
 | `@smoke` проти `compose.ci.yml` | push `main` | — | ✓ | ✓ |
