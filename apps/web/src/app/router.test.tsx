@@ -46,7 +46,11 @@ describe('shell', () => {
 
     await app.user.click(within(nav).getByRole('link', { name: 'Settings' }));
     expect(await screen.findByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
-    expect(screen.getByText('user-a@example.com')).toBeVisible();
+    expect(await screen.findByRole('form', { name: 'Preferences' })).toBeVisible();
+    expect(within(nav).getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
     await expectNoAxeViolations(app.container);
   });
 

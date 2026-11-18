@@ -351,7 +351,7 @@ Major-версії фіксуються в `package.json`/`engines`; Renovate т
 | Styling | Tailwind CSS | 4.x (4.3) ✓ | CSS-first config, токени як CSS variables |
 | Components | shadcn/ui | компоненти вендоряться (`radix-ui` 1.8 монопакет) ✓ M0-12 | власний код, a11y на Radix |
 | DnD | dnd-kit (`@dnd-kit/core` + sortable) | 6.x ◌ | keyboard sensor (WCAG 2.5.7); `@dnd-kit/react` ще 0.x |
-| Forms | React Hook Form + `@hookform/resolvers` | 7.x / 7.x ◌ (resolvers 7 = peer zod ^4; додає M0-12b) | uncontrolled, Zod resolver |
+| Forms | React Hook Form + `@hookform/resolvers` | 7.x (7.92) / 7.x (7.0.7) ✓ M0-12b (resolvers 7 = peer zod ^4) | uncontrolled, Zod resolver |
 | Schemas | Zod | 4.x ✓ | `z.toJSONSchema`, одна схема FE/BE |
 
 ### 7.2. Backend, дані, якість

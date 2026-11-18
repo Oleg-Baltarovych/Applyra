@@ -76,6 +76,12 @@ No secrets in `VITE_*` (bundle-public). Redirect targets: `next` relative-only (
 - `/settings` in a shows the account (name, email) from `GET /me` — real data, no placeholder; b turns it into `/settings/account` + `/settings/preferences`.
 - Review fixes (2026-11-18): no nested `<main>` for child-route errors (`standalone` prop), mid-session 401 → cache cleared + `/sign-in?next=` (QueryCache/MutationCache, `app/create-app.ts`), per-route `document.title` + h1 focus on client navigation (`app/root-layout.tsx`), `--destructive-foreground`, sign-in alert focused on arrival + `aria-busy`, `redirectIfSignedIn` shows the form only for 401/network (5xx → error page), PROD build rejects non-localhost `http:` `VITE_API_URL`.
 
+### Implementation notes (M0-12b)
+- Deps: `react-hook-form` 7.92.0, `@hookform/resolvers` 7.0.7 (both > 24 h old, peers clean). shadcn input/label/switch hand-written (new-york); Switch off-track uses `--muted-foreground` for 1.4.11 contrast.
+- No `settings/api/keys.ts`: settings are part of the `me` query (auth feature), the PATCH response replaces `me.settings`. Sign-out moved to `features/auth` `useSignOut` (shared by shell and account; avoids a settings → shell import).
+- Timezone push lives in the shell (`useBrowserTimezoneSync`), device zone through the `browser.timeZone()` seam; best effort (no UI on failure, next session retries).
+- `/settings` → redirect to `/settings/preferences` (most used tab); sub-nav order Preferences · Account. Theme = native radio group, applied on change, no Save. Timezone `<select>` options = supportedValuesOf + `UTC` + stored value.
+
 ### Follow-ups
 - Route modules are not `lazy` yet (single ~520 kB chunk, Vite warns) — split per feature when M1 adds real screens.
 - 404 for a signed-in user renders without the shell (top-level `*`) — accepted for M0.

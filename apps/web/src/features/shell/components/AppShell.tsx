@@ -1,9 +1,8 @@
-import { useQueryClient } from '@tanstack/react-query';
 import { LogOut } from 'lucide-react';
-import { useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router';
+import { NavLink, Outlet } from 'react-router';
 import { Button } from '@/components/ui/button';
-import { authClient } from '@/lib/auth/auth-client';
+import { useSignOut } from '@/features/auth';
+import { useBrowserTimezoneSync } from '@/features/settings';
 import { cn } from '@/lib/utils';
 
 const NAV = [
@@ -18,31 +17,16 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
   );
 
-/** Signed-in layout: skip link, main navigation (aria-current via NavLink), sign-out. */
+/** Signed-in layout: skip link, main navigation (aria-current via NavLink), sign-out, first-sign-in timezone push. */
 export function AppShell() {
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const [signOutFailed, setSignOutFailed] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-
-  async function signOut() {
-    setSigningOut(true);
-    setSignOutFailed(false);
-    const result = await authClient.signOut().catch(() => ({ error: true }));
-    if (result.error) {
-      setSigningOut(false);
-      setSignOutFailed(true);
-      return;
-    }
-    queryClient.clear();
-    await navigate('/sign-in', { replace: true });
-  }
+  const { signOut, signingOut, failed: signOutFailed } = useSignOut();
+  useBrowserTimezoneSync();
 
   return (
     <div className="min-h-svh">
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:rounded-md focus:bg-background focus:p-2"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:p-2 focus:outline-2 focus:outline-offset-2 focus:outline-ring"
       >
         Skip to content
       </a>

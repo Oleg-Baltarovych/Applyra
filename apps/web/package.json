@@ -15,6 +15,7 @@
   "dependencies": {
     "@applyra/contracts": "workspace:*",
     "@fontsource-variable/inter": "5.3.0",
+    "@hookform/resolvers": "7.0.7",
     "@tanstack/react-query": "5.108.0",
     "better-auth": "1.7.25",
     "class-variance-authority": "0.7.1",
@@ -23,6 +24,7 @@
     "radix-ui": "1.8.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "react-hook-form": "7.92.0",
     "react-router": "8.5.1",
     "tailwind-merge": "3.7.0",
     "zod": "^4.6.7"
