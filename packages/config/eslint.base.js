@@ -8,6 +8,7 @@ import prettier from 'eslint-config-prettier';
 import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescript';
 import boundaries from 'eslint-plugin-boundaries';
 import { importX } from 'eslint-plugin-import-x';
+import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
@@ -15,6 +16,19 @@ const repoRoot = path.resolve(import.meta.dirname, '../..');
 /** test/boundaries.test.ts lints a mirror of the repo layout under this prefix. */
 const fixture = 'packages/config/test/fixtures/boundaries/';
 const withFixture = (/** @type {string} */ glob) => [glob, fixture + glob];
+
+/** Per-package tsconfigs, so path aliases (apps/web `@/*`) resolve for boundaries/import-x. */
+const tsProjects = ['apps/*/tsconfig.json', 'packages/*/tsconfig.json', 'e2e/tsconfig.json'].map(
+  (p) => path.join(repoRoot, p),
+);
+
+const webMswMessage =
+  'MSW and fixtures live in tests only (apps/web/test/**, *.test.tsx) — no mock data in src.';
+const webFetchMessage =
+  'Use the typed client (src/lib/api/client.ts); fetch is allowed only in src/lib/api.';
+const webHexMessage = 'No hard-coded hex colours in components: use the design tokens (10 §8).';
+/** '#abc' / '#aabbcc' / '#aabbccdd' as a whole string, or inside an arbitrary Tailwind value `[#fff]`. */
+const hexColour = String.raw`/(^#|\[#)([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})(\]|$)/`;
 
 /** Prisma packages: allowed only in *.repository.ts and platform/prisma (rule 4). */
 const prismaPackages = ['@prisma/*', 'prisma'];
@@ -161,9 +175,36 @@ const policies = [
     from: { element: { type: 'api-*' }, file: { categories: 'test' } },
     allow: { to: { module: { origin: ['local', 'external', 'core'] } } },
   },
+  // Rule 9 (M0-12): a web feature imports another feature only via its index.ts (same feature: anything).
+  {
+    from: { element: { type: 'web*' } },
+    disallow: { to: { element: { type: 'web-feature' } } },
+    message: 'Import another web feature only via its index.ts (rule 9).',
+  },
+  {
+    from: { element: { type: 'web*' } },
+    allow: { to: { element: { type: 'web-feature', fileInternalPath: 'index.ts' } } },
+  },
+  {
+    from: { element: { type: 'web-feature' } },
+    allow: {
+      to: {
+        element: {
+          type: 'web-feature',
+          captured: { feature: '{{ from.element.captured.feature }}' },
+        },
+      },
+    },
+  },
+  // Rule 10 (M0-12): shared web layers (lib, components) never depend on features.
+  {
+    from: { element: { type: ['web-lib', 'web-components'] } },
+    disallow: { to: { element: { type: 'web-feature' } } },
+    message: 'apps/web/src/lib and src/components must not import features (rule 10).',
+  },
   // Rule 5: web never imports api code; shared code comes from @applyra/contracts only.
   {
-    from: { element: { type: 'web' } },
+    from: { element: { type: 'web*' } },
     disallow: [
       { to: { element: { type: 'api-*' } } },
       { to: { module: { source: '@applyra/api' } } },
@@ -180,7 +221,7 @@ const policies = [
   {
     from: { element: { type: 'contracts' } },
     disallow: [
-      { to: { element: { type: ['api-*', 'web'] } } },
+      { to: { element: { type: ['api-*', 'web*'] } } },
       { to: { module: { source: '@applyra/*' } } },
       { to: { module: { origin: 'core' } } },
     ],
@@ -223,6 +264,9 @@ export default defineConfig(
         { type: 'api-module', pattern: 'apps/api/src/modules/*', capture: ['module'] },
         { type: 'api-platform', pattern: 'apps/api/src/platform' },
         { type: 'api-app', pattern: 'apps/api/src' },
+        { type: 'web-feature', pattern: 'apps/web/src/features/*', capture: ['feature'] },
+        { type: 'web-lib', pattern: 'apps/web/src/lib' },
+        { type: 'web-components', pattern: 'apps/web/src/components' },
         { type: 'web', pattern: 'apps/web' },
         { type: 'contracts', pattern: 'packages/contracts' },
       ],
@@ -237,9 +281,17 @@ export default defineConfig(
       // import-x must parse .ts dependencies itself, otherwise no-cycle silently sees no edges.
       'import-x/extensions': ['.ts', '.tsx', '.js'],
       'import-x/parsers': { '@typescript-eslint/parser': ['.ts', '.tsx'] },
-      'import-x/resolver-next': [createTypeScriptImportResolver({ alwaysTryTypes: true })],
+      'import-x/resolver-next': [
+        createTypeScriptImportResolver({
+          alwaysTryTypes: true,
+          project: tsProjects,
+          noWarnOnMultipleProjects: true,
+        }),
+      ],
       // boundaries resolves via eslint-module-utils, which reads only the legacy key — without it local imports go unresolved.
-      'import/resolver': { typescript: { alwaysTryTypes: true } },
+      'import/resolver': {
+        typescript: { alwaysTryTypes: true, project: tsProjects, noWarnOnMultipleProjects: true },
+      },
     },
     rules: {
       'boundaries/dependencies': [
@@ -269,6 +321,47 @@ export default defineConfig(
     files: withFixture('apps/api/test/**/*.ts'),
     ignores: withFixture('apps/api/test/support/runner-env.ts'),
     rules: processEnvRules(testProcessEnvMessage),
+  },
+  // apps/web (M0-12, 10 §6.3, §8): browser globals, React hooks rules, typed client only, tokens only, no MSW in src.
+  {
+    files: withFixture('apps/web/{src,test}/**/*.{ts,tsx}'),
+    languageOptions: { globals: { ...globals.browser } },
+  },
+  // Own block: spreading the plugin's flat config would let its own keys (e.g. a future `files`) override ours.
+  {
+    files: withFixture('apps/web/{src,test}/**/*.{ts,tsx}'),
+    plugins: reactHooks.configs.flat.recommended.plugins,
+    rules: {
+      ...reactHooks.configs.flat.recommended.rules,
+      // Recommended has it as warn; a missing dependency is a real bug (stale closure) — fail lint.
+      'react-hooks/exhaustive-deps': 'error',
+    },
+  },
+  { files: ['apps/web/public/**/*.js'], languageOptions: { globals: { ...globals.browser } } },
+  {
+    files: withFixture('apps/web/src/**/*.{ts,tsx}'),
+    ignores: withFixture('apps/web/src/lib/api/**'),
+    rules: { 'no-restricted-globals': ['error', { name: 'fetch', message: webFetchMessage }] },
+  },
+  {
+    files: withFixture('apps/web/src/**/*.{ts,tsx}'),
+    ignores: withFixture('apps/web/src/**/*.test.{ts,tsx}'),
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ group: ['msw', 'msw/*', '**/test/**'], message: webMswMessage }] },
+      ],
+    },
+  },
+  {
+    files: withFixture('apps/web/src/**/*.tsx'),
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        { selector: `Literal[value=${hexColour}]`, message: webHexMessage },
+        { selector: `TemplateElement[value.raw=${hexColour}]`, message: webHexMessage },
+      ],
+    },
   },
   // Rule 6: no import cycles between (or inside) backend modules.
   {

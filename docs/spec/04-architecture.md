@@ -162,6 +162,9 @@ flowchart TD
 6. Циклів між модулями немає: `import-x/no-cycle` на `src/modules/**`.
 7. `platform/**` → не імпортує `modules/**` (platform — нижній шар, §4.2).
 8. `packages/contracts` → не імпортує `apps/**` і Node core-модулі.
+9. `apps/web/src/features/<a>/**` → `features/<b>/**` тільки через `features/<b>/index.ts` (M0-12).
+10. `apps/web/src/lib/**` і `src/components/**` → не імпортують `features/**` (M0-12).
+Додатково для apps/web (не boundaries): `fetch` тільки в `src/lib/api/**` (`no-restricted-globals`), `msw` / `test/**` не імпортуються з `src/**` (крім `*.test.ts(x)`), hex-кольори в `src/**/*.tsx` заборонені (`no-restricted-syntax`), `eslint-plugin-react-hooks` recommended.
 
 Уточнення реалізації (M0-01, `packages/config/eslint.base.js`, тест `packages/config/test/boundaries.test.ts`):
 - Правило 2: заборонені лише I/O core-модулі (`fs`, `net`, `http(s)`, `http2`, `tls`, `dgram`, `dns`, `child_process`, `cluster`, `worker_threads`, `os`, `process`, `stream`, `readline`, `vm`, `v8`, `inspector`, з префіксом `node:` і без); чисті (`crypto`, `util`, `assert`, `path`, `url`, `buffer`) дозволені.
@@ -342,13 +345,13 @@ Major-версії фіксуються в `package.json`/`engines`; Renovate т
 | UI | React | 19.x ✓ | стабільна гілка, 20 не вийшов |
 | Build | Vite | 8.x ✓ | Rolldown, швидкі збірки |
 | Routing | React Router (data mode) | 8.x ✓ | v8 — наступник v7 (той самий API без future flags, ESM-only); SPA без framework mode |
-| Server state | TanStack Query | 5.x ◌ | кеш, optimistic updates |
+| Server state | TanStack Query | 5.x (5.108) ✓ | кеш, optimistic updates |
 | Tables | TanStack Table | 8.x ◌ | headless, сортування/фільтри |
 | UI state | Zustand | 5.x ◌ | мінімальний store для UI |
 | Styling | Tailwind CSS | 4.x (4.3) ✓ | CSS-first config, токени як CSS variables |
-| Components | shadcn/ui | CLI, компоненти вендоряться ◌ | власний код, a11y на Radix |
+| Components | shadcn/ui | компоненти вендоряться (`radix-ui` 1.8 монопакет) ✓ M0-12 | власний код, a11y на Radix |
 | DnD | dnd-kit (`@dnd-kit/core` + sortable) | 6.x ◌ | keyboard sensor (WCAG 2.5.7); `@dnd-kit/react` ще 0.x |
-| Forms | React Hook Form + `@hookform/resolvers` | 7.x / 5.x ◌ | uncontrolled, Zod resolver |
+| Forms | React Hook Form + `@hookform/resolvers` | 7.x / 7.x ◌ (resolvers 7 = peer zod ^4; додає M0-12b) | uncontrolled, Zod resolver |
 | Schemas | Zod | 4.x ✓ | `z.toJSONSchema`, одна схема FE/BE |
 
 ### 7.2. Backend, дані, якість
@@ -371,7 +374,7 @@ Major-версії фіксуються в `package.json`/`engines`; Renovate т
 | Unit/integration | Vitest | 4.x ✓ | один runner для web і api; decorator metadata для Nest дає Oxc (Vite 8) з tsconfig — SWC-плагін не потрібен (M0-02) |
 | DB tests | Testcontainers (`@testcontainers/postgresql`, `@testcontainers/valkey`) | 12.x ✓ | справжній PG/Valkey у тестах; Node ≥ 22.22, Ryuk увімкнений (M0-07a) |
 | E2E | Playwright | 1.65+ ✓ | e2e + agents (`e2e/`) |
-| API mocks (web) | MSW | 2.x ◌ | мок мережі в тестах web |
+| API mocks (web) | MSW | 3.x ✓ (3.0.6) | мок мережі в тестах web; `msw/node` `setupServer`, `onUnhandledFrame: 'error'`; у Node `Request.credentials` не видно — `credentials: 'include'` перевіряє pass-through spy на `fetch` (M0-12) |
 
 **Better Auth caveats:** інтеграція з Nest — тільки community-пакет `@thallesp/nestjs-better-auth`.
 1. Пакет реєструє **глобальний** `AuthGuard`: усі routes приватні за замовчуванням; публічні явно `@AllowAnonymous()` (у коді — alias `@Public()`, як у `09-security-privacy.md`; і тест на перелік публічних routes, див. `11-testing.md`).

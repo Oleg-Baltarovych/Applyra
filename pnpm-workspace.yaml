@@ -13,6 +13,13 @@ minimumReleaseAge: 1440
 # `packageManager` (downloads it). Explicit so nobody flips it to `error`, which would force the exact pnpm globally. ADR 024.
 pmOnFail: download
 
+# Peer exceptions (each: why it is safe + when to drop).
+peerDependencyRules:
+  allowedVersions:
+    # @vitest/mocker 4.1 declares an OPTIONAL peer msw ^2 for Vitest browser-mode mocking, which we do not use; apps/web
+    # tests run MSW 3 via msw/node (M0-12). Drop once Vitest's mocker accepts msw 3.
+    '@vitest/mocker>msw': '3'
+
 # pnpm 11: dependency build scripts are denied unless approved here (`onlyBuiltDependencies` was removed in v11).
 # strictDepBuilds (default true) fails `pnpm install` on any unreviewed build script.
 allowBuilds:
