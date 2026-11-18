@@ -1,5 +1,5 @@
 name: Setup Node + pnpm
-description: Node from package.json engines, pnpm from packageManager, pnpm store cache, frozen install.
+description: Node from package.json engines, pnpm from packageManager (no corepack, Node 25+), pnpm store cache, frozen install.
 
 inputs:
   install:
@@ -10,7 +10,8 @@ inputs:
 runs:
   using: composite
   steps:
-    # No `version` input: pnpm/action-setup reads `packageManager` from the root package.json.
+    # No `version` input: pnpm/action-setup reads `packageManager` from the root package.json (no corepack: Node 25+ dropped
+    # it, ADR 024).
     # TODO(M0-06b): pin every action on its full commit SHA (+ version comment), Renovate keeps them fresh.
     - uses: pnpm/action-setup@v6
 

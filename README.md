@@ -6,13 +6,12 @@ Your job search, under control: job capture, application CRM, reminders, explain
 
 ## Requirements
 
-- Node.js 24 LTS
-- pnpm 11 via corepack (`corepack enable`; the version is pinned in `package.json#packageManager`)
+- Node.js 26 LTS (`engines.node` in `package.json`)
+- pnpm: `npm install -g pnpm` (any 11.x/12.x) — inside the repo it switches to the version pinned in `package.json#packageManager`. Node 25+ ships no corepack.
 
 ## Getting started
 
 ```sh
-corepack enable
 pnpm install
 pnpm dev        # watch builds (web + api once scaffolded)
 ```

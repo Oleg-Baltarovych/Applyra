@@ -41,11 +41,11 @@
 ### M0-01 · Monorepo scaffold
 - FR: — · Area: repo · Est: 2h · Depends: — · Flow: direct
 - AC:
-  - `corepack enable`; pnpm 11 workspaces + Turborepo 2; workspaces `apps/web`, `apps/api`, `packages/contracts`, `e2e` (окремий пакет, `04-architecture.md` §6; існуючий `e2e/seed.spec.ts` зберегти); `pnpm dev|lint|typecheck|test|build` працюють з кореня.
+  - pnpm 11 (глобально `npm i -g pnpm`, версія з `packageManager`; corepack не використовуємо — ADR 024) workspaces + Turborepo 2; workspaces `apps/web`, `apps/api`, `packages/contracts`, `e2e` (окремий пакет, `04-architecture.md` §6; існуючий `e2e/seed.spec.ts` зберегти); `pnpm dev|lint|typecheck|test|build` працюють з кореня.
   - `e2e/package.json` з pinned `@playwright/test` 1.65.x (MCP playwright-test використовує локальну версію). `packages/config` — лише якщо ≥ 2 споживачі.
   - `apps/api` тут — голий TS-пакет зі скелетом `src/modules/` + `src/platform/` (спільний backend-код живе лише в `src/platform/`); пакети Nest ставить M0-02.
   - tsconfig base: strict + `noUncheckedIndexedAccess`; ESLint flat + `eslint-plugin-boundaries` (правила 1–6 `04-architecture.md` §4.1) + `import-x/no-cycle`; Prettier.
-  - `pnpm-workspace.yaml` з налаштуванням дозволених build-скриптів; `engines` (Node 24); README skeleton, PR template, `.gitattributes`.
+  - `pnpm-workspace.yaml` з налаштуванням дозволених build-скриптів; `engines` (Node 26, ADR 024); README skeleton, PR template, `.gitattributes`.
   - Перевірка boundaries: Vitest-тест запускає ESLint Node API на фікстурі з порушенням (тека в ESLint `ignores`, тож звичайний `pnpm lint` зелений) і очікує помилку правила. `passWithNoTests`, щоб `pnpm test` був зелений з порожніми пакетами.
   - Перевірити під час реалізації (не з пам'яті): назву налаштування pnpm 11 (`onlyBuiltDependencies` vs `allowBuilds`), підтримку pinned-версії TypeScript у typescript-eslint.
 - Notes: оновити `CONTEXT.md` §2 (✅ layout) і Commands у `CLAUDE.md`.
@@ -161,7 +161,7 @@
 ### M0-14 · Production images + compose.prod (deploy-ready)
 - FR: — · Area: ci, infra, security · Est: 3h · Depends: M0-05, M0-12 · Flow: /feature
 - AC:
-  - Dockerfiles: `apps/api` — один multi-stage image, non-root, без `pnpm`/`npm` у runtime, base pinned digest, entrypoints `main` / `worker` / `migrate`; `caddy` — reverse proxy + статика `apps/web/dist` з headers ідентичними `_headers` (`09-security-privacy.md` §9.1; snapshot-тест на збіг значень).
+  - Dockerfiles: `apps/api` — один multi-stage image, non-root, без `pnpm`/`npm` у runtime, base pinned digest (намічено `node:26-trixie-slim@sha256`, ADR 024; distroless Node 26 — оцінити тут), build stage `npm i -g pnpm@<packageManager>`, entrypoints `main` / `worker` / `migrate`; `caddy` — reverse proxy + статика `apps/web/dist` з headers ідентичними `_headers` (`09-security-privacy.md` §9.1; snapshot-тест на збіг значень).
   - `ci.yml` п. 4: buildx `linux/amd64,linux/arm64` (на PR без push; GHCR push — M0-14b), `docker compose -f infra/compose/compose.yml -f infra/compose/compose.prod.yml config -q`, actionlint на `.github/workflows/*`.
   - `compose.prod.yml`: caddy, api, `migrate` (one-off: `migrate deploy` + `REVOKE … ON "_prisma_migrations" FROM applyra_app;` під `applyra_maintenance`, M0-08), postgres, `redis` (`valkey/valkey:9`); мережі `edge`/`internal`/`outbound`; без backup-cron (M0-15b).
   - `deploy-prod.yml` — тільки `workflow_dispatch`, Environment `production`, кроки `12-infra-ops.md` §8.2 (GHCR digest → `.env` з secrets → migrate → restart api → `wrangler pages deploy` з `_headers` → health-check); у R0 не запускається. `apps/web/public/_headers` з §9.1.
@@ -428,7 +428,7 @@
 ### M2-14 · Devcontainer + Codespaces
 - FR: — · Area: repo, infra · Est: 1.5h · Depends: M2-12, M0-04 · Flow: direct
 - AC:
-  - `.devcontainer/devcontainer.json`: Node 24 + corepack/pnpm, docker-in-docker (або compose-based), `postCreateCommand`: `pnpm install --frozen-lockfile`, `cp -n .env.example .env`; `postStartCommand`: `docker compose up -d`, `pnpm db:migrate`; forwarded ports 5173/3000 з labels.
+  - `.devcontainer/devcontainer.json`: Node 26 + pnpm (`npm i -g pnpm`, без corepack — ADR 024), docker-in-docker (або compose-based), `postCreateCommand`: `pnpm install --frozen-lockfile`, `cp -n .env.example .env`; `postStartCommand`: `docker compose up -d`, `pnpm db:migrate`; forwarded ports 5173/3000 з labels.
   - У Codespaces forwarded-хости портів 5173 і 3000 різні (і, ймовірно, різні sites — перевірити PSL для `app.github.dev`), тож cookie/CORS не покладаються на них: SPA і API на одному origin через Vite dev proxy (`/api` → `:3000`), `APP_ORIGIN`/`trustedOrigins` = forwarded-URL з `CODESPACE_NAME`; перевірено вручну: Try demo → Applications. Codespaces оплачує квота відвідувача (README).
 
 ### M2-11 · R0 release
