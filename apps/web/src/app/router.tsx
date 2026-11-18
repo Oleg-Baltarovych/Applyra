@@ -3,7 +3,7 @@ import { type RouteObject, redirect } from 'react-router';
 import { DelayedSkeleton } from '@/components/DelayedSkeleton';
 import { ApplicationsPlaceholder } from '@/features/applications';
 import { SignInPage, redirectIfSignedIn, requireSession } from '@/features/auth';
-import { SettingsPage } from '@/features/settings';
+import { AccountPage, PreferencesPage, SettingsLayout } from '@/features/settings';
 import { AppShell } from '@/features/shell';
 import { TodayPlaceholder } from '@/features/today';
 import { DEFAULT_LANDING } from '@/lib/auth/safe-next';
@@ -52,9 +52,24 @@ export function createRoutes(queryClient: QueryClient): RouteObject[] {
             },
             {
               path: 'settings',
-              element: <SettingsPage />,
+              element: <SettingsLayout />,
               errorElement: inShell,
               handle: title('Settings'),
+              children: [
+                { index: true, loader: () => redirect('/settings/preferences') },
+                {
+                  path: 'preferences',
+                  element: <PreferencesPage />,
+                  errorElement: inShell,
+                  handle: title('Preferences · Settings'),
+                },
+                {
+                  path: 'account',
+                  element: <AccountPage />,
+                  errorElement: inShell,
+                  handle: title('Account · Settings'),
+                },
+              ],
             },
           ],
         },
