@@ -81,7 +81,7 @@ Feature імпортує іншу feature тільки через її `index.ts
 - **Data mode** (`createBrowserRouter` + `RouterProvider`), без SSR і без framework mode: framework mode генерує inline hydration-скрипти, що несумісно зі strict CSP (§9).
 - Route modules ліниві (`lazy`) — code splitting per feature.
 - `loader` тільки для prefetch: `queryClient.ensureQueryData(xxxQueryOptions)` — дані читаються компонентом через `useQuery` (один кеш).
-- Auth gate: root-layout loader `ensureQueryData(sessionQuery)`; 401 → `redirect('/sign-in?next=…')` (`next` — тільки відносний шлях).
+- Auth gate: loader захищеного layout `ensureQueryData(meQuery)` (сесія = `GET /api/v1/me`, не Better Auth `get-session`: один запит, заодно лениво створює settings, M0-12); 401 → `redirect('/sign-in?next=…')` (`next` — тільки відносний шлях).
 - `errorElement` на кожному feature-route → `ErrorState`; 404 від API → екран «Not found» (без розрізнення «чуже/неіснуюче», див. `09-security-privacy.md` §2).
 - Стан фільтрів і view — у URL search params (shareable, back/forward працює).
 
@@ -172,11 +172,11 @@ export const applicationKeys = {
 | `--primary-foreground` | white | indigo-950 |
 | `--ring` | indigo-500 | indigo-400 |
 | `--destructive` | red-600 | red-400 |
-| `--status-{active,interview,offer,rejected,ghosted,archived}` | 6 відтінків + іконка на кожен статус | ті самі, підібрані під dark |
+| `--status-{active,interview,offer,rejected,ghosted,archived}` | blue/violet/green/red/amber-700, slate-600 + іконка на кожен статус | ті самі відтінки -300 (archived slate-300) |
 | `--radius` | 0.5rem | — |
 
 - Типографіка: Inter Variable self-hosted (`@fontsource-variable/inter`, без Google Fonts — CSP `font-src 'self'`); зарплати, лічильники, дати в таблицях — `tabular-nums`.
-- Контраст AA: текст ≥ 4.5:1, великий текст і UI-компоненти/фокус ≥ 3:1. Перевірка автоматична: `scripts/check-contrast.ts` рахує пари токенів (foreground/background, muted-foreground/muted, primary-foreground/primary, status/background) в обох темах — у CI; плюс axe у компонентних і e2e тестах (`11-testing.md`).
+- Контраст AA: текст ≥ 4.5:1, великий текст і UI-компоненти/фокус ≥ 3:1. Перевірка автоматична: Vitest-тест `apps/web/test/contrast.test.ts` (unit job CI, M0-12) парсить `globals.css`, резолвить `var(--color-*)` з `tailwindcss/theme.css` (oklch → sRGB) і рахує пари (foreground/background, card-foreground/card, muted-foreground/muted і /background, primary-foreground/primary, destructive/background, status/background і /card ≥ 4.5; ring/background ≥ 3) в обох темах; плюс axe у компонентних і e2e тестах (`11-testing.md`).
 
 ## 9. CSP-сумісність і `SafeHtml`
 

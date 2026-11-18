@@ -26,7 +26,7 @@ R0 свідомо легший (P-01): unit + integration + IDOR для applicat
 | Unit | salary parser, normalizers, dedup fingerprint, matching components, status transitions, stale/activity rules, reminder scheduling (timezone, DST, quiet hours), CSV value mapping, formula escaping, redaction list, skill extraction, Zod-схеми | Vitest, fake timers |
 | Integration | repositories + raw SQL (FTS, partial unique), transitions + idempotency, outbox relay, BullMQ processors, auth, uploads, IDOR suite | Vitest + Testcontainers (Postgres 18, Redis, MinIO) + Supertest |
 | Contract | відповіді API ↔ схеми `@applyra/contracts`; OpenAPI ↔ route table; source adapters; AI-задачі | Vitest + фікстури |
-| Frontend | компоненти з логікою, хуки, a11y (`vitest-axe`) | Vitest + Testing Library + MSW |
+| Frontend | компоненти з логікою, хуки, a11y (`axe-core` напряму + helper `expectNoAxeViolations`, `apps/web/test/support/axe.ts`; `vitest-axe` 0.1.0 не підтримується; `color-contrast` вимкнено в jsdom — контраст токенів перевіряє `test/contrast.test.ts`) | Vitest + Testing Library + MSW |
 | E2E | критичні flows (§6) | Playwright + `@axe-core/playwright` |
 | Performance | NFR (див. `12-infra-ops.md` §12) | k6, Lighthouse CI |
 

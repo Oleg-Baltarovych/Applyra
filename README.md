@@ -13,8 +13,24 @@ Your job search, under control: job capture, application CRM, reminders, explain
 
 ```sh
 pnpm install
-pnpm dev        # watch builds (web + api once scaffolded)
+cp .env.example .env    # local-only placeholder values
+docker compose up -d    # postgres, redis (Valkey), minio, mailpit on 127.0.0.1
+pnpm db:migrate
+pnpm dev                # contracts watch + api on http://localhost:3000 + web on http://localhost:5173
 ```
+
+Open http://localhost:5173 in Chrome or Firefox — not `127.0.0.1` (the API accepts only the `localhost` origin).
+Safari does not send the `Secure` session cookie over plain http, so it is unsupported for local dev.
+
+### Google sign-in (local)
+
+R0 signs in with Google only. Without credentials `/sign-in` says that no sign-in method is configured.
+
+1. Create an OAuth client (type _Web application_) in Google Cloud Console with the redirect URI
+   `http://localhost:3000/api/auth/callback/google`.
+2. In your local env file set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `VITE_AUTH_GOOGLE_ENABLED=true`, and add
+   your Google email to `AUTH_SIGNUP_ALLOWLIST` (any other email gets "Access is invite-only").
+3. Restart `pnpm dev`.
 
 ## Commands
 

@@ -23,7 +23,7 @@ Better Auth · Vitest, Supertest, Testcontainers, Playwright, MSW.
 
 - `pnpm lint && pnpm typecheck && pnpm test` — must be green before reporting a task done (scope with `--filter <pkg>`)
 - CI (`.github/workflows/ci.yml`) also runs `pnpm format:check`, `pnpm audit --audit-level=high`, gitleaks, actionlint; `pnpm test` in apps/api enforces the `*.domain.ts` ≥ 90% coverage gate. Local docker equivalents: `docs/CONTEXT.md` §6 (M0-05)
-- `pnpm build` · `pnpm dev` (turbo; for now only the `contracts` tsup watcher — web/api dev arrive in M0-02/M0-12)
+- `pnpm build` · `pnpm dev` (turbo: contracts tsup watch + api :3000 + web http://localhost:5173 — use `localhost`, not 127.0.0.1)
 - `pnpm format:check` — Prettier (docs/ and .claude/ are ignored)
 - `pnpm --filter @applyra/config test` — boundary-rule test (lints `packages/config/test/fixtures/boundaries/`)
 - `pnpm --filter @applyra/e2e e2e` — Playwright; not part of `pnpm test`

@@ -146,8 +146,10 @@
   - `GET /me` → user + settings; `PATCH /me/settings` (timezone, stale-пороги, `hotkeysEnabled`), `.strict()`.
   - Невалідна IANA-зона → 400 `VALIDATION_ERROR`; `UserSettings` створюється при першому вході; `@IdorExempt` з причиною.
 
-### M0-12 · Web foundation + sign-in + Settings
-- FR: FR-AUTH-01, FR-AUTH-02, FR-PROF-01 · Area: web · Est: 3h · Depends: M0-11 · Flow: /feature
+### M0-12 · Web foundation + sign-in + Settings — split (2026-11-18, plan `docs/plans/2026-11-18-m0-12-web-foundation.md`)
+- **M0-12a** (FR-AUTH-01, FR-AUTH-02 · Est 4.5h · Depends: M0-11): toolchain, tokens + contrast test, typed client, router + shell + auth gate + 404/loading/error, `/sign-in`, sign-out, web ESLint rules, `pnpm dev` = contracts + api + web. `/applications`, `/today` — статичні placeholders «Arrives with M1» (рішення Q1 користувача — свідомий виняток з «no UI without backend»); після входу завжди `/applications` (Q2, гілку Today додає M1).
+- **M0-12b** (FR-PROF-01 · Est 2.5h · Depends: M0-12a): timezone при першому вході, `/settings/preferences` (timezone, пороги, hotkeys, theme selector — Q4), `/settings/account`, `lib/format` (Intl).
+- FR: FR-AUTH-01, FR-AUTH-02, FR-PROF-01 · Area: web · Est: 7h (a 4.5h + b 2.5h) · Depends: M0-11 · Flow: /feature
 - AC:
   - Vite 8 + React Router 8 data mode + TanStack Query + Tailwind 4/shadcn, токени `10-frontend-ux.md` §8 (contrast check у тестах); typed API client з contracts.
   - `/sign-in` (Google — лише якщо налаштовано, прапорець `VITE_*`; `signIn.social` з абсолютними `callbackURL`/`errorCallbackURL` на `WEB_ORIGIN` (`errorCallbackURL: `${WEB_ORIGIN}/sign-in`` — відносний шлях резолвиться на origin API, M0-10); «Try demo» додає M2-12): `?error=SIGNUP_CLOSED` → «Access is invite-only»; `?error=account_not_linked` (Better Auth: непідтверджений Google email для існуючої адреси, M0-10 / 09 §4.4) → повідомлення «підтвердіть email у Google»; інший `?error=` → загальне повідомлення без сирого коду (`10-frontend-ux.md` §2.1); component-тест на всі три випадки. Захищені маршрути, shell з навігацією `Applications · Today · Settings`, `*` → 404, loading/error стани.

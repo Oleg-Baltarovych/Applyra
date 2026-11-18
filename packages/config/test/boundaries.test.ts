@@ -1,4 +1,4 @@
-// Guards the module-boundary rules of docs/spec/04-architecture.md §4.1 (rules 1–8) and the
+// Guards the module-boundary rules of docs/spec/04-architecture.md §4.1 (rules 1–10; 9–10 = apps/web, M0-12) and the
 // process.env ban outside apps/api/src/platform/config (12-infra-ops.md §7) and, in apps/api/test, outside
 // test/support/runner-env.ts (M0-07a).
 // Lints a fixture tree that mirrors the repo layout with the real root ESLint config and asserts
@@ -43,6 +43,15 @@ const testProcessEnv = (ruleId: string) => ({
   ruleId,
   message: expect.stringContaining('only it may read process.env in apps/api/test'),
 });
+const web = 'apps/web/src';
+const webRule = (ruleId: string, text: string) => ({
+  ruleId,
+  message: expect.stringContaining(text),
+});
+const webFetch = webRule('no-restricted-globals', 'fetch is allowed only in src/lib/api');
+const webMsw = webRule('no-restricted-imports', 'MSW and fixtures live in tests only');
+const webHex = webRule('no-restricted-syntax', 'No hard-coded hex colours');
+const webHookDeps = webRule('react-hooks/exhaustive-deps', 'missing dependency');
 const cycle = { ruleId: 'import-x/no-cycle', message: expect.stringContaining('cycle') };
 
 const clean = [
@@ -65,6 +74,12 @@ const clean = [
   `${api}/modules/beta/beta.spec.ts`, // unit test → another module's internal file (exempt)
   'apps/api/test/support/runner-env.ts', // the only reader of process.env in apps/api/test
   'apps/web/src/contracts-ok.ts',
+  `${web}/features/alpha/index.ts`,
+  `${web}/features/alpha/routes/page.ts`, // same feature
+  `${web}/features/beta/via-index.ts`, // another feature via index.ts
+  `${web}/features/beta/msw.test.ts`, // tests may import MSW
+  `${web}/lib/api/client.ts`, // the only fetch caller
+  `${web}/components/anchor.tsx`, // '#main' is not a colour
   'packages/contracts/src/index.ts',
 ];
 
@@ -87,6 +102,13 @@ const violations: [file: string, expected: object[]][] = [
   [`${api}/generated-leak.ts`, [boundary(4)]], // app root: di.ts only, never the generated client
   ['apps/web/src/api-relative.ts', [boundary(5)]],
   ['apps/web/src/api-package.ts', [boundary(5)]],
+  [`${web}/features/beta/deep-import.ts`, [boundary(9)]],
+  [`${web}/lib/feature-leak.ts`, [boundary(10)]],
+  [`${web}/components/feature-leak.tsx`, [boundary(10)]],
+  [`${web}/features/beta/fetch.ts`, [webFetch]],
+  [`${web}/features/beta/msw.ts`, [webMsw]],
+  [`${web}/components/hex.tsx`, [webHex, webHex]],
+  [`${web}/features/beta/hook-deps.tsx`, [webHookDeps]],
   [`${api}/modules/gamma/gamma.service.ts`, [cycle]],
   [`${api}/modules/delta/delta.service.ts`, [cycle]],
   [`${api}/modules/gamma/index.ts`, [cycle]], // re-export edge of the same cycle
@@ -115,7 +137,7 @@ const violations: [file: string, expected: object[]][] = [
 describe('boundaries fixtures', () => {
   it('every fixture file is covered by this test', () => {
     const all = readdirSync(fixtureRoot, { recursive: true, encoding: 'utf8' })
-      .filter((f) => f.endsWith('.ts'))
+      .filter((f) => /\.tsx?$/.test(f))
       .map((f) => f.split(path.sep).join('/'))
       .sort();
     expect(all).toEqual([...clean, ...violations.map(([f]) => f)].sort());
