@@ -6,7 +6,7 @@
 
 services:
   postgres:
-    image: postgres:18.7
+    image: postgres:18.7@sha256:2ea8630df176ad090ec92136dee850397c5af8781e4bcf2e4162593691c61bbc
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD (see .env.example)}
@@ -35,7 +35,7 @@ services:
 
   # Queue/cache store: Valkey (Redis protocol), service name `redis` (12 §2, 04 §7.2). No auth locally.
   redis:
-    image: valkey/valkey:9.1.3
+    image: valkey/valkey:9.1.3@sha256:3add1a336a920ea54770a001ab6feb3da5fceea96a40373a3a2cd469b815f0b7
     volumes:
       - redis-data:/data
     ports:
@@ -89,7 +89,7 @@ services:
 
   # SMTP sink + web UI (12 §1 local email). SMTP :1025, UI/API :8025.
   mailpit:
-    image: axllent/mailpit:v1.33.1
+    image: axllent/mailpit:v1.33.1@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
     environment:
       MP_DATABASE: /data/mailpit.db
     volumes:

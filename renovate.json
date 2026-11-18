@@ -1,0 +1,79 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Applyra dependency updates (spec 09 §8: weekly, grouped, minimumReleaseAge 3 days, Actions + image digests). Majors wait for approval on the Dependency Dashboard (spec 04 §7.1: majors are pinned on purpose).",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    "helpers:pinGitHubActionDigests",
+    "docker:pinDigests"
+  ],
+  "timezone": "Europe/Kyiv",
+  "schedule": ["before 6am on monday"],
+  "minimumReleaseAge": "3 days",
+  "internalChecksFilter": "strict",
+  "rangeStrategy": "bump",
+  "postUpdateOptions": ["pnpmDedupe"],
+  "prConcurrentLimit": 5,
+  "labels": ["dependencies"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on the first day of the month"]
+  },
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "schedule": ["at any time"]
+  },
+  "packageRules": [
+    {
+      "description": "Majors need an explicit decision (ADR / spec 04 §7.1), never an automatic PR.",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "npm minor/patch in one weekly PR.",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "npm minor/patch"
+    },
+    {
+      "description": "GitHub Actions (SHA digests + version comments) in one PR.",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions"
+    },
+    {
+      "description": "Container images (compose, CI docker run, Testcontainers) in one PR; tag + digest move together.",
+      "matchDatasources": ["docker"],
+      "groupName": "container images"
+    },
+    {
+      "description": "Ryuk image tag is tied to the testcontainers release (ci.yml RYUK_CONTAINER_IMAGE): one PR for both.",
+      "matchDepNames": [
+        "testcontainers",
+        "@testcontainers/postgresql",
+        "@testcontainers/valkey",
+        "testcontainers/ryuk"
+      ],
+      "groupName": "testcontainers"
+    },
+    {
+      "description": "Node runtime follows LTS lines only (ADR 024): even majors, via approval like any major.",
+      "matchDepNames": ["node", "@types/node"],
+      "allowedVersions": "/^v?\\d*[02468]\\./"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Images referenced as `<image>:<tag>@sha256:<digest>` outside compose: `docker run` / env in workflows and the Testcontainers images module.",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/",
+        "/^apps/api/test/support/images\\.ts$/"
+      ],
+      "matchStrings": [
+        "(?<depName>(?:[a-z0-9.-]+/)*[a-z0-9._-]+):(?<currentValue>v?[0-9][\\w.-]*)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ]
+}

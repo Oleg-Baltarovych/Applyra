@@ -12,10 +12,9 @@ runs:
   steps:
     # No `version` input: pnpm/action-setup reads `packageManager` from the root package.json (no corepack: Node 25+ dropped
     # it, ADR 024).
-    # TODO(M0-06b): pin every action on its full commit SHA (+ version comment), Renovate keeps them fresh.
-    - uses: pnpm/action-setup@v6
+    - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
 
-    - uses: actions/setup-node@v7
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version-file: package.json # engines.node
         # No store cache without an install (audit job): nothing to restore or save.
