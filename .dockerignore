@@ -1,0 +1,28 @@
+# Build context for infra/docker/Dockerfile (context = repo root, M0-14). Allowlist: everything is excluded, then
+# only what the image build reads is re-included. Re-excludes at the end win (later lines override earlier ones).
+*
+
+# Workspace manifests + lockfile (pnpm fetch / install --frozen-lockfile, turbo)
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+
+# Sources
+!apps/api/
+!apps/web/
+!packages/contracts/
+!packages/config/
+# Caddy config (caddy target)
+!infra/caddy/
+
+# Never in the context: env files (images read no env file; no `!.env.example` either), deps, build output, tests.
+**/.env*
+**/node_modules
+**/dist
+**/.turbo
+**/coverage
+**/*.tsbuildinfo
+**/test
+**/*.test.ts
+**/*.spec.ts
+apps/api/src/platform/prisma/generated

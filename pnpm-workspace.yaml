@@ -31,6 +31,8 @@ allowBuilds:
   # Prisma 7 (M0-08, apps/api):
   prisma: false # preinstall only prints an unsupported-Node-version warning (engines field + CI pin cover it)
   '@prisma/engines': false # postinstall pre-downloads the schema engine; the CLI downloads it lazily on first use
+  # wrangler (M0-14, root dev; deploy-prod.yml `pages deploy` only):
+  workerd: false # postinstall only links/validates the local Workers runtime binary (wrangler dev); `pages deploy` never runs it
 
 # Temporary `pnpm audit` exceptions (policy: docs/CONTEXT.md §6, M0-05). Each: GHSA id + reason + expiry; delete on expiry
 # or when a fix lands. pnpm does not expire these itself (and ignores the GHSA for every version), so the date below is

@@ -1,0 +1,64 @@
+# Applyra edge (M0-14; docs/spec/12-infra-ops.md §2–§3, 09 §9.1). Same file locally and in production.
+# Env (compose.prod.yml): APP_DOMAIN, API_DOMAIN, ROOT_DOMAIN, API_ORIGIN (= https://${API_DOMAIN}).
+# `*.localhost` names get certificates from Caddy's internal CA automatically (local prod stack); public names
+# get ACME certificates. Runs as uid 65532 (compose sysctl lets it bind 80/443).
+# X-Forwarded-For: reverse_proxy trusts no upstream proxy by default, so a client-sent X-Forwarded-For is replaced
+# by the real peer address — the api's TRUST_PROXY_HOPS=1 relies on that. Behind Cloudflare: `trusted_proxies`
+# for CF ranges + CF-Connecting-IP (M0-14b).
+{
+	admin off
+	# Never try to install the internal CA root into the container's trust store (no effect, logs an error).
+	skip_install_trust
+}
+
+# SPA headers: must match apps/web/public/_headers (Cloudflare Pages copy) byte for byte — enforced by
+# apps/web/test/security-headers.test.ts, which accepts only this shape.
+(spa_headers) {
+	@spa_assets path /assets/*
+	@spa_pages not path /assets/*
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' {$API_ORIGIN} https://*.ingest.de.sentry.io; frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		X-Frame-Options "DENY"
+		-Server
+	}
+	header @spa_pages Cache-Control "no-cache"
+	header @spa_assets Cache-Control "public, max-age=31536000, immutable"
+}
+
+{$ROOT_DOMAIN} {
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		-Server
+	}
+	redir https://{$APP_DOMAIN}{uri} permanent
+}
+
+{$APP_DOMAIN} {
+	import spa_headers
+	encode zstd gzip
+	root * /srv
+	# Hashed assets: real files only — a missing asset is a 404, never index.html.
+	handle /assets/* {
+		file_server
+	}
+	# Client-side routes fall back to the SPA shell.
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+{$API_DOMAIN} {
+	header -Server
+	# = the api's /api/auth drain cap (AUTH_BODY_DRAIN_CAP_BYTES); the api enforces 1 MB itself.
+	request_body {
+		max_size 8MB
+	}
+	# Security headers of the API are helmet's (09 §9.2), not set here.
+	reverse_proxy api:3000
+}

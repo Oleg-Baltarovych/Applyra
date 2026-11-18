@@ -164,8 +164,8 @@ URL capture переїхав у R1 (див. `02-releases.md`). Fetcher — ок�
 
 | Header | Значення |
 |---|---|
-| `Content-Security-Policy` | `default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://api.<domain> https://*.ingest.de.sentry.io; frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests; report-to csp-endpoint` |
-| `Reporting-Endpoints` | `csp-endpoint="<Sentry CSP report URL>"` |
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' {$API_ORIGIN} https://*.ingest.de.sentry.io; frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests; report-to csp-endpoint` (`report-to` — [R1, з Sentry web]) |
+| `Reporting-Endpoints` | `csp-endpoint="<Sentry CSP report URL>"` [R1, з Sentry web: порожній endpoint — невалідний header] |
 | `Strict-Transport-Security` | `max-age=63072000; includeSubDomains` (preload — після 1 міс стабільної роботи) |
 | `X-Content-Type-Options` | `nosniff` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
@@ -173,6 +173,8 @@ URL capture переїхав у R1 (див. `02-releases.md`). Fetcher — ок�
 | `Cross-Origin-Opener-Policy` | `same-origin` |
 | `X-Frame-Options` | `DENY` (legacy-дубль `frame-ancestors`) |
 | Cache | `index.html` → `no-cache`; `/assets/*` (hashed) → `public, max-age=31536000, immutable` |
+
+Джерело — `apps/web/public/_headers` (плейсхолдер `{$API_ORIGIN}` = `https://api.<domain>`, синтаксис env Caddy); `scripts/headers.mjs` `renderHeaders` підставляє його при deploy; Caddy-сніпет `(spa_headers)` у `infra/caddy/Caddyfile` ідентичний (`test/security-headers.test.ts`), runtime — `infra/compose/smoke.sh` (M0-14).
 
 `script-src` без `'unsafe-inline'`/`'unsafe-eval'`: жодних inline-скриптів у `index.html` (див. `10-frontend-ux.md` §9). **Рішення:** `style-src 'self' 'unsafe-inline'` прийнято (runtime-стилі Radix/sonner); `script-src` лишається strict. Turnstile-хости потрібні тільки для demo (§11).
 
@@ -276,7 +278,7 @@ pino `redact` (censor `[REDACTED]`), єдиний список у `apps/api/src/
 | Environments | `production` (required reviewer = автор; `deploy-prod.yml` — dispatch-only до hosting), when hosting — + `staging`, `backup-restore`, тільки теги `v*` для prod при staging-flow; секрети тільки в Environment, не в repo-level; у R0/R1 deploy-секретів немає (ADR 022) |
 | OIDC | де провайдер підтримує (Tailscale для deploy-доступу, GHCR через `GITHUB_TOKEN`); інакше короткоживучі scoped токени (R2 token на один bucket) |
 | PR з форків | без секретів (`pull_request`, не `pull_request_target`) |
-| Images | base images pinned digest; non-root user; `npm`/`pnpm` відсутні в runtime image |
+| Images | base images pinned digest; non-root user; `npm`/`pnpm` відсутні в runtime image (distroless, перевірка в CI `deploy-ready`); Dockerfile — hadolint (`--failure-threshold warning`) + Semgrep `p/dockerfile`, `p/docker-compose` (M0-14) |
 
 ## 15. OWASP API Security Top 10 (2023) — мапінг
 
