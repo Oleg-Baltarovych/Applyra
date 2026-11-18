@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # Semgrep CE CLI in its official image, pinned by digest: no login, no token, no metrics.
@@ -35,8 +35,6 @@ jobs:
       # Scope: apps/ + packages/ + .github/ (p/github-actions), filtered by .semgrepignore (tests are scanned; fixtures are not).
       # Exit 1 = findings (`--error`), >= 2 = semgrep failed. Inline suppression: `nosemgrep: <rule-id>`
       # plus a comment with the reason.
-      # TODO(M0-06b): drop the `--exclude-rule …mutable-action-tag` once every action is pinned on a full
-      #   commit SHA (10 hits on 2026-11-17: actions use major tags until then, see docs/CONTEXT.md §6).
       - name: semgrep scan
         run: |
           docker run --rm --cap-drop ALL --security-opt no-new-privileges \
@@ -47,7 +45,6 @@ jobs:
             semgrep scan --metrics=off --oss-only --error \
               --config p/typescript --config p/javascript --config p/nodejs --config p/react \
               --config p/owasp-top-ten --config p/secrets --config p/github-actions \
-              --exclude-rule yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag \
               --json-output=/out/semgrep.json \
               apps packages .github
       # Fail closed: a scan that read no files or hit errors (parse/rule/network) must not pass as green.

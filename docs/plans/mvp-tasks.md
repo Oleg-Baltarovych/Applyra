@@ -88,7 +88,7 @@
 - AC:
   - Semgrep CE (SAST) і osv-scanner у CI (PR + weekly) як required checks (коли branch protection увімкнено) — R0 gate разом із `pnpm audit` і gitleaks; CodeQL — коли репо стане публічним (ADR 023) (`11-testing.md` §9).
 
-### M0-06b · Renovate + Actions SHA pinning
+### M0-06b · Renovate + Actions SHA pinning ✅
 - FR: — · Area: ci, security · Est: 0.5h · Depends: M0-06 · Flow: direct · **optional**
 - AC:
   - Renovate (`minimumReleaseAge: 3 days`, grouped); усі Actions pinned на SHA.
