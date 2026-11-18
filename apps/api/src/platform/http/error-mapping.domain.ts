@@ -77,10 +77,22 @@ const pathOf = (path: unknown): string =>
 
 function zodIssues(zodError: unknown): ValidationIssue[] {
   const issues = isObj(zodError) && Array.isArray(zodError.issues) ? zodError.issues : [];
-  return issues.filter(isObj).map((issue) => ({
-    path: pathOf(issue.path),
-    message: typeof issue.message === 'string' ? issue.message : 'Invalid value',
-  }));
+  return issues.filter(isObj).flatMap((issue) => {
+    // A strict object reports all unknown keys in one issue on the object: one detail per key, so the path names it.
+    if (issue.code === 'unrecognized_keys' && Array.isArray(issue.keys)) {
+      const parent = Array.isArray(issue.path) ? issue.path.map(String) : [];
+      return issue.keys.map((key) => ({
+        path: [...parent, String(key)].join('.'),
+        message: 'Unknown field',
+      }));
+    }
+    return [
+      {
+        path: pathOf(issue.path),
+        message: typeof issue.message === 'string' ? issue.message : 'Invalid value',
+      },
+    ];
+  });
 }
 
 const BODY_PARSER: Readonly<Record<string, (requestId: string) => MappedError>> = {

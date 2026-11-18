@@ -2,7 +2,7 @@
 // and the set of tables the app role may UPDATE/DELETE is an explicit, reviewed allowlist.
 import { describe, expect, it } from 'vitest';
 import { appPrivilegesOnMigrationsAt, sqlState, withPg } from './support/pg.js';
-import { applyMigrations } from './support/postgres.js';
+import { applyMigrations, repoMigrations } from './support/postgres.js';
 import { testInfra } from './support/test-infra.js';
 
 const asApp = <T>(run: Parameters<typeof withPg<T>>[1]) => withPg(testInfra().databaseUrl, run);
@@ -16,14 +16,15 @@ const appPrivilegesOnMigrations = () => appPrivilegesOnMigrationsAt(testInfra().
  */
 const APP_MUTABLE_TABLES = ['Account', 'Session', 'User', 'UserSettings', 'Verification'];
 
-describe('init migration', () => {
-  it('is recorded in "_prisma_migrations"', async () => {
+describe('migrations', () => {
+  it('every migration folder is recorded as finished in "_prisma_migrations"', async () => {
     const { rows } = await asMaintenance((db) =>
       db.query<{ migration_name: string }>(
-        'SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL',
+        'SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL ORDER BY migration_name',
       ),
     );
-    expect(rows.map((r) => r.migration_name)).toEqual([expect.stringMatching(/^\d{14}_init$/)]);
+    expect(rows.map((r) => r.migration_name)).toEqual(repoMigrations());
+    expect(repoMigrations()[0]).toMatch(/^\d{14}_init$/);
   });
 
   it('provides f_unaccent (05 §7.2)', async () => {
@@ -99,7 +100,7 @@ describe('db-migrate.mjs', () => {
     const { rows } = await asMaintenance((db) =>
       db.query<{ n: string }>('SELECT count(*) AS n FROM "_prisma_migrations"'),
     );
-    expect(rows[0]?.n).toBe('1');
+    expect(rows[0]?.n).toBe(String(repoMigrations().length));
     expect(await appPrivilegesOnMigrations()).toEqual([]);
   });
 

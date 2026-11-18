@@ -69,21 +69,29 @@ describe('IDOR gate self-test', () => {
 
     it('coverage gate fails, naming the route; the exemption is reported', () => {
       const result = checkCoverage(buildRouteTable(app), fixtureKeys);
-      expect(result.uncovered).toEqual(['GET /probe/:id', 'GET /probe/optional/list']);
-      expect(formatReport(result)).toContain('GET /probe/:id');
+      expect(result.uncovered).toEqual([
+        'GET /api/v1/probe/:id',
+        'GET /api/v1/probe/optional/list',
+      ]);
+      expect(formatReport(result)).toContain('GET /api/v1/probe/:id');
       expect(result.exempt).toEqual([
-        { route: 'POST /probe/me', reason: 'probe: own data only' },
-        { route: 'POST /probe/me/alias', reason: 'probe: own data only' },
+        ...EXPECTED_EXEMPT_ROUTES,
+        { route: 'POST /api/v1/probe/me', reason: 'probe: own data only' },
+        { route: 'POST /api/v1/probe/me/alias', reason: 'probe: own data only' },
       ]);
     });
 
     it('a non-GET exemption is refused unless allowlisted', () => {
       const routes = buildRouteTable(app);
-      expect(checkCoverage(routes, fixtureKeys).badExemptions).toEqual([
-        'POST /probe/me — non-GET exempt route',
-        'POST /probe/me/alias — non-GET exempt route',
+      expect(checkCoverage(routes, fixtureKeys, EXEMPT_ALLOWLIST).badExemptions).toEqual([
+        'POST /api/v1/probe/me — non-GET exempt route',
+        'POST /api/v1/probe/me/alias — non-GET exempt route',
       ]);
-      const allowlist = ['POST /probe/me', 'POST /probe/me/alias'];
+      const allowlist = [
+        ...EXEMPT_ALLOWLIST,
+        'POST /api/v1/probe/me',
+        'POST /api/v1/probe/me/alias',
+      ];
       expect(checkCoverage(routes, fixtureKeys, allowlist).badExemptions).toEqual([]);
     });
 
@@ -96,9 +104,24 @@ describe('IDOR gate self-test', () => {
       ]);
     });
 
+    it('a raw all-method route at a Nest middleware mount path fails the adapter check', () => {
+      const end = (_req: unknown, res: { end(): void }) => {
+        res.end();
+      };
+      app.getHttpAdapter().all('/health/live', end);
+      app.getHttpAdapter().all('/api/v1/*path', end);
+      const problems = adapterRouteProblems(app, buildRouteTable(app));
+      expect(problems).toContain(
+        'POST /health/live is registered on Express outside Nest controllers',
+      );
+      expect(problems).toContain(
+        'GET /api/v1/*path is registered on Express outside Nest controllers',
+      );
+    });
+
     it('a fixture for a route that does not exist fails the gate', () => {
-      const result = checkCoverage(buildRouteTable(app), ['DELETE /probe/:id']);
-      expect(result.unknownFixtures).toEqual(['DELETE /probe/:id']);
+      const result = checkCoverage(buildRouteTable(app), ['DELETE /api/v1/probe/:id']);
+      expect(result.unknownFixtures).toEqual(['DELETE /api/v1/probe/:id']);
     });
 
     it('protection gate passes: the private and exempt routes answer 401', async () => {
