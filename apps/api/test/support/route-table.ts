@@ -1,6 +1,7 @@
 // Route table of a booted Nest app (11-testing.md §4 p.1), built from the controllers Nest actually registered.
 // Better Auth's /api/auth/* is middleware, not a controller, so it is not listed (auth-flow tests cover it);
 // adapterRouteProblems() catches routes registered on Express directly, bypassing Nest controllers.
+import { METHODS as NODE_HTTP_METHODS } from 'node:http';
 import { type CanActivate, type INestApplication, RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants.js';
 import {
@@ -62,22 +63,58 @@ const paths = (value: unknown): string[] =>
 const normalise = (...parts: string[]): string =>
   `/${parts.join('/')}`.replace(/\/{2,}/g, '/').replace(/(.)\/$/, '$1');
 
+// What Nest stores per `setGlobalPrefix({ exclude })` entry (mapToExcludeRoute, Nest 11.2).
+const PrefixExclude = z.object({
+  path: z.string(),
+  requestMethod: z.number(),
+  pathRegex: z.instanceof(RegExp),
+});
+
+interface ModelledExclude {
+  matches(method: unknown, unprefixedPath: string): boolean;
+}
+
+/**
+ * Global-prefix excludes the table models: static paths (e.g. `/health/live`), matched like Nest's router does (its
+ * compiled `pathRegex` + method). The thallesp Better Auth mount (`/api/auth`, `/api/auth/*path`) is middleware, not a
+ * controller, so it never matches a row. Any other exclude (a `:param`/wildcard) would need path-pattern overlap
+ * logic, so it throws instead of silently mis-prefixing rows.
+ */
+function prefixExcludes(config: AppConfigView): ModelledExclude[] {
+  return (config.getGlobalPrefixOptions().exclude ?? []).flatMap((raw) => {
+    const parsed = PrefixExclude.safeParse(raw);
+    if (!parsed.success) {
+      throw new Error(
+        `unexpected setGlobalPrefix exclude shape (written against Nest 11.2): update buildRouteTable`,
+      );
+    }
+    const { path, requestMethod, pathRegex } = parsed.data;
+    const normalised = normalise(path);
+    if (ADAPTER_ROUTE_ALLOWLIST.includes(normalised)) return [];
+    if (/[:*{(]/.test(path)) {
+      throw new Error(
+        `setGlobalPrefix exclude ${path} is not modelled: only static paths are (extend buildRouteTable)`,
+      );
+    }
+    return [
+      {
+        matches: (method: unknown, unprefixedPath: string) =>
+          // -1 is Nest's legacy "all" marker (isRequestMethodAll).
+          (requestMethod === RequestMethod.ALL ||
+            requestMethod === -1 ||
+            requestMethod === method) &&
+          pathRegex.test(unprefixedPath),
+      },
+    ];
+  });
+}
+
 export function buildRouteTable(app: INestApplication): Route[] {
   const config = applicationConfigOf(app);
   if (config.getVersioning()) {
     throw new Error('URI versioning is enabled: extend buildRouteTable with VERSION_METADATA');
   }
-  // thallesp excludes its own middleware mount (/api/auth, /api/auth/*path); any other exclude would change controller
-  // paths, which this table does not model yet.
-  const excluded = (config.getGlobalPrefixOptions().exclude ?? []).map((e) =>
-    Reflect.get(Object(e), 'path'),
-  );
-  const foreign = excluded.filter((path) => !ADAPTER_ROUTE_ALLOWLIST.includes(String(path)));
-  if (foreign.length > 0) {
-    throw new Error(
-      `setGlobalPrefix exclude ${foreign.join(', ')} is not modelled: apply it in buildRouteTable`,
-    );
-  }
+  const excludes = prefixExcludes(config);
   const prefix = config.getGlobalPrefix();
   // Built from ModulesContainer (always provided) so apps without DiscoveryModule work too.
   const discovery = new DiscoveryService(app.get(ModulesContainer));
@@ -114,9 +151,11 @@ export function buildRouteTable(app: INestApplication): Route[] {
       };
       for (const controllerPath of controllerPaths) {
         for (const handlerPath of paths(Reflect.getMetadata(PATH_METADATA, handler))) {
+          const unprefixed = normalise(controllerPath, handlerPath);
+          const excluded = excludes.some((e) => e.matches(requestMethod, unprefixed));
           routes.push({
             method,
-            path: normalise(prefix, controllerPath, handlerPath),
+            path: excluded ? unprefixed : normalise(prefix, controllerPath, handlerPath),
             ...flags,
             controller: metatype.name,
             handler: handlerName,
@@ -146,10 +185,60 @@ const RouterStack = z.array(
       .object({
         path: z.union([z.string(), z.array(z.string())]),
         methods: z.record(z.string(), z.boolean()),
+        stack: z.array(z.object({ handle: z.unknown() })),
       })
       .optional(),
   }),
 );
+
+/**
+ * Where Nest mounts module middleware (`forRoutes('*')`) under a global prefix (Nest 11.2, verified 2026-11-18): the
+ * prefix itself, the prefix + splat, and every excluded static path.
+ */
+function middlewareMounts(app: INestApplication): { all: Set<string>; full: string[] } {
+  const config = applicationConfigOf(app);
+  const prefix = config.getGlobalPrefix();
+  if (prefix === '') return { all: new Set(), full: [] };
+  const excluded = (config.getGlobalPrefixOptions().exclude ?? []).map((e) =>
+    normalise(String(Reflect.get(Object(e), 'path'))),
+  );
+  const full = [`${normalise(prefix)}{/*splat}`, ...excluded];
+  return { all: new Set([normalise(prefix), ...full]), full };
+}
+
+type RouteLayer = NonNullable<z.infer<typeof RouterStack>[number]['route']>;
+
+const isAllMethodLayer = (methods: Readonly<Record<string, boolean>>): boolean =>
+  NODE_HTTP_METHODS.every((m) => methods[m.toLowerCase()] === true);
+
+/**
+ * Nest mounts each middleware binding on every mount path as an all-method route whose handle is its `handler` closure
+ * (middleware-module.js `bindHandlerToRouter`, Nest 11.2; one closure per path, so identity cannot be compared). Hence
+ * the mounts are trusted only when every excluded path carries exactly as many all-method layers as the prefix splat
+ * (the bare prefix at most as many), all named `handler` — a raw `adapter.all('/health/live', fn)` breaks the count.
+ */
+function trustedMountPaths(
+  layers: readonly RouteLayer[],
+  mounts: { all: Set<string>; full: string[] },
+): Set<string> {
+  const atPath = (path: string) =>
+    layers.filter((r) => isAllMethodLayer(r.methods) && paths(r.path).includes(path));
+  const [splat] = mounts.full;
+  if (splat === undefined) return new Set();
+  const expected = atPath(splat).length;
+  const trusted = new Set<string>();
+  for (const path of mounts.all) {
+    const found = atPath(path);
+    const countOk = mounts.full.includes(path)
+      ? found.length === expected
+      : found.length <= expected;
+    const namesOk = found.every((r) =>
+      r.stack.every(({ handle }) => typeof handle === 'function' && handle.name === 'handler'),
+    );
+    if (countOk && namesOk) trusted.add(path);
+  }
+  return trusted;
+}
 
 /**
  * Walks the Express router: every route layer must be a route-table row (same method + path) or an allowlisted
@@ -164,11 +253,14 @@ export function adapterRouteProblems(app: INestApplication, routes: readonly Rou
     ];
   }
   const known = new Set(routes.map(routeKey));
+  const mounts = middlewareMounts(app);
+  const layers = parsed.data.flatMap(({ route }) => (route ? [route] : []));
+  const trusted = trustedMountPaths(layers, mounts);
   const problems: string[] = [];
-  for (const { route } of parsed.data) {
-    if (!route) continue;
+  for (const route of layers) {
     for (const path of paths(route.path)) {
       if (ADAPTER_ROUTE_ALLOWLIST.includes(path)) continue;
+      if (trusted.has(path) && isAllMethodLayer(route.methods)) continue;
       for (const method of Object.keys(route.methods)) {
         const key = `${method.toUpperCase()} ${path}`;
         if (!known.has(key))

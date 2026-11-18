@@ -13,7 +13,7 @@ import { workerDbName } from '../support/isolation.js';
 import { childProcessEnv, readPoolId } from '../support/runner-env.js';
 import { postgresUrl } from './support/infra-context.js';
 import { appPrivilegesOnMigrationsAt, withPg } from './support/pg.js';
-import { grantDatabaseAccess } from './support/postgres.js';
+import { grantDatabaseAccess, repoMigrations } from './support/postgres.js';
 
 const API_DIR = fileURLToPath(new URL('../../', import.meta.url));
 const MIGRATE_SCRIPT = path.join(API_DIR, 'scripts/db-migrate.mjs');
@@ -117,7 +117,7 @@ describe('db-migrate.mjs with a failing migration', () => {
     expect(output).not.toMatch(/postgres(ql)?:\/\/[^\s"]*@/);
   });
 
-  it('applied init and recorded the failed migration in "_prisma_migrations"', async () => {
+  it('applied the real migrations and recorded the failed one in "_prisma_migrations"', async () => {
     const { rows } = await withPg(maintenanceUrl, (db) =>
       db.query<{ migration_name: string; finished: boolean }>(
         `SELECT migration_name, finished_at IS NOT NULL AS finished FROM "_prisma_migrations"
@@ -125,7 +125,7 @@ describe('db-migrate.mjs with a failing migration', () => {
       ),
     );
     expect(rows).toEqual([
-      { migration_name: expect.stringMatching(/^\d{14}_init$/), finished: true },
+      ...repoMigrations().map((name) => ({ migration_name: name, finished: true })),
       { migration_name: '20991231000000_fails_partway', finished: false },
     ]);
   });

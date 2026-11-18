@@ -123,13 +123,13 @@ describe('error shape (06 §3)', () => {
   });
 
   it('Zod body → 400 VALIDATION_ERROR with dot-joined paths', async () => {
-    const res = await post('/__probe/zod').send({ items: [{ title: '' }] });
+    const res = await post('/api/v1/__probe/zod').send({ items: [{ title: '' }] });
     const body = expectApiError(res, 400, 'VALIDATION_ERROR');
     expect(body.details).toEqual([{ path: 'items.0.title', message: expect.any(String) }]);
   });
 
   it('malformed JSON → 400 VALIDATION_ERROR without parser internals', async () => {
-    const res = await post('/__probe/zod')
+    const res = await post('/api/v1/__probe/zod')
       .set('Content-Type', 'application/json')
       .send('{"items":');
     const body = expectApiError(res, 400, 'VALIDATION_ERROR');
@@ -137,21 +137,21 @@ describe('error shape (06 §3)', () => {
   });
 
   it('no session on a private route → 401 UNAUTHENTICATED', async () => {
-    expectApiError(await post('/__probe/private'), 401, 'UNAUTHENTICATED');
+    expectApiError(await post('/api/v1/__probe/private'), 401, 'UNAUTHENTICATED');
   });
 
   it('AppException → its code, status and details', async () => {
-    const body = expectApiError(await post('/__probe/app-exception'), 409, 'CONFLICT_STATE');
+    const body = expectApiError(await post('/api/v1/__probe/app-exception'), 409, 'CONFLICT_STATE');
     expect(body).toMatchObject({ message: 'Not allowed now', details: { reason: 'probe' } });
   });
 
   it('Better Auth APIError on our route → mapped by its code', async () => {
-    const body = expectApiError(await post('/__probe/better-auth'), 403, 'SIGNUP_CLOSED');
+    const body = expectApiError(await post('/api/v1/__probe/better-auth'), 403, 'SIGNUP_CLOSED');
     expect(body.details).toBeNull();
   });
 
   it('thrown Error → 500 INTERNAL_ERROR with a fixed message; stack + requestId only in the log', async () => {
-    const res = await post('/__probe/throw');
+    const res = await post('/api/v1/__probe/throw');
     const body = expectApiError(res, 500, 'INTERNAL_ERROR');
     expect(body.message).toBe('Internal server error');
     expect(JSON.stringify(res.body)).not.toMatch(/hunter2|10\.0\.0\.5|at /);
@@ -178,13 +178,13 @@ describe('request id', () => {
   });
 
   it('appears in the request log line, which has no query string, headers or body', async () => {
-    const res = await post('/__probe/zod?token=S3CRET-QUERY')
+    const res = await post('/api/v1/__probe/zod?token=S3CRET-QUERY')
       .set('Authorization', 'Bearer S3CRET-HEADER')
       .send({ items: [{ title: 'S3CRET-BODY' }] });
     const id = res.get('X-Request-Id');
     const line = logLines().find((l) => l.requestId === id && l.msg === 'request completed');
     expect(line).toMatchObject({
-      req: { method: 'POST', path: '/__probe/zod' },
+      req: { method: 'POST', path: '/api/v1/__probe/zod' },
       res: { statusCode: 201 },
     });
     expect(logOutput).not.toMatch(/S3CRET/);
@@ -215,7 +215,7 @@ describe('security headers (09 §9.2)', () => {
 describe('CORS (09 §3)', () => {
   const preflight = (origin: string) =>
     http()
-      .options('/__probe/zod')
+      .options('/api/v1/__probe/zod')
       .set('Origin', origin)
       .set('Access-Control-Request-Method', 'PATCH')
       .set('Access-Control-Request-Headers', 'Content-Type, Idempotency-Key');
@@ -253,46 +253,56 @@ describe('CORS (09 §3)', () => {
 
 describe('CSRF Origin check + JSON-only mutations', () => {
   it('rejects a mutation without Origin → 403 CSRF_ORIGIN', async () => {
-    expectApiError(await http().post('/__probe/zod').send({ items: [] }), 403, 'CSRF_ORIGIN');
+    expectApiError(
+      await http().post('/api/v1/__probe/zod').send({ items: [] }),
+      403,
+      'CSRF_ORIGIN',
+    );
   });
 
   it('rejects a foreign Origin → 403 CSRF_ORIGIN', async () => {
     const res = await http()
-      .post('/__probe/zod')
+      .post('/api/v1/__probe/zod')
       .set('Origin', 'https://evil.example.com')
       .send({ items: [] });
     expectApiError(res, 403, 'CSRF_ORIGIN');
   });
 
   it('rejects a bad Origin before auth (unauthenticated + bad Origin → 403, not 401)', async () => {
-    expectApiError(await http().post('/__probe/private'), 403, 'CSRF_ORIGIN');
+    expectApiError(await http().post('/api/v1/__probe/private'), 403, 'CSRF_ORIGIN');
   });
 
   it('checks DELETE too, and passes a DELETE without a body', async () => {
-    expectApiError(await http().delete('/__probe/item'), 403, 'CSRF_ORIGIN');
-    const ok = await http().delete('/__probe/item').set('Origin', WEB_ORIGIN);
+    expectApiError(await http().delete('/api/v1/__probe/item'), 403, 'CSRF_ORIGIN');
+    const ok = await http().delete('/api/v1/__probe/item').set('Origin', WEB_ORIGIN);
     expect(ok.status).toBe(200);
   });
 
   it('accepts JSON from WEB_ORIGIN', async () => {
-    const res = await post('/__probe/zod').send({ items: [{ title: 'ok' }] });
+    const res = await post('/api/v1/__probe/zod').send({ items: [{ title: 'ok' }] });
     expect(res.status).toBe(201);
   });
 
   it('text/plain body → 415 UNSUPPORTED_MEDIA_TYPE', async () => {
-    const res = await post('/__probe/zod').set('Content-Type', 'text/plain').send('{"items":[]}');
+    const res = await post('/api/v1/__probe/zod')
+      .set('Content-Type', 'text/plain')
+      .send('{"items":[]}');
     expectApiError(res, 415, 'UNSUPPORTED_MEDIA_TYPE');
   });
 
   it('urlencoded body is not parsed and → 415', async () => {
-    const res = await post('/__probe/zod').type('form').send('items=1');
+    const res = await post('/api/v1/__probe/zod').type('form').send('items=1');
     expectApiError(res, 415, 'UNSUPPORTED_MEDIA_TYPE');
   });
 
   it('multipart passes only on an @AcceptsMultipart() handler', async () => {
-    const ok = await post('/__probe/upload').attach('file', Buffer.from('a,b\n1,2'), 'x.csv');
+    const ok = await post('/api/v1/__probe/upload').attach(
+      'file',
+      Buffer.from('a,b\n1,2'),
+      'x.csv',
+    );
     expect(ok.status).toBe(201);
-    const rejected = await post('/__probe/zod').attach('file', Buffer.from('a'), 'x.csv');
+    const rejected = await post('/api/v1/__probe/zod').attach('file', Buffer.from('a'), 'x.csv');
     expectApiError(rejected, 415, 'UNSUPPORTED_MEDIA_TYPE');
   });
 });
@@ -304,12 +314,14 @@ describe('JSON body limit (06 §5)', () => {
   it('accepts a body of exactly 1 MB', async () => {
     const body = bodyOf(LIMIT);
     expect(Buffer.byteLength(body)).toBe(LIMIT);
-    const res = await post('/__probe/blob').set('Content-Type', 'application/json').send(body);
+    const res = await post('/api/v1/__probe/blob')
+      .set('Content-Type', 'application/json')
+      .send(body);
     expect(res.status).toBe(201);
   });
 
   it('rejects 1 MB + 1 byte → 413 PAYLOAD_TOO_LARGE', async () => {
-    const res = await post('/__probe/blob')
+    const res = await post('/api/v1/__probe/blob')
       .set('Content-Type', 'application/json')
       .send(bodyOf(LIMIT + 1));
     expectApiError(res, 413, 'PAYLOAD_TOO_LARGE');

@@ -55,7 +55,7 @@ const createItem = (owner: TestSession) => {
 };
 const byIdFixture = (params: (id: string) => Record<string, string>, ownedIds = true) =>
   defineIdorFixture({
-    route: 'GET /idor-probe/items/:id',
+    route: 'GET /api/v1/idor-probe/items/:id',
     kind: 'by-id',
     setup: ({ owner }) => {
       const id = createItem(owner);
@@ -66,7 +66,9 @@ const byIdFixture = (params: (id: string) => Record<string, string>, ownedIds = 
       });
     },
   });
-const listFixture = (route: 'GET /idor-probe/feed' | 'GET /idor-probe/leak'): IdorFixture =>
+const listFixture = (
+  route: 'GET /api/v1/idor-probe/feed' | 'GET /api/v1/idor-probe/leak',
+): IdorFixture =>
   defineIdorFixture({
     route,
     kind: 'list',
@@ -133,7 +135,7 @@ describe('IDOR runner self-test (probe fixtures)', () => {
   });
 
   it('an @OptionalAuth list fixture passes (B and anonymous see none of A ids)', async () => {
-    const fixture = listFixture('GET /idor-probe/feed');
+    const fixture = listFixture('GET /api/v1/idor-probe/feed');
     await runIdorFixture(fixture, contextFor(fixture));
   });
 
@@ -148,7 +150,7 @@ describe('IDOR runner self-test (probe fixtures)', () => {
   });
 
   it("a list route that leaks A's ids fails", async () => {
-    const fixture = listFixture('GET /idor-probe/leak');
+    const fixture = listFixture('GET /api/v1/idor-probe/leak');
     await expect(runIdorFixture(fixture, contextFor(fixture))).rejects.toThrow(/leaks A's id/);
   });
 });

@@ -7,6 +7,21 @@ import { authBodyLimit } from './auth-body-limit.js';
 import { authRequestPolicy } from './auth-request-policy.js';
 import { requestIdMiddleware } from './request-id.middleware.js';
 
+/** Every controller route lives under it (06-api.md §1), except the paths in API_PREFIX_EXCLUDE. */
+export const API_PREFIX = 'api/v1';
+
+/**
+ * Outside the prefix: probes for Docker/Caddy (12-infra-ops.md: `/health/*` is not part of the versioned API) and the
+ * Better Auth mount. `setGlobalPrefix` REPLACES the exclude list, including the `/api/auth` entries thallesp adds in its
+ * module constructor (before configureHttp runs), so they are restated here.
+ */
+export const API_PREFIX_EXCLUDE: readonly string[] = [
+  'health/live',
+  'health/ready',
+  'api/auth',
+  'api/auth/*path',
+];
+
 function noStore(_req: Request, res: Response, next: NextFunction): void {
   // The API serves nothing publicly cacheable (09-security-privacy.md §9.2).
   res.setHeader('Cache-Control', 'no-store');
@@ -19,6 +34,7 @@ function noStore(_req: Request, res: Response, next: NextFunction): void {
  */
 export function configureHttp(app: INestApplication, config: ConfigService): void {
   app.useLogger(app.get(Logger));
+  app.setGlobalPrefix(API_PREFIX, { exclude: [...API_PREFIX_EXCLUDE] });
   // req.ip: socket address, or the X-Forwarded-For entry added by the trusted proxy hops (0 = none).
   const hops = config.get('TRUST_PROXY_HOPS');
   (app.getHttpAdapter().getInstance() as { set(key: string, value: unknown): void }).set(

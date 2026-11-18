@@ -1,6 +1,8 @@
 // Admin SQL for the integration test databases (M0-07a). Identifiers are only TEMPLATE_DB or workerDbName()
 // output (regex-validated) and are still quoted with escapeIdentifier; no SQL is built from test input.
 import { execFile } from 'node:child_process';
+import { readdirSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
@@ -84,6 +86,16 @@ export async function prepareTemplate(
  * (scripts/db-migrate.mjs: `migrate deploy` + the "_prisma_migrations" REVOKE). Explicit minimal env: the
  * maintenance URL is set, so the script never reads an env file.
  */
+/** Migration folder names in prisma/migrations, in apply order (what `_prisma_migrations` must list). */
+export function repoMigrations(): string[] {
+  return readdirSync(path.join(API_DIR, 'prisma/migrations'), {
+    withFileTypes: true,
+  })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+}
+
 export async function applyMigrations(maintenanceUrl: string): Promise<void> {
   try {
     await execFileAsync(process.execPath, [MIGRATE_SCRIPT], {

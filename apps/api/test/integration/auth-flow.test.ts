@@ -81,7 +81,8 @@ function boot(overrides: Record<string, string> = {}): Promise<INestApplication>
 describe('Google OAuth flow (Postgres + Redis)', () => {
   let app: INestApplication;
   const http = () => request(app.getHttpServer());
-  const privateRoute = (cookie: string) => http().get('/probe/private').set('Cookie', cookie);
+  const privateRoute = (cookie: string) =>
+    http().get('/api/v1/probe/private').set('Cookie', cookie);
   const getSession = (cookie: string) => http().get('/api/auth/get-session').set('Cookie', cookie);
 
   beforeAll(async () => {
@@ -155,7 +156,7 @@ describe('Google OAuth flow (Postgres + Redis)', () => {
     // Redaction: neither the OAuth code nor the session token reaches the logs (an authenticated request is logged
     // with its Cookie header present). Note: /api/auth/* itself gets no pino-http line — see CONTEXT §6.
     expect((await privateRoute(session?.pair ?? '')).status).toBe(200);
-    expect(logs).toContain('"path":"/probe/private"');
+    expect(logs).toContain('"path":"/api/v1/probe/private"');
     expect(logs).not.toContain('code-A');
     expect(logs).not.toContain(tokenOf(session?.pair ?? '') ?? '');
   });
@@ -219,13 +220,13 @@ describe('Google OAuth flow (Postgres + Redis)', () => {
     const b = await signInAs(app, 'B');
 
     expect(a.userId).not.toBe(b.userId);
-    expect((await a.agent.get('/probe/private')).body).toEqual({ userId: a.userId });
-    expect((await b.agent.get('/probe/private')).body).toEqual({ userId: b.userId });
+    expect((await a.agent.get('/api/v1/probe/private')).body).toEqual({ userId: a.userId });
+    expect((await b.agent.get('/api/v1/probe/private')).body).toEqual({ userId: b.userId });
   });
 
   describe('session lifetime (FR-AUTH-04, 09 §4.2)', () => {
     it('a private route without a session → 401 UNAUTHENTICATED', async () => {
-      const res = await http().get('/probe/private');
+      const res = await http().get('/api/v1/probe/private');
 
       expect(res.status).toBe(401);
       expect(ApiError.parse(res.body)).toMatchObject({ code: 'UNAUTHENTICATED' });
@@ -396,8 +397,8 @@ describe('Google OAuth flow (Postgres + Redis)', () => {
         new Date(Date.now() - 31 * DAY_MS),
       ]);
 
-      expect((await http().get('/probe/public').set('Cookie', cookie)).status).toBe(200);
-      const optional = await http().get('/probe/optional').set('Cookie', cookie);
+      expect((await http().get('/api/v1/probe/public').set('Cookie', cookie)).status).toBe(200);
+      const optional = await http().get('/api/v1/probe/optional').set('Cookie', cookie);
       expect(optional.status).toBe(200);
       expect(optional.body).toEqual({ userId: null });
       expect(await sql(`SELECT 1 FROM "Session" WHERE token = $1`, [tokenOf(cookie)])).toHaveLength(

@@ -286,6 +286,7 @@ model UserSettings {
   userId                  String          @id @db.Uuid
   user                    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   timezone                String          @default("UTC")   // IANA; з браузера при першому вході. Єдине джерело TZ
+  timezoneConfirmed       Boolean         @default(false)   // R0 (M0-11) · true після PATCH /me/settings з timezone
   staleFollowUpDays       Int             @default(7)       // APPLIED/SCREENING без активності → підказка «Follow up»
   staleDaysAfterInterview Int             @default(10)      // INTERVIEW/TEST_TASK без активності → «Follow up»
   staleGhostDays          Int             @default(21)      // підказка «Mark as ghosted?» (тільки користувач ставить)

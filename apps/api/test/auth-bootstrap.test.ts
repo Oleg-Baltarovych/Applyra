@@ -116,13 +116,13 @@ describe('API bootstrap: auth guard, body parsing, Google sign-up allowlist', ()
   });
 
   it('rejects a route without Public when there is no session (global guard)', async () => {
-    const res = await request(app.getHttpServer()).get('/probe/private');
+    const res = await request(app.getHttpServer()).get('/api/v1/probe/private');
     expect(res.status).toBe(401);
   });
 
   it('runs the guard before body validation on a private route', async () => {
     const res = await request(app.getHttpServer())
-      .post('/probe/echo')
+      .post('/api/v1/probe/echo')
       .set('Origin', WEB_ORIGIN)
       .send({ name: '' });
     expect(res.status).toBe(401);
@@ -143,12 +143,14 @@ describe('API bootstrap: auth guard, body parsing, Google sign-up allowlist', ()
 
     // The session cookie passes the global guard, and the body pipe works on a private route.
     if (!session) throw new Error('no session cookie');
-    const me = await request(app.getHttpServer()).get('/probe/private').set('Cookie', session.pair);
+    const me = await request(app.getHttpServer())
+      .get('/api/v1/probe/private')
+      .set('Cookie', session.pair);
     expect(me.status).toBe(200);
     expect(me.body).toEqual({ userId: db.user[0]?.id });
 
     const echo = await request(app.getHttpServer())
-      .post('/probe/echo')
+      .post('/api/v1/probe/echo')
       .set('Origin', WEB_ORIGIN)
       .set('Cookie', session.pair)
       .send({ name: 'Ada' });
@@ -156,7 +158,7 @@ describe('API bootstrap: auth guard, body parsing, Google sign-up allowlist', ()
     expect(echo.body).toEqual({ name: 'Ada' });
 
     const invalid = await request(app.getHttpServer())
-      .post('/probe/echo')
+      .post('/api/v1/probe/echo')
       .set('Origin', WEB_ORIGIN)
       .set('Cookie', session.pair)
       .send({ name: '', extra: true });

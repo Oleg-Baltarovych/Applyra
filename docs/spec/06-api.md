@@ -131,8 +131,10 @@ R0 включає тільки Google OAuth, ручну форму ваканс�
 | POST | `/api/auth/sign-out` | user | FR-AUTH | |
 | GET | `/api/auth/get-session` | user | FR-AUTH | |
 | GET | `/health/live` · `/health/ready` | public | — | liveness / readiness (DB, Redis; деталі — `12-infra-ops.md` §9) |
-| GET | `/me` | user | FR-AUTH | user + settings |
-| PATCH | `/me/settings` | user | FR-PROF | R0: `timezone`, `staleFollowUpDays`, `staleDaysAfterInterview`, `staleGhostDays`, `hotkeysEnabled` |
+| GET | `/me` | user | FR-AUTH | `{ user: { id, email, name, image, createdAt }, settings }` (contracts `Me`; без role/deletedAt/demoExpiresAt); перший виклик створює `UserSettings` з DB-дефолтами (M0-11) |
+| PATCH | `/me/settings` | user | FR-PROF | R0: `timezone`, `staleFollowUpDays`, `staleDaysAfterInterview`, `staleGhostDays`, `hotkeysEnabled` (непорожня підмножина, strict); відповідь — повний `UserSettings` + `timezoneConfirmed` (стає `true` при будь-якому PATCH з `timezone`; web шле зону браузера лише поки `false`) |
+
+`timezone` (M0-11): IANA id, перевірений `Intl.DateTimeFormat` (offset-рядки на кшталт `+02:00` відхиляються), **зберігається як надіслано** — без канонізації регістру чи аліасів (рушії розходяться: V8 перетворює `Europe/Kyiv` на `Europe/Kiev`, Firefox — ні); єдиний виняток — `utc` у будь-якому регістрі → `UTC`. Клієнти надсилають id з `Intl.DateTimeFormat().resolvedOptions().timeZone` або з пікера.
 
 ### 7.2. Jobs (приватні)
 

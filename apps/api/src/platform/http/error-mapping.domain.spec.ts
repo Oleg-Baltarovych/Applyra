@@ -71,6 +71,18 @@ describe('toApiError', () => {
     expect(body.details).toEqual([{ path: 'items.0.title', message: expect.any(String) }]);
   });
 
+  it('maps a strict-object unknown-keys issue to one detail per key, path = the key', () => {
+    const strict = z.strictObject({ nested: z.strictObject({ a: z.string() }) });
+    const result = strict.safeParse({ userId: 'x', updatedAt: 'y', nested: { a: 'ok', b: 1 } });
+    if (result.success) throw new Error('expected a ZodError');
+    const { body } = map(new ZodValidationException(result.error));
+    expect(body.details).toEqual([
+      { path: 'nested.b', message: 'Unknown field' },
+      { path: 'userId', message: 'Unknown field' },
+      { path: 'updatedAt', message: 'Unknown field' },
+    ]);
+  });
+
   it('tolerates a validation exception without Zod issues', () => {
     const { body } = map(new ZodValidationException(new Error('not a ZodError')));
     expect(body).toMatchObject({ code: 'VALIDATION_ERROR', details: [] });

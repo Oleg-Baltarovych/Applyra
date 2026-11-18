@@ -7,6 +7,7 @@ import {
   authOptionsFromConfig,
 } from './modules/auth/index.js';
 import { HealthModule } from './modules/health/index.js';
+import { UsersModule } from './modules/users/index.js';
 import { ConfigModule, type Env } from './platform/config/index.js';
 import { HttpModule } from './platform/http/index.js';
 import { LoggingModule, type LoggingOverride } from './platform/logging/index.js';
@@ -37,6 +38,7 @@ export class AppModule {
         HttpModule,
         AuthModule.forRootAsync(auth),
         HealthModule,
+        UsersModule,
       ],
       providers: [
         // nestjs-zod: validate createZodDto bodies/query/params; @ZodResponse serializes responses.
