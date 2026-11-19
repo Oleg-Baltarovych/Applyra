@@ -13,7 +13,6 @@ try {
 
 const filePath = input?.tool_input?.file_path;
 if (!filePath || !/\.(ts|tsx|js|mjs|cjs|json|css|md|ya?ml)$/.test(filePath)) process.exit(0);
-if (/[\\/]prisma[\\/]migrations[\\/]/.test(filePath)) process.exit(0);
 
 const root = process.env.CLAUDE_PROJECT_DIR || input.cwd || process.cwd();
 const bin = path.join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'prettier.cmd' : 'prettier');

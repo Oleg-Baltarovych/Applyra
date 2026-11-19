@@ -61,4 +61,3 @@ Pre-pivot CRM (spec v2.1, ADRs 000–025, plans, api/web code) → git tag `arch
 - Actions cache keys are immutable → save under `digest-state-<run_id>-<attempt>`, restore by prefix `digest-state-`; entries idle 7 days are evicted. Schedules run only from the default branch.
 - Node 26 LTS, pnpm 11 via `npm i -g pnpm` (self-switches to `packageManager` via `pmOnFail: download`). TS 6: `types` defaults to `[]` → set `"types": ["node"]` per package.
 - Windows/Git Bash: heredocs with quotes break and the guard hook blocks any command text mentioning `.env` — write files with the editor tool instead.
-- `.claude/settings.json` still lists Prisma/docker-compose permissions and `guard-paths.mjs` still has the (now inert) migration guard — owner to prune by hand.
