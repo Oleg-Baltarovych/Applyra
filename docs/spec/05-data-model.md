@@ -86,6 +86,8 @@ betterAuth({
 | **R2** | + ingestion, matching | `JobSource`, `SourceJob`, `JobSkill`, `SavedSearch`, `MatchScore`, `MatchFeedback`, `ExchangeRate` |
 | **R3** | ai (semantic) | `JobEmbedding`* |
 
+ADR 025 (R1-lite): з R1-моделей створюються лише `CareerProfile`, `Skill`, `SkillAlias`, `UserSkill`, `AiRun`, `AiUsageDaily`, `AiGlobalUsageDaily`, `AuditLog`, і `JobSkill` підтягується з R2. Решта R1-моделей, `OutboxEvent` і `MatchScore` (matching-lite рахується при читанні) — Later.
+
 \* Моделей немає в базовому списку v2.1. Їх додано з такими причинами: `ApplicationContact` — m2m заявка↔контакт для `POST /applications/:id/contacts` (A-17). `Education` — FR профілю (`03-functional.md`, FR-PROF). `NotificationPreference` — налаштування тип × канал. `AiGlobalUsageDaily` — глобальні AI caps (07). `DeletedUserTombstone` — повторне видалення після restore (09). `JobEmbedding` — pgvector (R3).
 
 Перейменування відносно v2.0: `WorkExperience` → `Experience`, `UserLanguage` → `Language`, `MatchResult` → `MatchScore`. `Document` розділено на `Document` + `DocumentVersion` (A-20).
