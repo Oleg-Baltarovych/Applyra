@@ -1,7 +1,6 @@
-// PreToolUse hook (Read|Edit|Write|Bash): blocks access to secrets files and edits to committed Prisma migrations.
+// PreToolUse hook (Read|Edit|Write|Grep|Bash): blocks access to secrets files (.env*, except .env.example).
 // Exit 2 = block, stderr is shown to Claude. Exit 0 = no decision.
-import { existsSync, readFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 let input;
@@ -137,17 +136,6 @@ const base = path.basename(filePath);
 
 if (/^\.env(\..+)?$/.test(base) && base !== '.env.example') {
   block(`"${rel}" is a secrets file. ${SECRETS_HINT}`);
-}
-
-// A migration is immutable once it is tracked by git (committed or staged).
-// A freshly generated, untracked migration (`prisma migrate dev --create-only`) may still be edited
-// to append raw SQL — see /prisma-migration.
-if (tool !== 'Read' && /(^|\/)prisma\/migrations\/[^/]+\/.+/.test(rel) && existsSync(filePath)) {
-  const tracked = spawnSync('git', ['ls-files', '--error-unmatch', '--', rel], { cwd: root, stdio: 'ignore' });
-  // status 1 = untracked; anything else (tracked, or git unavailable) → treat as immutable.
-  if (tracked.status !== 1) {
-    block(`"${rel}" belongs to a committed migration. Create a new migration instead (see /prisma-migration).`);
-  }
 }
 
 process.exit(0);

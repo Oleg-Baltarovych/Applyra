@@ -15,18 +15,11 @@
       "Bash(pnpm --filter * test *)",
       "Bash(pnpm --filter * build *)",
       "Bash(pnpm turbo run *)",
-      "Bash(pnpm --filter * exec prisma validate *)",
-      "Bash(pnpm --filter * exec prisma generate *)",
-      "Bash(pnpm --filter * exec prisma format *)",
-      "Bash(pnpm --filter * exec prisma migrate status *)",
-      "Bash(pnpm --filter * exec prisma migrate diff *)",
       "Bash(git status *)",
       "Bash(git diff *)",
       "Bash(git log *)",
       "Bash(git show *)",
-      "Bash(git branch *)",
-      "Bash(docker compose ps *)",
-      "Bash(docker compose logs *)"
+      "Bash(git branch *)"
     ],
     "deny": [
       "Read(**/.env)",
@@ -56,17 +49,12 @@
       "Bash(pnpm remove *)",
       "Bash(pnpm dlx *)",
       "Bash(npx *)",
-      "Bash(pnpm --filter * exec prisma migrate dev *)",
-      "Bash(pnpm --filter * exec prisma migrate reset *)",
-      "Bash(pnpm --filter * exec prisma db *)",
       "Bash(git commit *)",
       "Bash(git push *)",
       "Bash(git checkout *)",
       "Bash(git switch *)",
       "Bash(git merge *)",
-      "Bash(git rebase *)",
-      "Bash(docker compose up *)",
-      "Bash(docker compose down *)"
+      "Bash(git rebase *)"
     ]
   },
   "hooks": {
