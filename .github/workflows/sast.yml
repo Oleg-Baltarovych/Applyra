@@ -33,7 +33,8 @@ jobs:
       # Community registry packs are fetched anonymously from semgrep.dev. Non-root (HOME=/tmp for its
       # settings/cache), read-only source mount; only $RUNNER_TEMP is writable (JSON report).
       # Scope: apps/ + packages/ + .github/ (p/github-actions) + infra/ and compose.yaml (p/dockerfile, p/docker-compose;
-      # M0-14 — `p/docker` is an alias of p/dockerfile), filtered by .semgrepignore (tests are scanned; fixtures are not).
+      # M0-14 — `p/docker` is an alias of p/dockerfile; p/terraform for infra/terraform, M0-17), filtered by .semgrepignore
+      # (tests are scanned; fixtures are not).
       # Exit 1 = findings (`--error`), >= 2 = semgrep failed. Inline suppression: `nosemgrep: <rule-id>`
       # plus a comment with the reason.
       - name: semgrep scan
@@ -46,7 +47,7 @@ jobs:
             semgrep scan --metrics=off --oss-only --error \
               --config p/typescript --config p/javascript --config p/nodejs --config p/react \
               --config p/owasp-top-ten --config p/secrets --config p/github-actions \
-              --config p/dockerfile --config p/docker-compose \
+              --config p/dockerfile --config p/docker-compose --config p/terraform \
               --json-output=/out/semgrep.json \
               apps packages .github infra compose.yaml
       # Fail closed: a scan that read no files or hit errors (parse/rule/network) must not pass as green.

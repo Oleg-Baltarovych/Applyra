@@ -53,3 +53,20 @@ blob-report/
 
 # Packed tarballs
 *.tgz
+
+# Terraform (M0-17): local state, plans, plugin dirs, real variable/backend files. Only *.example and the lock file are committed.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+crash.log
+crash.*.log
+infra/terraform/**/backend.hcl
