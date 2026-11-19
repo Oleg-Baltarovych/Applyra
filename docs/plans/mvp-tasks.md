@@ -171,7 +171,7 @@
   - Локальна перевірка: `docker compose -f … -f compose.prod.yml up` → `https://app.applyra.localhost` / `https://api.applyra.localhost` (Caddy internal CA; `*.localhost` під спільним `applyra.localhost`, щоб `__Host-` cookies були same-site) → demo sign-in (після M2-12) / `/health/ready` 200; кроки в `infra/README.md`.
 - Notes: результат spike CSP на Pages custom domain — M0-14b; до того Caddy static — робочий шлях.
 
-### M0-15 · Local backup script + Sentry api (optional DSN)
+### M0-15 · Local backup script + Sentry api (optional DSN) ✅
 - FR: — · Area: infra, obs · Est: 1h · Depends: M0-04, M0-09 · Flow: direct
 - AC:
   - `pnpm db:backup`: `pg_dump -Fc` (роль `backup`, через `docker compose exec`) у `./backups/` (gitignored), ротація — останні 14 файлів; `pnpm db:restore <file>` — в ізольований контейнер `postgres:18` (`12-infra-ops.md` §5).

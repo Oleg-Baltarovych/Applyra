@@ -18,7 +18,12 @@ if (initial.status !== 0) process.exit(initial.status ?? 1);
 
 const children = [
   run([tsc, '-p', tsconfig, '--watch', '--preserveWatchOutput']),
-  run(['--watch', '--env-file-if-exists=../../.env', 'dist/main.js']),
+  run([
+    '--watch',
+    '--env-file-if-exists=../../.env',
+    '--import=./dist/instrument.js',
+    'dist/main.js',
+  ]),
 ];
 const stop = () => {
   for (const child of children) child.kill();

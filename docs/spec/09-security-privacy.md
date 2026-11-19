@@ -224,7 +224,7 @@ pino `redact` (censor `[REDACTED]`), єдиний список у `apps/api/src/
 | Redis / BullMQ | job payloads (тільки id, без PII), rate-limit лічильники | completed 24 год, failed 7 днів | `removeOnComplete/Fail` за віком; ключі `*:<userId>` видаляються pipeline | так |
 | Backups (local `pg_dump` автора; when hosting — WAL-G, pg_dump у R2) | повна копія БД | 14 днів / 14 файлів, далі expire (lifecycle / ротація скрипта) | автоматичне закінчення; після restore — повторне застосування tombstones | ні — зникає ≤ 14 днів (зазначено в privacy policy) |
 | Логи (docker json-file) | метадані запитів, redacted | 14 днів (ротація) | ротація | ні — тільки userId, без контенту |
-| Sentry | помилки, `user.id` без email/IP (`sendDefaultPii: false`, `beforeSend` scrub) | 30 днів | retention Sentry; за запитом — delete by user id | частково (ручний запит) |
+| Sentry | помилки, `user.id` без email/IP (`sendDefaultPii: false` — у SDK 11 `dataCollection` вимкнено; `beforeSend` scrub) | 30 днів | retention Sentry; за запитом — delete by user id | частково (ручний запит) |
 | `AiRun`, `AiUsageDaily` | task, model, tokens, cost, input hash (без сирого тексту) | 90 днів | cron + Cascade | так |
 | LLM provider | промпти/виводи під час виклику | залежить від вибору провайдера, вирішується в M4 (no-training API; zero/обмежена retention — follow-up ADR 017) | не контролюється — мінімізація контексту (`07-ai.md`) | ні (зазначено) |
 | Email provider | адреса + тема листа | за політикою провайдера | — | ні (зазначено) |

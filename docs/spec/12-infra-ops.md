@@ -105,7 +105,7 @@
 
 ## 5. Backups і restore (I-02, P-23, ADR 022)
 
-**Зараз (R0/R1, local):** реальні дані автора (dogfooding) живуть у локальному Postgres volume. Скрипт `pnpm db:backup` — `pg_dump -Fc` (роль `backup`) у `./backups/` (gitignored), зберігаються останні 14 файлів; запуск вручну або з cron/Task Scheduler хоста. `pnpm db:restore <file>` відновлює в ізольований контейнер `postgres:18`; ручна перевірка restore — R0 exit-критерій (`02-releases.md` §2.1). Плюс FR-IMP-05 експорт як незалежна копія. RPO = частота запуску скрипта.
+**Зараз (R0/R1, local):** реальні дані автора (dogfooding) живуть у локальному Postgres volume. Скрипт `pnpm db:backup` — `pg_dump -Fc` (роль `backup`) у `./backups/` (gitignored), зберігаються останні 14 файлів (тека `0700`, файли `0600` — лише POSIX; на Windows права не виставляються, тека успадковує ACL профілю користувача); запуск вручну або з cron/Task Scheduler хоста. `pnpm db:restore <file>` відновлює в ізольований контейнер `postgres:18`; ручна перевірка restore — R0 exit-критерій (`02-releases.md` §2.1). Плюс FR-IMP-05 експорт як незалежна копія. RPO = частота запуску скрипта.
 
 **When hosting** (`docs/plans/mvp-tasks.md` → `Later — when hosting`):
 
@@ -195,7 +195,7 @@ Rollback: redeploy попереднього image digest (схема суміс�
 | Сигнал | Рішення | Реліз |
 |---|---|---|
 | Логи | pino JSON у stdout, `requestId` (+ `traceId` з R2) у кожному записі, redaction — `09-security-privacy.md` §10; docker `json-file` `max-size=10m, max-file=5`, retention ≤ 14 днів | R0 |
-| Errors | Sentry: web + api + worker; ініціалізація лише при заданому DSN (local — вимкнено; hosted Sentry не обов'язковий, ADR 022); `sendDefaultPii: false`, `beforeSend` scrub, без Session Replay; `tracesSampleRate: 0` (traces — OTel) | R0 (api), R1 (web, worker) |
+| Errors | Sentry: web + api + worker; ініціалізація лише при заданому DSN (local — вимкнено; hosted Sentry не обов'язковий, ADR 022); `sendDefaultPii: false` (SDK 11: усі категорії `dataCollection` вимкнені / allowlist headers), `beforeSend` scrub, без Session Replay; `tracesSampleRate: 0` (traces — OTel) | R0 (api), R1 (web, worker) |
 | Health | api: `GET /health/live` (процес), `GET /health/ready` (Postgres `SELECT 1`, Redis `PING`; R1 + R2-storage HEAD з кешем 30 с); worker (R1+): `/health` на внутрішньому порту 9465 + heartbeat-метрика | R0 (api) |
 | Metrics | Prometheus + Grafana, `prom-client`; local — Compose-профіль `observability` (порти лише на `127.0.0.1`) | R1 |
 | Queues UI | Bull Board за admin-guard; local — `127.0.0.1`, hosted — тільки Tailscale | R1 |

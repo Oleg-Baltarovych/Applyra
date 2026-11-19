@@ -6,7 +6,9 @@
     "types": ["node"],
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "noEmit": true
+    "noEmit": true,
+    // test/db-backup-lib.test.ts imports scripts/lib/*.mjs: types are inferred from their JSDoc (M0-15).
+    "allowJs": true
   },
   "include": ["src", "test", "vitest.config.ts", "vitest.integration.config.ts", "prisma.config.ts"]
 }

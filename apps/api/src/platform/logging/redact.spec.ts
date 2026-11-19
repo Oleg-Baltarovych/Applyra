@@ -124,6 +124,15 @@ describe('log redaction (09-security-privacy.md §10)', () => {
     expect(out).toContain('a***@mail.example.org');
   });
 
+  it('strips URL queries and token path segments inside a serialized error', () => {
+    const err = new Error(
+      'PUT https://r2.test/b/k?X-Amz-Signature=sig failed for https://x.test/reset/AbCdEfGhIjKlMnOpQrStUvWx',
+    );
+    const out = JSON.stringify(errSerializer(err));
+    expect(out).not.toMatch(/X-Amz-Signature|AbCdEfGhIjKlMnOpQrStUvWx/);
+    expect(out).toContain('https://r2.test/b/k failed for https://x.test/reset/:redacted');
+  });
+
   it('redacts a whole contact object and body.text', () => {
     const sink = logWith({
       contact: { name: `${SENTINEL}-n`, linkedin: `${SENTINEL}-l` },
