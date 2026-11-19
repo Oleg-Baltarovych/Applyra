@@ -86,7 +86,7 @@
 | Хеш | `requestHash = sha256(method + route template + path params + canonical JSON body)` |
 | Збіг ключа і хешу | Replay збереженої відповіді (той самий status + body) з заголовком `Idempotent-Replayed: true` |
 | Збіг ключа, інший хеш або маршрут | `422 IDEMPOTENCY_KEY_REUSED` |
-| Паралельний запит | Запис вставляється в транзакції мутації. Друга транзакція чекає на unique-lock, після commit першої робить replay, після timeout (5 с) повертає `409 IDEMPOTENCY_IN_PROGRESS` |
+| Паралельний запит | Запис «захоплюється» першим у транзакції мутації (`statusCode`/`responseJson` = NULL) і заповнюється до commit; після commit NULL-рядок не видно. Друга транзакція чекає на unique-lock, після commit першої робить replay, після timeout (5 с) повертає `409 IDEMPOTENCY_IN_PROGRESS` |
 | Що зберігається | Тільки відповіді 2xx і 4xx з детермінованим результатом (409, 422). 5xx не зберігаються, бо retry має право виконатись |
 
 ## 5. Ліміти (S-20)

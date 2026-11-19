@@ -394,6 +394,7 @@ model Application {
   interviews Interview[]          // R1
   contacts   ApplicationContact[] // R1
 
+  @@unique([id, userId])                                  // ціль композитного FK подій (§5, рішення §4.7)
   @@unique([userId, jobId], where: raw("\"jobId\" IS NOT NULL AND \"archivedAt\" IS NULL"), map: "application_user_job_active_uq") // P-22, §6.1
   @@unique([userId, importKey], map: "application_user_import_key_uq") // NULL-и не конфліктують
   @@index([userId, status, updatedAt(sort: Desc)])
@@ -408,7 +409,7 @@ model Application {
 model ApplicationEvent {
   id            String               @id @default(dbgenerated("uuidv7()")) @db.Uuid
   applicationId String               @db.Uuid
-  application   Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  application   Application          @relation(fields: [applicationId, userId], references: [id, userId], onDelete: Cascade) // композитний FK: подія не може належати іншому tenant (M1-01)
   userId        String               @db.Uuid
   user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   type          ApplicationEventType
@@ -430,7 +431,7 @@ model Reminder {
   userId        String                @db.Uuid
   user          User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   applicationId String?               @db.Uuid
-  application   Application?          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  application   Application?          @relation(fields: [applicationId, userId], references: [id, userId], onDelete: Cascade) // композитний FK (MATCH SIMPLE: NULL applicationId пропускає перевірку), M1-01
   interviewId   String?               @db.Uuid    // R1
   interview     Interview?            @relation(fields: [interviewId], references: [id], onDelete: Cascade) // R1
   source        ReminderSource                    // A-05
@@ -449,6 +450,7 @@ model Reminder {
   @@unique([applicationId, source], where: raw("source = 'NEXT_ACTION' AND status = 'PENDING'"), map: "reminder_next_action_active_uq") // P-05
   @@index([userId, status, dueAt])
   @@index([status, dueAt])
+  @@index([applicationId, userId]) // індекс композитного FK (cascade при видаленні заявки)
   @@index([interviewId]) // R1
 }
 
@@ -477,11 +479,11 @@ model IdempotencyRecord {
   id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   userId       String   @db.Uuid
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  key          String   @db.VarChar(128)
+  key          String                       // TEXT + CHECK idempotency_key_format_chk (^[A-Za-z0-9_-]{8,128}$; squawk prefer-text-field)
   route        String                       // "POST /applications/:id/transitions"
   requestHash  String                       // sha256(canonical JSON body + path params)
-  statusCode   Int
-  responseJson Json                         // збережена відповідь для replay
+  statusCode   Int?                         // NULL, поки запис лише «захоплено» в транзакції мутації (06 §4); 200–499
+  responseJson Json?                        // збережена відповідь для replay; парою зі statusCode (CHECK)
   createdAt    DateTime @default(now()) @db.Timestamptz(3)
   expiresAt    DateTime @db.Timestamptz(3)  // createdAt + 24 год
 
@@ -1036,6 +1038,8 @@ Prisma Client не повертає й не фільтрує `searchVector` і `
 | `ApplicationEvent` без `idempotencyKey` | Ідемпотентність забезпечує `IdempotencyRecord`, записаний у тій самій транзакції (A-07). |
 | `aiEnabled` за замовчуванням `false` | AI вмикається явно (opt-in), узгоджено з `09-security-privacy.md`. |
 | `DELETE /applications/:id` — hard delete | Оборотний варіант — archive. Undo через toast стосується лише transitions і archive (`06-api.md`). |
+| `ApplicationEvent` → `Application` композитним FK `(applicationId, userId)` → `(id, userId)` | M1-01: захист у глибину від крос-tenant рядків на рівні БД; `Application @@unique([id, userId])` також дає owner-scoped `findUnique({ id_userId })`. Те саме для `Reminder` (M1-01 review, міграція `r0_domain_tenancy`): опційна relation з композитом `(applicationId, userId)` Prisma приймає, NULL `applicationId` пропускає FK (MATCH SIMPLE). |
+| `IdempotencyRecord.statusCode`/`responseJson` nullable, `key` TEXT + CHECK | M1-01: claim-first (06 §4) — рядок вставляється першим у транзакції мутації (рано бере unique-lock), заповнюється до commit; після commit NULL-рядок не видно. CHECK: пара обидва NULL / обидва задані, `statusCode` 200–499, формат ключа. |
 | `Document` → `Document` + `DocumentVersion` | Immutable версії. `Application` посилається на конкретну версію (A-20, трактовка — див. питання у звіті). |
 
 ## 5. FK і каскади (A-01)
@@ -1049,8 +1053,8 @@ Prisma Client не повертає й не фільтрує `searchVector` і `
 | `Application.userId` → User | Cascade | |
 | `Application.jobId` → Job | **SetNull** | snapshot `companyName`/`roleTitle` лишається |
 | `Application.cvDocumentVersionId` → DocumentVersion | **SetNull** | R1 · видалення CV не видаляє заявку |
-| `ApplicationEvent.applicationId` → Application, `.userId` → User | Cascade | |
-| `Reminder.userId/applicationId/interviewId` | Cascade | `interviewId` — R1 |
+| `ApplicationEvent.(applicationId, userId)` → Application `(id, userId)`, `.userId` → User | Cascade | композитний FK (M1-01): `userId` події завжди = `userId` заявки |
+| `Reminder.userId/interviewId`, `Reminder.(applicationId, userId)` → Application `(id, userId)` | Cascade | композитний FK (M1-01); `interviewId` — R1 |
 | `ReminderDelivery.reminderId` → Reminder | Cascade | |
 | `Interview.userId/applicationId` | Cascade | |
 | `Contact.userId` → User | Cascade | |
@@ -1182,6 +1186,31 @@ ALTER TABLE "Job" ADD CONSTRAINT job_salary_chk
 -- R0 · Application: суми без валюти не мають сенсу
 ALTER TABLE "Application" ADD CONSTRAINT application_salary_currency_chk
   CHECK (("salaryExpected" IS NULL AND "salaryOffered" IS NULL) OR "salaryCurrency" IS NOT NULL);
+-- R0 (M1-01) · невід'ємні суми, ISO-коди (регекс відкидає і CHAR-доповнене коротке значення)
+ALTER TABLE "Job" ADD CONSTRAINT job_salary_nonneg_chk
+  CHECK (coalesce("salaryMin", 0) >= 0 AND coalesce("salaryMax", 0) >= 0);
+ALTER TABLE "Job" ADD CONSTRAINT job_currency_chk CHECK ("salaryCurrency" ~ '^[A-Z]{3}$');
+ALTER TABLE "Job" ADD CONSTRAINT job_country_chk CHECK ("countryCode" ~ '^[A-Z]{2}$');
+ALTER TABLE "Application" ADD CONSTRAINT application_salary_nonneg_chk
+  CHECK (coalesce("salaryExpected", 0) >= 0 AND coalesce("salaryOffered", 0) >= 0);
+ALTER TABLE "Application" ADD CONSTRAINT application_currency_chk CHECK ("salaryCurrency" ~ '^[A-Z]{3}$');
+-- R0 (M1-01) · кеш next action (P-05) — парою
+ALTER TABLE "Application" ADD CONSTRAINT application_next_action_pair_chk
+  CHECK (("nextActionText" IS NULL) = ("nextActionAt" IS NULL));
+-- R0 (M1-01) · STATUS_CHANGED фіксує реальний перехід (undo в M1-08 спирається на fromStatus)
+ALTER TABLE "ApplicationEvent" ADD CONSTRAINT application_event_status_chk
+  CHECK (type <> 'STATUS_CHANGED'
+         OR ("fromStatus" IS NOT NULL AND "toStatus" IS NOT NULL AND "fromStatus" <> "toStatus"));
+-- R0 (M1-01) · ліміт CSV (06 §5)
+ALTER TABLE "ImportSession" ADD CONSTRAINT import_session_row_count_chk
+  CHECK ("rowCount" BETWEEN 0 AND 5000);
+-- R0 (M1-01) · IdempotencyRecord (06 §4): формат ключа; claimed = обидва NULL, completed = обидва задані; 5xx не зберігаються
+ALTER TABLE "IdempotencyRecord" ADD CONSTRAINT idempotency_key_format_chk
+  CHECK ("key" ~ '^[A-Za-z0-9_-]{8,128}$');
+ALTER TABLE "IdempotencyRecord" ADD CONSTRAINT idempotency_response_pair_chk
+  CHECK (("statusCode" IS NULL) = ("responseJson" IS NULL));
+ALTER TABLE "IdempotencyRecord" ADD CONSTRAINT idempotency_status_code_chk
+  CHECK ("statusCode" BETWEEN 200 AND 499);
 -- R0 · UserSettings: розумні межі
 ALTER TABLE "UserSettings" ADD CONSTRAINT user_settings_ranges_chk
   CHECK ("staleFollowUpDays" BETWEEN 1 AND 90 AND "staleDaysAfterInterview" BETWEEN 1 AND 90
@@ -1194,6 +1223,12 @@ ALTER TABLE "UserSettings" ADD CONSTRAINT user_settings_quiet_hours_chk
 -- R0 · Reminder: прив'язка NEXT_ACTION обов'язково до заявки
 ALTER TABLE "Reminder" ADD CONSTRAINT reminder_source_link_chk
   CHECK ("source" <> 'NEXT_ACTION' OR "applicationId" IS NOT NULL);
+-- R0 (M1-01) · Reminder: лічильник snooze невід'ємний
+ALTER TABLE "Reminder" ADD CONSTRAINT reminder_snooze_count_chk CHECK ("snoozeCount" >= 0);
+-- R0 (M1-01, r0_domain_tenancy) · Reminder.channels не NULL (CHECK, а не NOT NULL: Prisma моделює список як nullable → drift)
+ALTER TABLE "Reminder" ADD CONSTRAINT reminder_channels_chk CHECK ("channels" IS NOT NULL);
+-- Job: CHECK «зарплата ⇒ валюта + період» свідомо НЕМАЄ — R2 parseSalary повертає невідому валюту як null (08 §7.1).
+-- Для ручної форми (R0) це правило — у Zod (M1-02/M1-04).
 -- R1 · INTERVIEW_AUTO — до інтерв'ю (окремий CHECK разом із колонкою interviewId)
 ALTER TABLE "Reminder" ADD CONSTRAINT reminder_interview_link_chk
   CHECK ("source" <> 'INTERVIEW_AUTO' OR "interviewId" IS NOT NULL);

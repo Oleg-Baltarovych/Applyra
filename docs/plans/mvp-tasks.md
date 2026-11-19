@@ -206,7 +206,7 @@
 
 **E03 / E04 — дані та платформа**
 
-### M1-01 · R0 domain schema migration
+### M1-01 · R0 domain schema migration ✅
 - FR: FR-APP-02, FR-JOB-04 · Area: db · Est: 2h · Depends: M0-08 · Flow: /feature (`/prisma-migration`)
 - AC:
   - `Job`, `Application`, `ApplicationEvent`, `Reminder`, `ImportSession`, `IdempotencyRecord` за `05-data-model.md` §4.2 — лише моделі/поля без маркера `// R1+` у §4 (зокрема без `UserJob`, G-08); FK/cascade за §5.
@@ -225,6 +225,7 @@
   - `@Idempotent()` (IK required → `400 IDEMPOTENCY_KEY_REQUIRED`); scope (userId, key), `requestHash`, TTL 24 год, запис у транзакції мутації.
   - Replay → той самий status/body + `Idempotent-Replayed: true`; інший хеш → `422 IDEMPOTENCY_KEY_REUSED`; паралельний → чекає/`409 IDEMPOTENCY_IN_PROGRESS`; 5xx не зберігаються.
   - Integration-тести на всі гілки.
+  - Replay лише при збігу `route` + `requestHash` (інакше `422`, тест); детермінований 4xx зберігається після rollback мутації в окремій транзакції; прострочений запис (`expiresAt < now()`) = відсутній — видаляється й перезахоплюється в транзакції claim (purge-on-access; планова чистка — R1 scheduler, 05 §8).
 - Notes: `06-api.md` §4.
 
 **E04 Jobs & Capture**
@@ -236,6 +237,7 @@
   - `POST /jobs` (PRIVATE, MANUAL, paste text як plain text) створює лише PRIVATE `Job`, без `UserJob` (R1, G-08) → дубль `canonicalUrl` → `409 CONFLICT_DUPLICATE_JOB` з `existingJobId`.
   - `GET/PATCH/DELETE /jobs/:id` тільки owner; DELETE знімає `jobId` у заявок, snapshot лишається; повторне → 404.
   - IDOR fixtures для всіх маршрутів (чужа приватна → 404).
+  - Ручна форма: `salaryMin`/`salaryMax` ⇒ `salaryCurrency` + `salaryPeriod` (Zod; у БД CHECK немає — 05 §7.4).
 
 **E03 Applications**
 
@@ -252,6 +254,7 @@
   - Активна заявка на job → `409 CONFLICT_ACTIVE_APPLICATION` + `existingApplicationId`.
   - `GET/PATCH /applications/:id` (PATCH без `status`/`nextAction*`); `DELETE` — hard delete з подіями й reminders.
   - IDOR (включно з create з чужим `jobId` → 404); contract-тести відповідей.
+  - `jobId` перевіряється через `findAccessibleJob` до прив'язки (create і PATCH, якщо змінюється) — FK цього не робить; IDOR-тест.
 
 ### M1-07 · Archive / unarchive / bulk archive
 - FR: FR-APP-11, FR-APP-07, FR-APP-02 · Area: api · Est: 1.5h · Depends: M1-06 · Flow: /feature
@@ -372,6 +375,7 @@
   - `POST /import/csv/preview` (multipart, `@AcceptsMultipart`, Origin check): > 1 MB / > 5 000 рядків → відмова до парсингу; `ImportSession` з 10 рядками, статусами, форматом; нічого не пишеться в заявки.
   - `POST /import/csv/commit` (IK): повтор сесії → replay; рядки з існуючим `importKey` → skipped; звіт «N created, M skipped, K errors»; події `actor = IMPORT`; прострочена сесія → `409 CONFLICT_STATE`.
   - `GET /import/sessions/:id`; IDOR для всіх трьох; `rows = NULL` після commit.
+  - Прострочена сесія при доступі → `rows = NULL` у тій самій операції (purge-on-access; видалення рядка через 7 днів — R1 scheduler, 05 §8); тест.
 
 ### M2-03 · Synchronous export CSV / JSON
 - FR: FR-IMP-05, FR-IMP-06 · Area: api · Est: 1.5h · Depends: M1-10 · Flow: /feature
