@@ -106,11 +106,18 @@ export function redactUrl(url: string): string {
 }
 
 // Any scheme, not only http(s): postgresql://, redis://, s3:// … URLs appear in driver/client error messages.
-const URL_IN_TEXT = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>`)\]]+/gi;
+// `[REDACTED]` (left by the userinfo pass) counts as part of the URL, so its `]` does not end the match early.
+const URL_IN_TEXT = /\b[a-z][a-z0-9+.-]*:\/\/(?:\[REDACTED\]|[^\s"'<>`)\]])+/gi;
 
 /** Every URL (any scheme) inside free text (error messages) through `redactUrl`. */
+// Userinfo up to the last `@` before whitespace or `/`: a separate pass, because a password may contain characters
+// that end the URL match below (`)`, `'`, `]` …) and would leave its tail outside the redacted URL.
+const USERINFO_IN_TEXT = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/]*@/gi;
+
 export function redactUrlsIn(text: string): string {
-  return text.replace(URL_IN_TEXT, (url) => redactUrl(url));
+  return text
+    .replace(USERINFO_IN_TEXT, `$1${REDACTED}@`)
+    .replace(URL_IN_TEXT, (url) => redactUrl(url));
 }
 
 const MAX_SUMMARY = 300;

@@ -36,6 +36,15 @@ describe('redactUrlsIn', () => {
     ).toBe('fetch https://r2.test/k failed; see "https://a.test/t/:redacted".');
   });
 
+  it('redacts credentials even when the password contains URL-terminating punctuation', () => {
+    expect(redactUrlsIn(`failed: postgresql://app:pa)ss'w]rd"x@db:5432/applyra`)).toBe(
+      'failed: postgresql://[REDACTED]@db:5432/applyra',
+    );
+    expect(redactUrlsIn('redis://:p<w>@redis:6379 refused')).toBe(
+      'redis://[REDACTED]@redis:6379 refused',
+    );
+  });
+
   it('redacts connection strings of any scheme (credentials in DB/Redis errors)', () => {
     expect(
       redactUrlsIn(
