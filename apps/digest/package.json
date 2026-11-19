@@ -1,0 +1,20 @@
+{
+  "name": "@applyra/digest",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Daily Telegram digest of relevant vacancies (fetch → normalize → dedup → filter/score → send).",
+  "scripts": {
+    "start": "node src/main.ts",
+    "dry-run": "node src/main.ts --dry-run --source=fake --profile=profile.example.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "eslint": "^10.15.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.12"
+  }
+}

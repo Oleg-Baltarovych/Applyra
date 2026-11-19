@@ -1,0 +1,66 @@
+# Daily vacancy digest → Telegram (docs/spec.md). No hosting, no DB: the sent-ids state file lives in the
+# Actions cache. Cache entries are immutable, so every run saves a new key (`digest-state-<run id>`) and the
+# next run restores the newest one by prefix. Unused entries are evicted after 7 days → a week without runs
+# forgets the state (worst case: already-sent vacancies from the last 30 days are sent once more).
+name: Digest
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # 06:00 UTC = 08:00 (winter) / 09:00 (summer) Kyiv. Runs only from the default branch.
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Print the digest to the log instead of sending it (state unchanged)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # One digest at a time; never cancel a run that may already have sent messages.
+  group: digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    name: digest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Environment `digest` holds TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID and is restricted to main,
+    # so a workflow run from another branch never sees the secrets.
+    environment: digest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+
+      - name: Restore state
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/digest/.state
+          key: digest-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: digest-state-
+
+      # Secrets reach the process via env only; the app never prints them (telegram.ts strips the URL from errors).
+      - name: Run digest
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DIGEST_SOURCES: ${{ vars.DIGEST_SOURCES }}
+          DRY_RUN: ${{ inputs.dry-run && 'true' || 'false' }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            pnpm --filter @applyra/digest start -- --dry-run
+          else
+            pnpm --filter @applyra/digest start
+          fi
+
+      # Also after a failed send: run() persists what was delivered before the failure.
+      - name: Save state
+        if: always() && hashFiles('apps/digest/.state/sent.json') != ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/digest/.state
+          key: digest-state-${{ github.run_id }}-${{ github.run_attempt }}

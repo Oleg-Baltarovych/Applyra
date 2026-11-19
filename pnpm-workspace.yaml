@@ -1,7 +1,6 @@
 packages:
   - apps/*
   - packages/*
-  - e2e
 
 # Supply-chain control (deliberate): never install a version published less than 24 h ago (minutes; = pnpm 11 default).
 # Setting it explicitly also makes minimumReleaseAgeStrict default to true: a too-fresh version fails resolution
@@ -10,35 +9,19 @@ packages:
 minimumReleaseAge: 1440
 
 # pnpm comes from a global `npm i -g pnpm` (Node 25+ has no corepack); a different global version self-switches to
-# `packageManager` (downloads it). Explicit so nobody flips it to `error`, which would force the exact pnpm globally. ADR 024.
+# `packageManager` (downloads it). Explicit so nobody flips it to `error`, which would force the exact pnpm globally.
 pmOnFail: download
 
-# Peer exceptions (each: why it is safe + when to drop).
-peerDependencyRules:
-  allowedVersions:
-    # @vitest/mocker 4.1 declares an OPTIONAL peer msw ^2 for Vitest browser-mode mocking, which we do not use; apps/web
-    # tests run MSW 3 via msw/node (M0-12). Drop once Vitest's mocker accepts msw 3.
-    '@vitest/mocker>msw': '3'
-
-# pnpm 11: dependency build scripts are denied unless approved here (`onlyBuiltDependencies` was removed in v11).
-# strictDepBuilds (default true) fails `pnpm install` on any unreviewed build script.
+# pnpm 11: dependency build scripts are denied unless approved here; strictDepBuilds (default true) fails
+# `pnpm install` on any unreviewed build script.
 allowBuilds:
-  esbuild: true # postinstall verifies the platform binary; used by tsup (packages/contracts)
-  # Testcontainers (M0-07a, apps/api dev only) — all three denied, nothing they ship needs the build:
-  cpu-features: false # optional native CPU detection for ssh2 (node-gyp); ssh2 works without it
-  ssh2: false # install.js only tries to compile an optional crypto binding (JS fallback); SSH Docker hosts only
-  protobufjs: false # postinstall only prints a version-scheme warning (dockerode → @grpc/proto-loader)
-  # Prisma 7 (M0-08, apps/api):
-  prisma: false # preinstall only prints an unsupported-Node-version warning (engines field + CI pin cover it)
-  '@prisma/engines': false # postinstall pre-downloads the schema engine; the CLI downloads it lazily on first use
-  # wrangler (M0-14, root dev; deploy-prod.yml `pages deploy` only):
-  workerd: false # postinstall only links/validates the local Workers runtime binary (wrangler dev); `pages deploy` never runs it
+  esbuild: true # postinstall verifies the platform binary; pulled by vite (vitest)
 
-# Temporary `pnpm audit` exceptions (policy: docs/CONTEXT.md §6, M0-05). Each: GHSA id + reason + expiry; delete on expiry
-# or when a fix lands. pnpm does not expire these itself (and ignores the GHSA for every version), so the date below is
-# the contract; mirror entry in osv-scanner.toml enforces it via `effectiveUntil`.
+# Temporary `pnpm audit` exceptions (policy: docs/CONTEXT.md "Supply chain"). Each: GHSA id + reason + expiry; delete
+# on expiry or when a fix lands. pnpm does not expire these itself, so the date below is the contract; the mirror
+# entry in osv-scanner.toml enforces it via `effectiveUntil`.
 auditConfig:
   ignoreGhsas:
-    # picomatch <= 4.0.7 ReDoS (HIGH), no patched release (checked 2026-11-18). Dev/test tooling only (eslint plugins,
-    # vite/vitest, tsup); globs from our own config, never user input. Expires 2026-12-15. User decision 2026-11-18.
+    # picomatch <= 4.0.7 ReDoS (HIGH), no patched release (checked 2026-11-19). Dev tooling only (typescript-eslint via
+    # tinyglobby, vite/vitest); globs from our own config, never user input. Expires 2026-12-15.
     - GHSA-fc5q-39xc-vjpf

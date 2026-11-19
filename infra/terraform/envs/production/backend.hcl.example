@@ -1,5 +1,0 @@
-# Copy to backend.hcl (gitignored) and run `terraform init -backend-config=backend.hcl` (when hosting, M0-13).
-# Credentials: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY of an R2 API token limited to the state bucket.
-endpoints = {
-  s3 = "https://<cloudflare-account-id>.r2.cloudflarestorage.com"
-}

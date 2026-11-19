@@ -2,9 +2,6 @@ pnpm-lock.yaml
 dist/
 coverage/
 .turbo/
+.state/
 docs/
 .claude/
-skills-lock.json
-playwright-report/
-test-results/
-apps/api/src/platform/prisma/generated/

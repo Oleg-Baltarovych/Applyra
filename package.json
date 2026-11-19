@@ -7,25 +7,17 @@
     "node": "^26.13.1"
   },
   "scripts": {
-    "dev": "turbo run dev",
-    "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "test:integration": "turbo run test:integration",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "db:migrate": "pnpm --filter @applyra/api db:migrate",
-    "db:migration": "pnpm --filter @applyra/api db:migration",
-    "db:backup": "node apps/api/scripts/db-backup.mjs",
-    "db:restore": "node apps/api/scripts/db-restore.mjs"
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "@applyra/config": "workspace:*",
     "eslint": "^10.15.0",
     "prettier": "^3.10.1",
     "turbo": "^2.11.11",
-    "typescript": "~6.0.3",
-    "wrangler": "4.162.0"
+    "typescript": "~6.0.3"
   }
 }

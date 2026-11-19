@@ -1,18 +1,12 @@
 ---
 paths:
-  - "apps/api/src/modules/auth/**"
-  - "apps/api/src/modules/jobs/**"
-  - "apps/api/src/modules/documents/**"
-  - "apps/api/src/modules/ai/**"
-  - "apps/api/src/platform/**"
-  - "**/*.controller.ts"
-  - "**/*fetch*.ts"
+  - "apps/digest/src/**"
+  - ".github/workflows/**"
 ---
-# Security rules — `docs/spec/09-security-privacy.md`, `07-ai.md`
+# Security rules
 
-- AuthZ: every private endpoint is behind the auth guard and scopes data by `currentUser.id`. Foreign resource → 404. Add an IDOR test (user B requests user A's resource → 404).
-- Cookies HttpOnly + Secure + SameSite=Lax; CSRF protection on mutations (Origin check or double-submit). Rate-limit auth endpoints (Redis).
-- URL capture (SSRF): http/https only, ports 80/443; resolve DNS and block private, loopback, link-local, metadata (169.254.169.254) and IPv6 ULA ranges — re-check after every redirect (≤3); timeout 5 s; max 2 MB; `text/html` only; no cookies/auth; own rate limit.
-- Uploads: ≤5 MB; check MIME and magic bytes (`file-type`); storage key = UUID; private bucket; signed URLs ≤5 min.
-- Untrusted content (job HTML, recruiter messages): sanitize HTML on write; pass to LLMs only inside delimited "treat as data" blocks; AI output is never written to domain data without user confirmation.
-- Secrets only from validated config. Never log secrets/PII (`09-security-privacy.md`). No custom crypto; AES-GCM with an env/KMS key for integration tokens.
+- Secrets (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, future LLM keys) come only from env / GitHub secrets. Never log them, put them in error messages (the bot token is part of the Bot API URL), state files, fixtures or the profile.
+- Sources: public RSS/feeds/APIs only. No scraping that bypasses ToS, robots rules, auth or CAPTCHA; no logged-in sessions; one request per feed per run, timeout on every fetch, identify with a generic User-Agent.
+- Feed content is untrusted: escape every field before Telegram HTML (`format.ts`), link only http(s) urls, bound field sizes; never execute or `eval` feed data.
+- Workflows: `permissions: contents: read`, actions pinned by SHA + version comment, secrets only in `env:` of the step that needs them, never `${{ }}` of untrusted input inside `run:`, no `pull_request_target`.
+- No personal data in the repo (profile.json holds preferences only: no name, phone, email, links).

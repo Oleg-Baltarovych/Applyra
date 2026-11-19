@@ -7,9 +7,7 @@ argument-hint: "[base ref, default: main]"
 2. Route — launch the matching agents **in parallel, in one message**, each with only its list of files:
    | Touched paths | Agent |
    |---|---|
-   | `apps/api/**`, `packages/contracts/**`, `**/*.repository.ts`, `prisma/**` | `code-reviewer` |
-   | controllers, `modules/{auth,jobs,documents,ai}/**`, `apps/api/src/platform/**`, files with `fetch`/upload/sanitize, `.github/workflows/**`, Docker/Caddy configs | `security-reviewer` |
-   | `apps/web/**` | `ui-reviewer` |
-   | test files only | `code-reviewer` (test-quality focus) |
+   | `apps/**`, `packages/**` | `code-reviewer` |
+   | `apps/digest/src/{sources,telegram,main,format}*`, `.github/workflows/**`, `.github/actions/**` | `security-reviewer` |
    Skip any agent with no files. Docs-only changes: no agents — just check `docs/CONTEXT.md` is consistent.
 3. Merge the findings into one list ordered by severity, deduplicated, with `file:line`. End with a combined verdict: ready / fix first (list) / rework.

@@ -6,50 +6,8 @@
     "packages/config/tsconfig.base.json"
   ],
   "tasks": {
-    "db:generate": {
-      "inputs": ["prisma/schema.prisma", "prisma.config.ts"],
-      "outputs": ["src/platform/prisma/generated/**"]
-    },
-    "build": {
-      "dependsOn": ["^build", "db:generate"],
-      "outputs": ["dist/**"]
-    },
-    "@applyra/web#build": {
-      "dependsOn": ["^build"],
-      "outputs": ["dist/**"],
-      "env": ["VITE_*"]
-    },
-    "typecheck": {
-      "dependsOn": ["^build", "db:generate"]
-    },
-    "lint": {
-      "dependsOn": ["db:generate"]
-    },
-    "test": {
-      "dependsOn": ["^build", "db:generate"]
-    },
-    "test:integration": {
-      "dependsOn": ["^build", "db:generate"],
-      "cache": false,
-      "env": [],
-      "passThroughEnv": [
-        "DOCKER_HOST",
-        "DOCKER_CONTEXT",
-        "DOCKER_CONFIG",
-        "DOCKER_CERT_PATH",
-        "DOCKER_TLS_VERIFY",
-        "TESTCONTAINERS_RYUK_DISABLED",
-        "TESTCONTAINERS_HOST_OVERRIDE",
-        "TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE",
-        "RYUK_CONTAINER_IMAGE",
-        "HOME",
-        "USERPROFILE"
-      ]
-    },
-    "dev": {
-      "dependsOn": ["^build", "db:generate"],
-      "cache": false,
-      "persistent": true
-    }
+    "lint": {},
+    "typecheck": {},
+    "test": {}
   }
 }

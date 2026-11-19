@@ -1,0 +1,21 @@
+{
+  "titleKeywords": ["full-stack|fullstack", "backend|back-end", "frontend|front-end"],
+  "required": ["javascript|js", "typescript|ts"],
+  "bonus": ["react", "postgresql|postgres", "docker"],
+  "excludeStacks": ["php", "java", "python"],
+  "excludeTitles": ["head of", "engineering manager"],
+  "level": {
+    "exclude": ["junior|jr", "intern|internship", "trainee", "стажер|стажист", "джуніор|джун"],
+    "allow": ["senior|sr|сеньйор|сеніор", "middle|mid|мідл"],
+    "minExperienceYears": 2
+  },
+  "remote": ["remote", "hybrid"],
+  "remoteUnknown": "keep",
+  "languages": ["uk", "en"],
+  "salary": {
+    "minUsdMonth": null,
+    "uahPerUsd": 41,
+    "uahTolerance": 0.1
+  },
+  "maxItems": 20
+}

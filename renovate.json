@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Applyra dependency updates (spec 09 §8: weekly, grouped, minimumReleaseAge 3 days, Actions + image digests). Majors wait for approval on the Dependency Dashboard (spec 04 §7.1: majors are pinned on purpose).",
+  "description": "Applyra dependency updates: weekly, grouped, minimumReleaseAge 3 days, Actions pinned by digest. Majors wait for approval on the Dependency Dashboard.",
   "extends": [
     "config:recommended",
     ":dependencyDashboard",
@@ -26,7 +26,7 @@
   },
   "packageRules": [
     {
-      "description": "Majors need an explicit decision (ADR / spec 04 §7.1), never an automatic PR.",
+      "description": "Majors need an explicit decision, never an automatic PR.",
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true
     },
@@ -42,38 +42,12 @@
       "groupName": "github actions"
     },
     {
-      "description": "Container images (compose, CI docker run, Testcontainers) in one PR; tag + digest move together.",
+      "description": "CI tool images (gitleaks, osv-scanner, semgrep, actionlint) in one PR; tag + digest move together.",
       "matchDatasources": ["docker"],
-      "groupName": "container images"
+      "groupName": "ci images"
     },
     {
-      "description": "Ryuk image tag is tied to the testcontainers release (ci.yml RYUK_CONTAINER_IMAGE): one PR for both.",
-      "matchDepNames": [
-        "testcontainers",
-        "@testcontainers/postgresql",
-        "@testcontainers/valkey",
-        "testcontainers/ryuk"
-      ],
-      "groupName": "testcontainers"
-    },
-    {
-      "description": "Terraform (M0-17): providers + required_version (built-in terraform manager, also updates .terraform.lock.hcl) in one PR.",
-      "matchManagers": ["terraform"],
-      "groupName": "terraform"
-    },
-    {
-      "description": "The CI image hashicorp/terraform (regex manager) moves with required_version: same group, after \"container images\" so it wins.",
-      "matchDepNames": ["hashicorp/terraform"],
-      "groupName": "terraform"
-    },
-    {
-      "description": "Reusable modules keep floor constraints (~> X.Y); only the envs/* root pins move.",
-      "matchManagers": ["terraform"],
-      "matchFileNames": ["infra/terraform/modules/**"],
-      "rangeStrategy": "replace"
-    },
-    {
-      "description": "Node runtime follows LTS lines only (ADR 024): even majors, via approval like any major.",
+      "description": "Node runtime follows LTS lines only: even majors, via approval like any major.",
       "matchDepNames": ["node", "@types/node"],
       "allowedVersions": "/^v?\\d*[02468]\\./"
     }
@@ -81,11 +55,8 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Images referenced as `<image>:<tag>@sha256:<digest>` outside compose: `docker run` / env in workflows and the Testcontainers images module.",
-      "managerFilePatterns": [
-        "/^\\.github/workflows/[^/]+\\.ya?ml$/",
-        "/^apps/api/test/support/images\\.ts$/"
-      ],
+      "description": "Images referenced as `<image>:<tag>@sha256:<digest>` in workflow `docker run` lines.",
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
       "matchStrings": [
         "(?<depName>(?:[a-z0-9.-]+/)*[a-z0-9._-]+):(?<currentValue>v?[0-9][\\w.-]*)@(?<currentDigest>sha256:[a-f0-9]{64})"
       ],
