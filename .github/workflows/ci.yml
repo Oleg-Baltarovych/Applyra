@@ -286,6 +286,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2 # "arm64 needed?" diffs the PR merge commit against its first parent
       - name: hadolint (Dockerfile + shellcheck of RUN)
         run: |
           docker run --rm -i --cap-drop ALL --security-opt no-new-privileges \
@@ -344,7 +345,25 @@ jobs:
           echo "api image: user $user, Node $version"
       - name: smoke (migrate, health, SPA headers via Caddy)
         run: bash infra/compose/smoke.sh "$RUNNER_TEMP/prod.env"
+      # arm64 runs under QEMU (~25 min on a cold cache). On PRs it runs only when the image inputs change
+      # (Dockerfile/bake/Caddy, lockfile/manifests, .dockerignore, this workflow); push to main and manual runs
+      # always build it, so main keeps proving both architectures. A PR's merge commit has the base tip as
+      # its first parent (checkout fetch-depth: 2).
+      - name: arm64 needed?
+        id: arm64
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          changed="$(git diff --name-only HEAD^1 HEAD)"
+          if printf '%s\n' "$changed" | grep -Eq '^(infra/docker/|infra/caddy/|\.dockerignore$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|apps/[^/]+/package\.json$|packages/[^/]+/package\.json$|\.github/workflows/ci\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "arm64 skipped: no image inputs changed in this PR (runs on push to main)"
+          fi
       - name: bake linux/amd64 + linux/arm64 (cache only, no push)
+        if: steps.arm64.outputs.run == 'true'
         uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
         with:
           source: .
@@ -354,5 +373,3 @@ jobs:
             *.output=type=cacheonly
             *.cache-from=type=gha,scope=deploy-ready
             *.cache-to=type=gha,mode=max,scope=deploy-ready
-
-  # TODO(M0-17): separate `terraform.yml` (PRs touching infra/terraform/**): fmt -check, init -backend=false, validate.
