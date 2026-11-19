@@ -176,12 +176,12 @@
 - AC:
   - Dockerfiles: `apps/api` — один multi-stage image, non-root, без `pnpm`/`npm` у runtime, base pinned digest (намічено `node:26-trixie-slim@sha256`, ADR 024; distroless Node 26 — оцінити тут), build stage `npm i -g pnpm@<packageManager>`, entrypoints `main` / `worker` / `migrate`; `caddy` — reverse proxy + статика `apps/web/dist` з headers ідентичними `_headers` (`09-security-privacy.md` §9.1; snapshot-тест на збіг значень).
   - `ci.yml` п. 4: buildx `linux/amd64,linux/arm64` (на PR без push; GHCR push — M0-14b), `docker compose -f infra/compose/compose.yml -f infra/compose/compose.prod.yml config -q`, actionlint на `.github/workflows/*`.
-  - `compose.prod.yml`: caddy, api, `migrate` (one-off: `migrate deploy` + `REVOKE … ON "_prisma_migrations" FROM applyra_app;` під `applyra_maintenance`, M0-08), postgres, `redis` (`valkey/valkey:9`); мережі `edge`/`internal`/`outbound`; без backup-cron (M0-15b).
+  - `compose.prod.yml`: caddy, api, `migrate` (one-off: `migrate deploy` + `REVOKE … ON "_prisma_migrations" FROM applyra_app;` під `applyra_maintenance`, M0-08), postgres, `redis` (`valkey/valkey:9`); мережі `edge`/`internal` (api egress через `edge`; окрема мережа для worker — M3-01); без backup-cron (M0-15b).
   - `deploy-prod.yml` — тільки `workflow_dispatch`, Environment `production`, кроки `12-infra-ops.md` §8.2 (GHCR digest → `.env` з secrets → migrate → restart api → `wrangler pages deploy` з `_headers` → health-check); у R0 не запускається. `apps/web/public/_headers` з §9.1.
   - Локальна перевірка: `docker compose -f … -f compose.prod.yml up` → `https://app.applyra.localhost` / `https://api.applyra.localhost` (Caddy internal CA; `*.localhost` під спільним `applyra.localhost`, щоб `__Host-` cookies були same-site) → demo sign-in (після M2-12) / `/health/ready` 200; кроки в `infra/README.md`.
 - Notes: результат spike CSP на Pages custom domain — M0-14b; до того Caddy static — робочий шлях.
 
-### M0-15 · Local backup script + Sentry api (optional DSN)
+### M0-15 · Local backup script + Sentry api (optional DSN) ✅
 - FR: — · Area: infra, obs · Est: 1h · Depends: M0-04, M0-09 · Flow: direct
 - AC:
   - `pnpm db:backup`: `pg_dump -Fc` (роль `backup`, через `docker compose exec`) у `./backups/` (gitignored), ротація — останні 14 файлів; `pnpm db:restore <file>` — в ізольований контейнер `postgres:18` (`12-infra-ops.md` §5).

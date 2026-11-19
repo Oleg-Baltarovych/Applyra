@@ -63,7 +63,8 @@ services:
   api:
     <<: *hardening
     image: ${API_IMAGE:-applyra/api:local}
-    # Default command dist/main.js. Worker (M3-01): same image, `command: ["dist/worker.js"]`, networks internal +
+    # Default command `--import=./dist/instrument.js dist/main.js` (Sentry preload). Worker (M3-01): same image,
+    # `command: ["--import=./dist/instrument.js", "dist/worker.js"]`, networks internal +
     # a new `outbound` network, never edge.
     environment:
       NODE_ENV: production

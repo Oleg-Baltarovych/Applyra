@@ -28,7 +28,8 @@ Better Auth · Vitest, Supertest, Testcontainers, Playwright, MSW.
 - `pnpm --filter @applyra/config test` — boundary-rule test (lints `packages/config/test/fixtures/boundaries/`)
 - `pnpm --filter @applyra/e2e e2e` — Playwright; not part of `pnpm test`
 - `cp .env.example .env` then `docker compose up -d` (repo root; root `compose.yaml` includes `infra/compose/compose.yml`) — postgres, redis (Valkey), minio, mailpit on 127.0.0.1. Agents can't touch `.env`: use `docker compose --env-file .env.example …`. `up --wait` exits 1 because the one-shot `minio-init` exits — use `ps`
-- `pnpm --filter @applyra/api dev` — tsc --watch + node --watch, loads the root env file (`--env-file-if-exists`; process env wins). `start` = plain `node dist/main.js` (process env only, production)
+- `pnpm --filter @applyra/api dev` — tsc --watch + node --watch, loads the root env file (`--env-file-if-exists`; process env wins). `start` = `node --import=./dist/instrument.js dist/main.js` (Sentry preload, no-op without `SENTRY_DSN`; process env only, production)
+- `pnpm db:backup` (pg_dump as role `backup` via `docker compose exec` → `./backups/`, keeps 14) · `pnpm db:restore <file>` (throwaway `--network none` postgres, verify, remove). Agents: prefix `COMPOSE_ENV_FILES=.env.example APPLYRA_BACKUP_PASSWORD=<example value>`
 - `pnpm db:migrate` — the ONLY way to apply migrations (migrate deploy as `applyra_maintenance` + `_prisma_migrations` REVOKE + privilege check); never run bare `prisma migrate deploy`. `pnpm db:migration <name>` — new migration via `--create-only` against the shadow DB (see `/prisma-migration`)
 
 ## Non-negotiable rules

@@ -39,7 +39,7 @@ applying and losing track of where and when they applied. Keeps 1–3 CV version
 | Release | Name | One line |
 |---|---|---|
 | R0 | Tracker for myself | Google sign-in (allowlist), applications CRM (Kanban/table/detail/timeline, undo), manual job form + paste text, next actions + Today/Overdue (computed on read, no worker), CSV import/export, security headers, demo sign-in without Google (local/Codespaces), deploy-ready but not hosted (ADR 022: production images, `compose.prod.yml`, Terraform validated in CI; author uses it locally with a local backup script) |
-| R1 | Public MVP / portfolio-ready | Outbox + worker, URL capture (JSON-LD + `extract-job` LLM with budgets), stale hints, contacts, interviews, profile & skills, CV documents, job search (no salary filter), dashboard, base analytics, notification centre + email reminders, email+password auth, ephemeral demo restrictions + purge, Prometheus/Grafana (local profile); hosting only "when hosting" (ADR 022) |
+| R1 | R1-lite — portfolio-ready (ADR 025) | Worker (no outbox), URL capture (SSRF-safe fetcher, JSON-LD + `extract-job` LLM with budgets, one provider), AuditLog, minimal career profile & skills, explainable matching-lite (computed on read), Playwright E2E, a11y pass, README; the rest of the original R1 is deferred to "Later — after R1-lite"; hosting only "when hosting" (ADR 022) |
 | R2 | Discover & Match | Public-API ingestion (Greenhouse, Lever, Ashby, DOU RSS), dedup, salary normalization (NBU rates) + salary filter, deterministic explainable matching, saved searches, OpenTelemetry |
 | R3 | AI Assistant | Analyze vacancy, CV tailoring suggestions, message drafts, recruiter replies, interview prep, CV parsing, embeddings, evals |
 

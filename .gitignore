@@ -17,6 +17,9 @@ coverage/
 .env.*
 !.env.example
 
+# Local database dumps (pnpm db:backup, M0-15): real data, never committed
+backups/
+
 # Logs
 *.log
 npm-debug.log*

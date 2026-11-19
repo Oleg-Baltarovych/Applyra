@@ -16,7 +16,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:migrate": "pnpm --filter @applyra/api db:migrate",
-    "db:migration": "pnpm --filter @applyra/api db:migration"
+    "db:migration": "pnpm --filter @applyra/api db:migration",
+    "db:backup": "node apps/api/scripts/db-backup.mjs",
+    "db:restore": "node apps/api/scripts/db-restore.mjs"
   },
   "devDependencies": {
     "@applyra/config": "workspace:*",

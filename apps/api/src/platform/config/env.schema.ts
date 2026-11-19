@@ -67,13 +67,19 @@ const emailList = z
   .pipe(z.array(z.email({ error: 'must be a comma-separated list of emails' })))
   .transform((list): readonly string[] => Object.freeze(list));
 
+/** Shared with sentry-env.ts (read before the app starts, M0-15). */
+export const nodeEnv = nonEmpty(
+  z.enum(['development', 'test', 'production'], {
+    error: reason('must be development, test or production'),
+  }),
+);
+export const sentryDsn = nonEmpty(
+  z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
+);
+
 export const envSchema = z
   .object({
-    NODE_ENV: nonEmpty(
-      z.enum(['development', 'test', 'production'], {
-        error: reason('must be development, test or production'),
-      }),
-    ),
+    NODE_ENV: nodeEnv,
     PORT: port,
     /**
      * 0 = the client IP is the socket address (direct exposure, local dev); behind Caddy (M0-14) = 1. Feeds req.ip →
@@ -109,9 +115,7 @@ export const envSchema = z
     GOOGLE_CLIENT_ID: optionalString,
     GOOGLE_CLIENT_SECRET: optionalString,
     /** Sentry (M0-15); unset = disabled (local default, 12 §1). */
-    SENTRY_DSN: nonEmpty(
-      z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
-    ),
+    SENTRY_DSN: sentryDsn,
     /** Ephemeral demo users (ADR 014; endpoint in M2-12). Strict `true`/`false`; unset = false. */
     DEMO_ENABLED: nonEmpty(
       z.enum(['true', 'false'], { error: 'must be true or false' }).optional(),

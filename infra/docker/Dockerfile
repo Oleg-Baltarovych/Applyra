@@ -5,7 +5,7 @@
 #   build      ($BUILDPLATFORM) full frozen install, contracts + api build (tsc, prisma generate); JS is arch-independent
 #   web-build  ($BUILDPLATFORM) Vite build of the SPA with public VITE_* build args
 #   prod-deps  ($TARGETPLATFORM, the only stage under QEMU) prod-only install of @applyra/api + its schema engine
-#   api        distroless Node runtime: dist/main.js (default) · scripts/db-migrate.mjs (compose `migrate`)
+#   api        distroless Node runtime: dist/main.js (default, preloads dist/instrument.js) · scripts/db-migrate.mjs (compose `migrate`)
 #              · dist/worker.js from M3-01 (compose worker service, `command: ["dist/worker.js"]`)
 #   caddy      Caddy + SPA dist (fallback / local prod stack; prod SPA = Cloudflare Pages, ADR 011)
 # No `pnpm deploy`: pnpm 11 non-legacy deploy needs injectWorkspacePackages (breaks dev symlinks) and `--legacy`
@@ -105,7 +105,8 @@ EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \
   CMD ["/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
 ENTRYPOINT ["/nodejs/bin/node"]
-CMD ["dist/main.js"]
+# --import: Sentry is initialised (only when SENTRY_DSN is set) before the app loads, as ESM requires (M0-15).
+CMD ["--import=./dist/instrument.js", "dist/main.js"]
 
 # ── caddy (SPA + reverse proxy) ───────────────────────────────────────────────────────────────────────────────────
 # Caddy 2.11.9 (released 2026-11-05; alpine tag pushed 2026-11-13).
