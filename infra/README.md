@@ -9,6 +9,7 @@
 | `docker/Dockerfile` + `docker/docker-bake.hcl` | Production images: `api` (distroless Node, non-root 65532, also runs migrations) and `caddy` (SPA + reverse proxy).                                                                        |
 | `caddy/Caddyfile`                              | Edge config, same file locally and in production.                                                                                                                                          |
 | `postgres/`                                    | Role bootstrap script (`init/10-roles.sql`), see its README.                                                                                                                               |
+| `terraform/`                                   | Terraform (deploy-ready, never applied in R0/R1): `modules/hcloud-host` (VPS, firewall, volume, cloud-init), `modules/cloudflare-edge` (DNS, Pages, R2), `envs/production`.                |
 
 Specs: `docs/spec/12-infra-ops.md` (environments, networks, migrations, CI/CD), `docs/spec/09-security-privacy.md` §9.1
 (SPA headers), §14 (images). Production deploy: `.github/workflows/deploy-prod.yml` (dispatch-only, inert until hosting,
@@ -58,6 +59,77 @@ Cleanup (deletes the prod-stack volumes only):
 $C --profile migrate down -v
 rm .env.prod.local caddy-root.crt
 ```
+
+## Deploy-ready / if hosting later
+
+Nothing is hosted in R0/R1 (ADR 022). The repo stays deploy-ready: images, `compose.prod.yml`, `deploy-prod.yml` and
+Terraform are checked in CI (`terraform.yml`: `fmt -check`, `init -backend=false` + `validate`, no credentials, no
+plan) but never applied. Provisioning is M0-13 (`docs/plans/mvp-tasks.md` → `Later — when hosting`).
+
+Variants (`docs/spec/12-infra-ops.md` §2.1, data as of 2026-11 — re-check before choosing):
+
+| Variant                                 | Fit                                                                                                                                                                                                                     |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (a) Oracle Cloud Always Free, Ampere A1 | 2 OCPU / 12 GB per tenancy, card at sign-up, A1 capacity often short, idle instances may be reclaimed. Same Compose stack unchanged (arm64 images). Terraform here targets Hetzner: needs an `oci` host module.         |
+| (b) PaaS free tiers                     | Poor fit: Render free sleeps after ~15 min and deletes free Postgres after 30 days; Railway / Fly.io have no permanent free tier; Neon free Postgres fits the DB, but the R1 worker needs an always-on process + Redis. |
+| SPA                                     | Cloudflare Pages free — fits every variant (`modules/cloudflare-edge`).                                                                                                                                                 |
+| (c) Paid fallback (ADR 011, this code)  | One Hetzner VPS (~€5–10/month; `server_type` = `cax*` ARM or `cx*` x86), Cloudflare DNS/Pages/R2; staging optional (`envs/staging` = copy of `envs/production` with its own domain).                                    |
+
+What `envs/production` creates: Hetzner server + firewall (inbound 80/443 from Cloudflare ranges only, via the
+provider's `cloudflare_ip_ranges`; 22 closed) + ext4 volume (Docker data-root `/srv/data`); cloud-init installs Docker,
+Tailscale (`--ssh`, `--advertise-tags=tag:prod`, single-use auth key) and ufw (80/443 + `tailscale0`), blocks the
+metadata service (169.254.169.254) for containers (DOCKER-USER, re-applied on every Docker start), drops cloud-init's
+copies of `user_data` and disables cloud-init after the first boot, creates the `deploy` user and `/opt/applyra`.
+Cloudflare zone: SSL Full (strict), min TLS 1.2, Always Use HTTPS, Authenticated Origin Pulls (zone-level).
+Cloudflare: proxied `api.`/apex A+AAAA → VPS, `app.` CNAME → Pages project + custom domain, R2 bucket
+`applyra-prod-backups` (lifecycle: delete after 14 days, abort multipart after 1 day). State: S3 backend on R2
+(`use_lockfile = true`).
+
+Apply order (M0-13):
+
+1. Owner prerequisites: domain zone in Cloudflare; Hetzner project + API token; Cloudflare API token (Zone DNS edit
+   for the zone, Zone Settings edit, SSL and Certificates edit, Pages edit, R2 edit); an ed25519 deploy key pair
+   (private half → `DEPLOY_SSH_KEY`). Tailnet policy: `tagOwners` for `tag:prod` (owner only) and a CI tag (e.g.
+   `tag:ci`, the deploy OAuth client); ACLs allow only the owner and `tag:ci` → `tag:prod:22` (plus Tailscale SSH rule
+   for the owner); nothing else reaches the host. Auth key: **single-use, pre-authorized, tagged `tag:prod`, expiry
+   ≤ 1 day**. Option for M0-13: a Tailscale OAuth client (scope `auth_keys`, tag `tag:prod`) minting the key at apply
+   time instead of a hand-made key.
+2. State bucket by hand (chicken-and-egg): private R2 bucket `applyra-tfstate` (no public access / r2.dev URL,
+   object versioning on if R2 offers it, else periodic copies) + an R2 S3 token scoped to that bucket only; the
+   state holds `user_data` and IPs, so treat it as a secret. Check that R2 still supports the conditional writes
+   `use_lockfile` relies on. Backup token (M0-15b): Object Read & Write on `applyra-prod-backups` only.
+3. `cd infra/terraform/envs/production`, copy `backend.hcl.example` → `backend.hcl` and `terraform.tfvars.example` →
+   `terraform.tfvars` (both gitignored); secrets as `TF_VAR_hcloud_token`, `TF_VAR_cloudflare_api_token`,
+   `TF_VAR_tailscale_auth_key`; `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` = the state token.
+4. `terraform init -backend-config=backend.hcl` → `terraform plan -out=prod.tfplan` → review (firewall sources, DNS
+   proxied) → `terraform apply prod.tfplan`.
+5. Check the host joined the tailnet; take its SSH host key (`ssh-keyscan` over the tailnet) → `DEPLOY_SSH_KNOWN_HOSTS`;
+   outputs → Environment vars (`DEPLOY_HOST`, `APP_DOMAIN`, `API_DOMAIN`, `ROOT_DOMAIN`, `CF_PAGES_PROJECT`).
+6. TLS at the origin (M0-14b, before `HOSTING_ENABLED=true`): the zone runs Full (strict) + Always Use HTTPS, so
+   ACME HTTP-01 is redirected and TLS-ALPN-01 is terminated by the proxy → Caddy uses **DNS-01**
+   (`caddy-dns/cloudflare` in the caddy image, token: Zone DNS edit on this zone only, as an Environment secret).
+   **Hard gate:** Caddy `client_auth { mode require_and_verify; trust_pool file <Cloudflare origin-pull CA> }` on the
+   api and apex sites — Authenticated Origin Pulls is enabled at the zone but protects nothing until Caddy
+   requires the client certificate. `trusted_proxies` (Cloudflare ranges) and `CF-Connecting-IP` as client IP also
+   stay in M0-14b.
+7. Images (M0-14b) → `deploy-prod.yml` with `HOSTING_ENABLED=true` (header of that workflow lists all vars/secrets).
+
+The Tailscale key and the rest of `user_data` stay in Hetzner server metadata (readable from the host — hence the
+DOCKER-USER block) and in the state: a single-use, short-lived key is useless once consumed; the state bucket is
+secret. The `deploy` user is in the `docker` group = root-equivalent on the host; it is reachable only over the
+tailnet (ACL above) with the deploy key. Changing `user_data` never replaces the server (`ignore_changes`); rebuild with
+`terraform apply -replace=module.host.hcloud_server.host`. Volume and R2 buckets have `prevent_destroy`.
+
+Local check (same image as CI):
+
+```bash
+TF=hashicorp/terraform:1.17.2   # digest in .github/workflows/terraform.yml
+MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W)/infra/terraform:/tf" -w /tf "$TF" fmt -check -recursive
+MSYS_NO_PATHCONV=1 docker run --rm -e TF_DATA_DIR=/tmp/tf -v "$(pwd -W)/infra/terraform:/tf:ro" -w /tf/envs/production   --entrypoint sh "$TF" -c 'terraform init -backend=false -lockfile=readonly && terraform validate'
+# after a provider bump (writable mount): terraform providers lock -platform=linux_amd64 -platform=linux_arm64 #   -platform=darwin_amd64 -platform=darwin_arm64 -platform=windows_amd64
+```
+
+(`$(pwd -W)` / `MSYS_NO_PATHCONV=1` are for Git Bash on Windows; use `$PWD` elsewhere.)
 
 ## Notes
 

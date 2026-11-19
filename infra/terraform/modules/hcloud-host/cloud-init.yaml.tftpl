@@ -1,0 +1,134 @@
+#cloud-config
+# First-boot bootstrap (rendered by Terraform templatefile; `$${` / `%%{` escape literal shell syntax).
+# Installs Docker (data-root on the Hetzner volume), Tailscale (SSH + admin access only via the tailnet) and a host
+# firewall (ufw: 80/443 + everything on tailscale0; sshd unreachable from the internet even without the Hetzner firewall).
+# The Tailscale key is single-use: it lands in server metadata and state, so it must be expired/consumed after boot.
+
+package_update: true
+package_upgrade: true
+packages: [ca-certificates, curl, ufw]
+
+groups: [docker]
+
+users:
+  - name: deploy
+    shell: /bin/bash
+    groups: [docker]
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ${jsonencode(deploy_ssh_public_key)}
+
+disable_root: true
+ssh_pwauth: false
+
+write_files:
+  - path: /etc/ssh/sshd_config.d/10-applyra.conf
+    permissions: "0644"
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      AllowUsers deploy
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      {
+        "data-root": "/srv/data/docker",
+        "log-driver": "local",
+        "log-opts": { "max-size": "10m", "max-file": "5" },
+        "live-restore": true,
+        "no-new-privileges": true
+      }
+  # Docker never starts on the root disk: no volume mounted at /srv/data → docker.service fails (fail closed).
+  - path: /etc/systemd/system/docker.service.d/10-data-volume.conf
+    permissions: "0644"
+    content: |
+      [Unit]
+      RequiresMountsFor=/srv/data
+  # Containers must not reach the Hetzner metadata service (it serves user_data incl. the Tailscale key).
+  # Oneshot unit tied to docker.service: re-applies the DOCKER-USER rule on every Docker (re)start and boot;
+  # no iptables-persistent (it would fight Docker's own chains).
+  - path: /usr/local/sbin/applyra-docker-user-fw
+    permissions: "0700"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      iptables -C DOCKER-USER -d 169.254.169.254/32 -j DROP 2>/dev/null \
+        || iptables -I DOCKER-USER 1 -d 169.254.169.254/32 -j DROP
+  - path: /etc/systemd/system/applyra-docker-user-fw.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Applyra: block the metadata service from containers (DOCKER-USER)
+      After=docker.service
+      PartOf=docker.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/local/sbin/applyra-docker-user-fw
+
+      [Install]
+      WantedBy=docker.service
+  - path: /run/applyra/tailscale-authkey
+    permissions: "0600"
+    content: ${jsonencode(tailscale_auth_key)}
+  - path: /usr/local/sbin/applyra-bootstrap
+    permissions: "0700"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      # 1. Data volume (attached right after the server is created) → /srv/data
+      dev=/dev/disk/by-id/scsi-0HC_Volume_${volume_id}
+      for _ in $(seq 1 60); do [ -e "$dev" ] && break; sleep 5; done
+      [ -e "$dev" ] || { echo "data volume $dev not attached" >&2; exit 1; }
+      install -d -m 0755 /srv/data
+      grep -q ' /srv/data ' /etc/fstab || echo "$dev /srv/data ext4 discard,nofail,defaults 0 2" >> /etc/fstab
+      systemctl daemon-reload
+      mountpoint -q /srv/data || mount /srv/data
+
+      # 2. Docker Engine + Compose plugin and Tailscale from their signed apt repos
+      # shellcheck source=/dev/null
+      . /etc/os-release
+      arch=$(dpkg --print-architecture)
+      install -d -m 0755 /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+      echo "deb [arch=$arch signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable" \
+        > /etc/apt/sources.list.d/docker.list
+      curl -fsSL "https://pkgs.tailscale.com/stable/ubuntu/$VERSION_CODENAME.noarmor.gpg" \
+        -o /usr/share/keyrings/tailscale-archive-keyring.gpg
+      echo "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/ubuntu $VERSION_CODENAME main" \
+        > /etc/apt/sources.list.d/tailscale.list
+      chmod a+r /etc/apt/keyrings/docker.asc /usr/share/keyrings/tailscale-archive-keyring.gpg
+      apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin tailscale
+      systemctl daemon-reload
+      systemctl enable --now applyra-docker-user-fw.service
+
+      # 3. Tailnet: Tailscale SSH for the owner (tailnet ACLs), plain sshd for the deploy user over tailscale0
+      tailscale up --auth-key=file:/run/applyra/tailscale-authkey --hostname=${tailscale_hostname} \
+        --advertise-tags=${join(",", tailscale_tags)} --ssh
+      rm -f /run/applyra/tailscale-authkey
+      # cloud-init keeps copies of user_data (incl. the key) on disk and re-fetches it from the metadata service on
+      # boot: drop the copies and disable cloud-init after this first boot (the netplan/hostname it wrote stay).
+      rm -f /var/lib/cloud/instance/user-data.txt /var/lib/cloud/instance/user-data.txt.i \
+        /var/lib/cloud/instance/cloud-config.txt /var/lib/cloud/instance/obj.pkl
+      touch /etc/cloud/cloud-init.disabled
+
+      # 4. Host firewall: defence in depth for host services (sshd). The Hetzner firewall is the edge filter
+      #    that limits 80/443 to Cloudflare; Docker-published ports bypass ufw anyway.
+      ufw default deny incoming
+      ufw default allow outgoing
+      ufw allow in on tailscale0
+      ufw allow 80/tcp
+      ufw allow 443/tcp
+      ufw --force enable
+
+      # 5. Deploy target (deploy-prod.yml writes /opt/applyra/.env 0600 and the compose files here)
+      install -d -m 0750 -o deploy -g deploy /opt/applyra
+      systemctl try-reload-or-restart ssh.service
+
+runcmd:
+  - [/usr/local/sbin/applyra-bootstrap]

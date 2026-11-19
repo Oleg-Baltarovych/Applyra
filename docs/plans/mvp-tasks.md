@@ -193,7 +193,7 @@
   - Presigned PUT з підписаними `Content-Length` і `Content-Type`: інший розмір/тип → MinIO відхиляє. Перевірка на R2 — частина M0-13 (when hosting). Результат у `CONTEXT.md` §6 / ADR 010.
 - Notes: потрібен до M4-14; якщо не встигли в M0 — перший крок M4-14.
 
-### M0-17 · Terraform code + CI validate
+### M0-17 · Terraform code + CI validate ✅
 - FR: — · Area: infra, ci · Est: 2h · Depends: M0-05 · Flow: direct
 - AC:
   - `infra/terraform/{modules,envs/production}`: `hcloud` (server — x86 або ARM `cax`-клас змінною, firewall: 80/443 тільки Cloudflare ranges, 22 закритий; volume; cloud-init: Docker, Tailscale, host firewall), `cloudflare` (DNS `app.`/`api.`, Pages project + custom domain, R2 buckets + lifecycle); S3-backend на R2 оголошено, але не ініціалізується в CI. Providers і версії pinned (`.terraform.lock.hcl`).
@@ -953,6 +953,7 @@ ADR 022: виконуються лише після рішення хостит�
 - AC:
   - `deploy-prod.yml`: тригер push `main`, images у GHCR (`sha-*`, pinned digest); перший прогін зелений; health-check smoke.
   - Spike CSP: `_headers` реально віддається Pages на custom domain (curl-check у workflow); інакше — SPA з Caddy static (уже є з M0-14). Prod «hello»: sign-in Google → `/applications`.
+  - **Gate перед `HOSTING_ENABLED=true` (M0-17 security review):** Caddy `client_auth` `require_and_verify` з Cloudflare origin-pull CA (AOP увімкнено в Terraform на рівні зони); Caddy ACME через DNS-01 (`caddy-dns/cloudflare`, Always Use HTTPS ламає HTTP-01); `trusted_proxies` = Cloudflare ranges + client IP з `CF-Connecting-IP` (`infra/README.md` «Deploy-ready»).
 
 ### M0-15b · Off-site backups to R2 + uptime + Telegram · `later`
 - FR: — · Area: infra, obs · Est: 1h · Depends: M0-14b · Flow: direct

@@ -57,6 +57,22 @@
       "groupName": "testcontainers"
     },
     {
+      "description": "Terraform (M0-17): providers + required_version (built-in terraform manager, also updates .terraform.lock.hcl) in one PR.",
+      "matchManagers": ["terraform"],
+      "groupName": "terraform"
+    },
+    {
+      "description": "The CI image hashicorp/terraform (regex manager) moves with required_version: same group, after \"container images\" so it wins.",
+      "matchDepNames": ["hashicorp/terraform"],
+      "groupName": "terraform"
+    },
+    {
+      "description": "Reusable modules keep floor constraints (~> X.Y); only the envs/* root pins move.",
+      "matchManagers": ["terraform"],
+      "matchFileNames": ["infra/terraform/modules/**"],
+      "rangeStrategy": "replace"
+    },
+    {
       "description": "Node runtime follows LTS lines only (ADR 024): even majors, via approval like any major.",
       "matchDepNames": ["node", "@types/node"],
       "allowedVersions": "/^v?\\d*[02468]\\./"
