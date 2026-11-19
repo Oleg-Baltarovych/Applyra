@@ -1,5 +1,5 @@
 name: Bug
-description: Something does not work as specified
+description: The digest misbehaves (wrong match, missing/duplicate vacancy, failed run)
 labels: ['bug']
 body:
   - type: textarea
@@ -11,17 +11,11 @@ body:
   - type: textarea
     id: steps
     attributes:
-      label: Steps to reproduce
-      placeholder: |
-        1. ...
+      label: Steps to reproduce / workflow run link
     validations:
       required: true
-  - type: input
-    id: fr
-    attributes:
-      label: Related FR ID / spec
   - type: textarea
     id: logs
     attributes:
-      label: Logs / error output (no PII or secrets)
+      label: Logs (no tokens, chat ids or personal data)
       render: text

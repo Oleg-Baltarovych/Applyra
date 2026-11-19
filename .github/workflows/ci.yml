@@ -1,5 +1,4 @@
-# CI gates: docs/spec/11-testing.md §9 (R0 column), supply chain: docs/spec/09-security-privacy.md §14,
-# workflows: docs/spec/12-infra-ops.md §8.1 (ADR 022: deploy-ready is checked statically, never applied).
+# CI gates for the digest: static checks, unit tests, supply chain, workflow lint.
 # Every job is meant to be a required check; keep job names stable (branch protection refers to them).
 name: CI
 
@@ -23,7 +22,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # ── Stage 1: static checks, unit, supply chain ────────────────────────────────────────────────
   lint:
     name: lint
     if: github.event_name != 'schedule'
@@ -34,7 +32,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: ESLint (incl. boundaries)
+      - name: ESLint
         run: pnpm lint
       - name: Prettier check
         run: pnpm format:check
@@ -61,129 +59,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      # apps/api `test` runs with `--coverage`: every src/**/*.domain.ts ≥ 90% lines + branches (per file).
-      # In-process tests only; apps/api/test/integration/** (Docker) is excluded and runs in `integration`.
       - run: pnpm test
-
-  # ── Stage 2: integration (Testcontainers) ─────────────────────────────────────────────────────
-  # apps/api/test/integration/** (11-testing.md §3): one Postgres + one Valkey container per run, template DB
-  # built by infra/postgres/init/10-roles.sql (+ migrations from M0-08), one DB + Redis prefix per Vitest worker.
-  # ubuntu-latest has Docker; Ryuk (Testcontainers reaper) removes the containers. Credentials are generated
-  # per run, nothing comes from secrets. Later: IDOR gate (M0-07b) and contract tests run here too.
-  integration:
-    name: integration
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      # Ryuk image Testcontainers 12.2.1 uses by default (reaper.js), pinned by digest. Bump with testcontainers
-      # (tag + digest together; Renovate customManager). Never set DEBUG=testcontainers* here: it may log container env.
-      RYUK_CONTAINER_IMAGE: testcontainers/ryuk:0.14.0@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-      # Ryuk is what removes containers when a run is killed — never run CI without it.
-      - name: Require Ryuk
-        run: |
-          if [ -n "${TESTCONTAINERS_RYUK_DISABLED:-}" ] && [ "${TESTCONTAINERS_RYUK_DISABLED}" != "false" ]; then
-            echo "::error::TESTCONTAINERS_RYUK_DISABLED is set; the integration job requires Ryuk"
-            exit 1
-          fi
-      - run: pnpm test:integration
-
-  # ── Stage 3: migrations (11-testing.md §5.5, §9; 12-infra-ops.md §6) ──────────────────────────
-  # Runs on every PR (no path filter: a required check behind a path filter never reports and blocks the PR).
-  migrations:
-    name: migrations
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      SQUAWK_VERSION: v2.73.0 # 2026-11-15; bump version + sha256 together (asset squawk-linux-x64)
-      SQUAWK_SHA256: 9ae3747ca5eafa48b4d5c535fc64b61e0735a763164193644aa6436cc97c4274
-      # Same ref (tag + digest) as apps/api/test/support/images.ts and compose; Renovate bumps all three.
-      POSTGRES_IMAGE: postgres:18.7@sha256:2ea8630df176ad090ec92136dee850397c5af8781e4bcf2e4162593691c61bbc
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0 # the guard and squawk diff against the base commit
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-      - name: Resolve base commit
-        id: base
-        env:
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
-        run: |
-          base="${PR_BASE:-${PUSH_BEFORE:-}}"
-          # New branch push / manual run: no usable "before" → compare with the parent commit.
-          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-            base="$(git rev-parse HEAD~1)"
-          fi
-          echo "sha=$base" >> "$GITHUB_OUTPUT"
-      # Applied migrations are immutable (05 §9, ADR 016): any modified, deleted or renamed file fails.
-      - name: Guard applied migrations
-        env:
-          BASE: ${{ steps.base.outputs.sha }}
-        run: |
-          mb="$(git merge-base "$BASE" HEAD)"
-          changed="$(git diff --name-status --no-renames "$mb" HEAD -- apps/api/prisma/migrations/ | grep -v '^A' || true)"
-          if [ -n "$changed" ]; then
-            echo "$changed"
-            echo "::error::applied migrations are immutable — add a new migration instead"
-            exit 1
-          fi
-      - name: squawk (added migration.sql)
-        env:
-          BASE: ${{ steps.base.outputs.sha }}
-        run: |
-          mapfile -t added < <(git diff --name-only --diff-filter=A "$(git merge-base "$BASE" HEAD)" HEAD -- 'apps/api/prisma/migrations/*/migration.sql')
-          if [ "${#added[@]}" -eq 0 ]; then
-            echo "No new migrations."
-            exit 0
-          fi
-          curl -sSfL -o "$RUNNER_TEMP/squawk" "https://github.com/sbdchd/squawk/releases/download/${SQUAWK_VERSION}/squawk-linux-x64"
-          echo "${SQUAWK_SHA256}  $RUNNER_TEMP/squawk" | sha256sum -c -
-          chmod +x "$RUNNER_TEMP/squawk"
-          "$RUNNER_TEMP/squawk" --config .squawk.toml "${added[@]}"
-      # Throwaway Postgres on 127.0.0.1 with per-run passwords (masked); role passwords reach psql via exec env.
-      - name: Start Postgres + roles
-        run: |
-          for name in SUPERUSER APP MAINTENANCE BACKUP METRICS; do
-            value="$(openssl rand -hex 24)"
-            # The masked value is ours (48 hex chars), never attacker-controlled, so it cannot inject workflow commands.
-            [[ "$value" =~ ^[0-9a-f]{48}$ ]] || { echo "::error::unexpected password format"; exit 1; }
-            echo "::add-mask::$value" # nosemgrep: yaml.github-actions.security.audit.unsafe-add-mask-workflow-command.unsafe-add-mask-workflow-command
-            echo "PW_$name=$value" >> "$GITHUB_ENV"
-            export "PW_$name=$value"
-          done
-          # Non-root (the image's postgres user owns PGDATA, so no gosu/capabilities needed). Secrets are passed as
-          # `-e NAME` (value inherited from this shell's env), never in argv.
-          POSTGRES_PASSWORD="$PW_SUPERUSER" docker run -d --name migrations-pg --user postgres \
-            --cap-drop ALL --security-opt no-new-privileges \
-            -e POSTGRES_PASSWORD -p 127.0.0.1:5432:5432 "$POSTGRES_IMAGE" >/dev/null
-          for _ in $(seq 1 30); do
-            docker exec migrations-pg pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && break
-            sleep 1
-          done
-          docker exec migrations-pg psql -v ON_ERROR_STOP=1 -U postgres -c 'CREATE DATABASE applyra' -c 'CREATE DATABASE applyra_shadow' >/dev/null
-          docker cp infra/postgres/init/10-roles.sql migrations-pg:/tmp/10-roles.sql
-          APPLYRA_APP_PASSWORD="$PW_APP" APPLYRA_MAINTENANCE_PASSWORD="$PW_MAINTENANCE" \
-            APPLYRA_BACKUP_PASSWORD="$PW_BACKUP" APPLYRA_METRICS_PASSWORD="$PW_METRICS" \
-            docker exec -e APPLYRA_APP_PASSWORD -e APPLYRA_MAINTENANCE_PASSWORD -e APPLYRA_BACKUP_PASSWORD \
-            -e APPLYRA_METRICS_PASSWORD migrations-pg psql -v ON_ERROR_STOP=1 -U postgres -d applyra -f /tmp/10-roles.sql
-      - name: Clean apply + REVOKE (pnpm db:migrate)
-        run: |
-          export MAINTENANCE_DATABASE_URL="postgresql://applyra_maintenance:${PW_MAINTENANCE}@127.0.0.1:5432/applyra"
-          pnpm db:migrate
-      - name: Drift (migrate diff --exit-code)
-        working-directory: apps/api
-        run: |
-          export SHADOW_DATABASE_URL="postgresql://postgres:${PW_SUPERUSER}@127.0.0.1:5432/applyra_shadow"
-          export MAINTENANCE_DATABASE_URL="postgresql://applyra_maintenance:${PW_MAINTENANCE}@127.0.0.1:5432/applyra"
-          pnpm exec prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code
 
   secrets:
     name: secrets (gitleaks)
@@ -236,7 +112,7 @@ jobs:
       # command locally. Not the reusable google/osv-scanner-action workflow: it is built around a SARIF
       # upload to code scanning (unavailable on this private repo) and adds another action to pin.
       # No severity threshold: any known vulnerability fails. Ignores only in osv-scanner.toml with
-      # reason + effectiveUntil (policy: docs/CONTEXT.md §6). Exit 1 = vulns, 127/128 = error/no packages.
+      # reason + effectiveUntil (policy: docs/CONTEXT.md "Supply chain"). Exit 1 = vulns, 127/128 = error/no packages.
       # Fail closed: a lockfile parsed into 0 packages must not pass.
       - name: osv-scanner (pnpm-lock.yaml)
         run: |
@@ -250,10 +126,8 @@ jobs:
             exit 1
           fi
 
-  # SAST (Semgrep CE; CodeQL once the repo is public — ADR 023) lives in sast.yml: own weekly schedule.
+  # SAST (Semgrep CE) lives in sast.yml: own weekly schedule.
 
-  # ── Stage 4 (partial, early): workflow lint ───────────────────────────────────────────────────
-  # Listed under deploy-ready (M0-14) in the AC; it is cheap, so it runs from M0-05 on.
   actionlint:
     name: actionlint
     if: github.event_name != 'schedule'
@@ -269,107 +143,3 @@ jobs:
             --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" -w /repo \
             rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
             -color
-
-  # ── Stage 4: deploy-ready (M0-14; 12-infra-ops.md §8.1, ADR 022: checked, never applied) ─────────────────────
-  # Production images build for both architectures, the prod compose stack is valid and the amd64 images pass the
-  # smoke (non-root, no npm/pnpm/corepack, migrate on a network without egress, /health/ready, SPA headers via Caddy).
-  # No push: GHCR + provenance/SBOM arrive with M0-14b (then `packages: write` on that job only).
-  deploy-ready:
-    name: deploy-ready
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      BAKE_FILE: infra/docker/docker-bake.hcl
-      COMPOSE_FILES: -f infra/compose/compose.yml -f infra/compose/compose.prod.yml
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 2 # "arm64 needed?" diffs the PR merge commit against its first parent
-      - name: hadolint (Dockerfile + shellcheck of RUN)
-        run: |
-          docker run --rm -i --cap-drop ALL --security-opt no-new-privileges \
-            hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d \
-            hadolint --failure-threshold warning - < infra/docker/Dockerfile
-      # Env from the generator (random secrets, *.applyra.localhost) — no committed env with dummy secrets.
-      - name: compose config (dev + prod)
-        run: |
-          node infra/compose/gen-prod-env.mjs --out "$RUNNER_TEMP/prod.env"
-          docker compose --env-file .env.example config -q
-          # shellcheck disable=SC2086 # COMPOSE_FILES is a list of flags
-          docker compose $COMPOSE_FILES --env-file "$RUNNER_TEMP/prod.env" --profile migrate config --format json > "$RUNNER_TEMP/prod.json"
-          services="$(jq -r '.services | keys | sort | join(",")' "$RUNNER_TEMP/prod.json")"
-          [ "$services" = "api,caddy,migrate,postgres,redis" ] || { echo "::error::prod services: $services"; exit 1; }
-          jq -e '[.services.postgres, .services.redis] | all(.ports == null or .ports == [])' "$RUNNER_TEMP/prod.json" >/dev/null \
-            || { echo "::error::postgres/redis must not publish ports in prod"; exit 1; }
-          jq -e '.networks.internal.internal == true' "$RUNNER_TEMP/prod.json" >/dev/null \
-            || { echo "::error::network internal must be internal: true"; exit 1; }
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-        with:
-          platforms: arm64
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: bake linux/amd64 (load)
-        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
-        with:
-          source: .
-          files: ${{ env.BAKE_FILE }}
-          load: true
-          # cache-to here too: the amd64 layers are saved even if the smoke or the arm64 build fails later.
-          set: |
-            *.platform=linux/amd64
-            *.cache-from=type=gha,scope=deploy-ready
-            *.cache-to=type=gha,mode=max,scope=deploy-ready
-      - name: api image — non-root, no package managers, Node >= engines
-        run: |
-          engines="$(jq -r '.engines.node' package.json)" # e.g. ^26.13.1
-          min="${engines#^}"
-          user="$(docker image inspect applyra/api:local --format '{{.Config.User}}')"
-          [ "$user" = "65532:65532" ] || { echo "::error::api image user is '$user'"; exit 1; }
-          cid="$(docker create applyra/api:local)"
-          docker export "$cid" | tar -t > "$RUNNER_TEMP/api-fs.txt"
-          docker rm "$cid" >/dev/null
-          if grep -E '(^|/)(npm|npx|pnpm|pnpx|corepack)(\.c?js)?$|/node_modules/(npm|pnpm|corepack)/' "$RUNNER_TEMP/api-fs.txt"; then
-            echo "::error::package manager found in the api image"
-            exit 1
-          fi
-          grep -q 'schema-engine-' "$RUNNER_TEMP/api-fs.txt" || { echo "::error::no Prisma schema engine baked"; exit 1; }
-          version="$(docker run --rm applyra/api:local --version)"
-          # Caret range: same major as the minimum and >= it (sort -V puts the higher version last).
-          ver="${version#v}"
-          highest="$(printf '%s\n%s\n' "$ver" "$min" | sort -V | tail -n 1)"
-          if [ "${ver%%.*}" != "${min%%.*}" ] || [ "$highest" != "$ver" ]; then
-            echo "::error::api image Node $version does not satisfy engines $engines"
-            exit 1
-          fi
-          echo "api image: user $user, Node $version"
-      - name: smoke (migrate, health, SPA headers via Caddy)
-        run: bash infra/compose/smoke.sh "$RUNNER_TEMP/prod.env"
-      # arm64 runs under QEMU (~25 min on a cold cache). On PRs it runs only when the image inputs change
-      # (Dockerfile/bake/Caddy, lockfile/manifests, .dockerignore, this workflow); push to main and manual runs
-      # always build it, so main keeps proving both architectures. A PR's merge commit has the base tip as
-      # its first parent (checkout fetch-depth: 2).
-      - name: arm64 needed?
-        id: arm64
-        env:
-          EVENT: ${{ github.event_name }}
-        run: |
-          if [ "$EVENT" != "pull_request" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          changed="$(git diff --name-only HEAD^1 HEAD)"
-          if printf '%s\n' "$changed" | grep -Eq '^(infra/docker/|infra/caddy/|\.dockerignore$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|package\.json$|apps/[^/]+/package\.json$|packages/[^/]+/package\.json$|\.github/workflows/ci\.yml$)'; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "arm64 skipped: no image inputs changed in this PR (runs on push to main)"
-          fi
-      - name: bake linux/amd64 + linux/arm64 (cache only, no push)
-        if: steps.arm64.outputs.run == 'true'
-        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
-        with:
-          source: .
-          files: ${{ env.BAKE_FILE }}
-          set: |
-            *.platform=linux/amd64,linux/arm64
-            *.output=type=cacheonly
-            *.cache-from=type=gha,scope=deploy-ready
-            *.cache-to=type=gha,mode=max,scope=deploy-ready

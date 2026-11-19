@@ -1,66 +1,43 @@
 # Applyra
 
-Personal job-search workspace: job capture, application CRM (Kanban), reminders, explainable matching, AI helpers.
-Portfolio-grade, solo developer. Source of truth: `docs/spec/*.md` (split spec v2.1, Ukrainian; start at `00-overview.md`) + `docs/adr/`. Read only the file you need.
+Daily Telegram digest of relevant vacancies from Ukrainian job sites, filtered and ranked by the owner's profile,
+run by GitHub Actions cron (no hosting, no DB). Solo developer. Source of truth: `docs/spec.md` + `docs/adr/` (026+).
+Pre-pivot CRM design is archived under the git tag `archive/crm-plan-v0` — do not resurrect it.
 
-## Orientation (read this before exploring)
+## Orientation
 
-1. `docs/CONTEXT.md` — current status, repo map, module status, decisions, gotchas. Read it first; it replaces broad exploration.
-2. Need a spec detail? Pick the file from the index in `docs/CONTEXT.md` §7, then grep inside it
-   (`grep -n "^## " docs/spec/09-security-privacy.md`) and read only that section.
-3. Area rules load automatically from `.claude/rules/` when you touch matching files. Do not duplicate them here.
-4. At the end of every task that changes structure, modules, commands or decisions — update `docs/CONTEXT.md` (keep it terse).
+1. `docs/CONTEXT.md` first — status, repo map, sources, commands, gotchas.
+2. `docs/spec.md` for behaviour (pipeline, profile format, state, schedule, non-goals).
+3. Area rules load automatically from `.claude/rules/`.
+4. After changing structure, commands or decisions — update `docs/CONTEXT.md` (terse).
 
-## Stack (fixed; versions in `docs/spec/04-architecture.md`)
+## Stack
 
-pnpm workspaces + Turborepo · TypeScript strict (`noUncheckedIndexedAccess`) · `apps/web` React + Vite + TanStack Query + Tailwind/shadcn ·
-`apps/api` NestJS (HTTP `main.ts` + BullMQ `worker.ts`, one codebase) · Prisma 7 + PostgreSQL 18 · Redis-compatible Valkey 9 (compose service `redis`) · `packages/contracts` Zod schemas shared FE/BE ·
-Better Auth · Vitest, Supertest, Testcontainers, Playwright, MSW.
+pnpm workspaces + Turborepo · Node 26 ESM, TypeScript strict (`noUncheckedIndexedAccess`), run directly by Node
+(type stripping: `.ts` imports, erasable syntax only) · Vitest · global `fetch` · GitHub Actions.
+Packages: `@applyra/digest` (`apps/digest`), `@applyra/config` (tsconfig + ESLint).
 
 ## Commands
 
-> Keep only non-obvious ones. Packages: `@applyra/{web,api,contracts,config,e2e}`.
+- `pnpm lint && pnpm typecheck && pnpm test` — must be green before a task is done
+- `pnpm format:check` · `pnpm audit --audit-level=high` (CI also: gitleaks, osv-scanner, actionlint, Semgrep)
+- `pnpm --filter @applyra/digest dry-run` — fake source + example profile, prints the digest, sends nothing
+- `pnpm --filter @applyra/digest start -- [--dry-run] [--source=a,b] [--profile=path]`
 
-- `pnpm lint && pnpm typecheck && pnpm test` — must be green before reporting a task done (scope with `--filter <pkg>`)
-- CI (`.github/workflows/ci.yml`) also runs `pnpm format:check`, `pnpm audit --audit-level=high`, gitleaks, actionlint; `pnpm test` in apps/api enforces the `*.domain.ts` ≥ 90% coverage gate. Local docker equivalents: `docs/CONTEXT.md` §6 (M0-05)
-- `pnpm build` · `pnpm dev` (turbo: contracts tsup watch + api :3000 + web http://localhost:5173 — use `localhost`, not 127.0.0.1)
-- `pnpm format:check` — Prettier (docs/ and .claude/ are ignored)
-- `pnpm --filter @applyra/config test` — boundary-rule test (lints `packages/config/test/fixtures/boundaries/`)
-- `pnpm --filter @applyra/e2e e2e` — Playwright; not part of `pnpm test`
-- `cp .env.example .env` then `docker compose up -d` (repo root; root `compose.yaml` includes `infra/compose/compose.yml`) — postgres, redis (Valkey), minio, mailpit on 127.0.0.1. Agents can't touch `.env`: use `docker compose --env-file .env.example …`. `up --wait` exits 1 because the one-shot `minio-init` exits — use `ps`
-- `pnpm --filter @applyra/api dev` — tsc --watch + node --watch, loads the root env file (`--env-file-if-exists`; process env wins). `start` = `node --import=./dist/instrument.js dist/main.js` (Sentry preload, no-op without `SENTRY_DSN`; process env only, production)
-- `pnpm db:backup` (pg_dump as role `backup` via `docker compose exec` → `./backups/`, keeps 14) · `pnpm db:restore <file>` (throwaway `--network none` postgres, verify, remove). Agents: prefix `COMPOSE_ENV_FILES=.env.example APPLYRA_BACKUP_PASSWORD=<example value>`
-- `pnpm db:migrate` — the ONLY way to apply migrations (migrate deploy as `applyra_maintenance` + `_prisma_migrations` REVOKE + privilege check); never run bare `prisma migrate deploy`. `pnpm db:migration <name>` — new migration via `--create-only` against the shadow DB (see `/prisma-migration`)
+## Rules
 
-## Non-negotiable rules
-
-- If a task conflicts with the spec — stop and ask. Behaviour/architecture changes go into the spec file + an ADR (`docs/adr/NNN-title.md`).
-- Stay inside the task scope. No new dependency without stating why (in the commit/PR body).
-- Module boundaries: import another module only via its `index.ts`.
-- Every query on user-owned data is scoped by `userId` (`findOwned*`). Foreign resource → 404, never 403. Every private endpoint gets an IDOR test.
-- No UI for features without a working backend; no mock data in production code.
+- Public feeds/APIs only. No scraping that bypasses ToS, robots rules, auth or CAPTCHA; no logged-in sessions; one request per feed per run.
+- Secrets (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, LLM keys) only via env / GitHub secrets; never logged, never in errors, fixtures or the profile. Never read or edit `.env*` (except `.env.example`).
+- No personal data in the repo (`profile.json` = preferences only).
+- Tests for every parser, normalizer, filter rule, dedup and format change — test-first; fixtures are trimmed, anonymised recorded feeds. No network in tests.
+- Pure logic (normalize, dedup, filter, format) has no I/O; I/O only in `sources/`, `state.ts`, `telegram.ts`, `main.ts`.
+- Idempotent runs: mark a vacancy sent only after its message was delivered.
 - No `any`, `@ts-ignore`, `as unknown as`, or non-null `!` without a one-line justification comment.
-- Never edit applied Prisma migrations, never read or edit `.env*` (except `.env.example`).
+- Smallest change; prefer deleting to adding. No new dependency without stating why.
+- Behaviour change → update `docs/spec.md` (+ an ADR for decisions). Conflict with the spec → stop and ask.
 
-## Engineering principles (adapted from unclebob/ub-mode)
+## Git & workflow
 
-- Domain/service logic: write the failing test first and see it fail for the expected reason. Skip test-first for DI wiring, Nest modules, DTOs, schema files.
-- Tests assert observable behaviour through public APIs. A test that would pass if every function returned nothing is deleted.
-- Validate external data once at the boundary (Zod via `nestjs-zod` / RHF), trust it inside. Business rules live in pure `*.domain.ts` functions.
-- Make illegal states unrepresentable (discriminated unions, enums from contracts).
-- Smallest change that solves the problem; prefer deleting to adding; redesign instead of bolting on.
-- Bugs: reproduce with a test, fix the cause. A guard that only hides the crash is not a fix.
-- Jobs, consumers and retryable mutations are idempotent (stable `jobId` / dedup key / `Idempotency-Key`).
-
-## Git
-
-- Branches `feat/*`, `fix/*`, `chore/*` from `main`; Conventional Commits; one logical change per commit/PR, referencing the FR ID / spec file.
-- Never commit, push, force-push, or delete files/branches without the user's explicit approval in this session.
-
-## Team & workflow (details: `docs/AI-WORKFLOW.md`)
-
-- `architect` designs (plans in `docs/plans/`, ADRs, spec/CONTEXT) — never code. `lead-developer` implements approved plans.
-- `test-writer` writes tests. Read-only reviewers: `code-reviewer`, `security-reviewer`, `ui-reviewer`. `qa-lead` gives final acceptance. E2E: `playwright-test-{planner,generator,healer}`.
-- Flow commands: `/feature` (plan → approve → implement → review → verify → accept) · `/plan` · `/implement` · `/review` · `/verify` · `/ship` · `/bugfix` · `/e2e` · `/security-audit` (pre-release only) · `/sync-context`.
-- Procedures: `/new-endpoint`, `/prisma-migration`, `/adr`, `/ai-task`.
-- Non-trivial work (new module, schema change, cross-module flow) goes through a plan first. Small fixes may skip the architect.
+- Branches `feat/*`, `fix/*`, `chore/*` from `main`; Conventional Commits; one logical change per PR.
+- Never commit, push, force-push or delete branches without the owner's explicit approval in this session.
+- Light flow: implement (`lead-developer` or main session, test-first) → `/review` (`code-reviewer`, `security-reviewer`) → `/verify` → `/ship`. `/bugfix` for bugs, `/adr` for decisions, `test-writer` / `qa-lead` when useful.

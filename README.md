@@ -1,66 +1,49 @@
 # Applyra
 
-Your job search, under control: job capture, application CRM, reminders, explainable match score and an AI assistant.
+A daily Telegram digest of relevant vacancies from Ukrainian job sites, filtered and ranked by your profile.
+Runs on a GitHub Actions cron: no server, no database.
 
-> Status: M0 scaffold — monorepo tooling in place; application code lands milestone by milestone ([MVP plan](docs/plans/mvp.md)).
+```
+fetch (public feeds) → normalize → dedup (already sent?) → filter + score (profile.json) → Telegram message(s)
+```
 
-## Requirements
+> Status: scaffold. The pipeline, filter, dedup, formatting and Telegram sender work; real source adapters
+> (DOU, Djinni RSS) are the next step — until then only the `fake` source exists (dry run only).
+> Spec: [docs/spec.md](docs/spec.md).
 
-- Node.js 26 LTS (`engines.node` in `package.json`)
-- pnpm: `npm install -g pnpm` (any 11.x/12.x) — inside the repo it switches to the version pinned in `package.json#packageManager`. Node 25+ ships no corepack.
+## Setup
 
-## Getting started
+1. **Create a bot**: in Telegram, talk to [@BotFather](https://t.me/BotFather) → `/newbot` → copy the token.
+2. **Get your chat id**: send any message to your new bot, then open
+   `https://api.telegram.org/bot<TOKEN>/getUpdates` in a browser and copy `result[].message.chat.id`.
+   (For a channel: add the bot as an admin; the id looks like `-100…`.)
+3. **Create the Environment `digest`** (Settings → Environments → New environment), restrict its deployment
+   branches to `main`, and add there:
+   - environment secrets `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (not repository secrets)
+   - variable `DIGEST_SOURCES` — comma-separated source names (empty = the run does nothing); an environment
+     or repository variable both work
+4. **Edit your profile**: `apps/digest/profile.json` (keywords, exclusions, level, remote, salary floor).
+   No personal data in it — it is committed. Format: [docs/spec.md](docs/spec.md#profile).
+5. The workflow [`digest.yml`](.github/workflows/digest.yml) runs daily at 06:00 UTC; run it by hand from the
+   Actions tab (optionally as a dry run).
+
+## Run locally
+
+Requires Node 26 and pnpm 11 (`npm i -g pnpm`).
 
 ```sh
 pnpm install
-cp .env.example .env    # local-only placeholder values
-docker compose up -d    # postgres, redis (Valkey), minio, mailpit on 127.0.0.1
-pnpm db:migrate
-pnpm dev                # contracts watch + api on http://localhost:3000 + web on http://localhost:5173
+pnpm --filter @applyra/digest dry-run           # fake source + example profile, prints the digest
+pnpm lint && pnpm typecheck && pnpm test
 ```
 
-Open http://localhost:5173 in Chrome or Firefox — not `127.0.0.1` (the API accepts only the `localhost` origin).
-Safari does not send the `Secure` session cookie over plain http, so it is unsupported for local dev.
+A real local send: put `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` into a root `.env` (see `.env.example`),
+then from `apps/digest`: `node --env-file=../../.env src/main.ts --source=<name>`.
+Sent ids are remembered in `apps/digest/.state/sent.json` (git-ignored).
 
-### Google sign-in (local)
+## Rules
 
-R0 signs in with Google only. Without credentials `/sign-in` says that no sign-in method is configured.
+Public feeds/APIs only — no scraping that bypasses a site's ToS, auth or CAPTCHA. Secrets live only in env /
+GitHub secrets.
 
-1. Create an OAuth client (type _Web application_) in Google Cloud Console with the redirect URI
-   `http://localhost:3000/api/auth/callback/google`.
-2. In your local env file set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `VITE_AUTH_GOOGLE_ENABLED=true`, and add
-   your Google email to `AUTH_SIGNUP_ALLOWLIST` (any other email gets "Access is invite-only").
-3. Restart `pnpm dev`.
-
-## Commands
-
-| Command                          | What it does                                          |
-| -------------------------------- | ----------------------------------------------------- |
-| `pnpm dev`                       | persistent dev tasks via Turborepo                    |
-| `pnpm build`                     | build all packages (`@applyra/contracts` first)       |
-| `pnpm lint`                      | ESLint incl. module-boundary rules                    |
-| `pnpm typecheck`                 | `tsc --noEmit` per package                            |
-| `pnpm test`                      | Vitest unit tests                                     |
-| `pnpm format`                    | Prettier write (`format:check` to verify)             |
-| `pnpm --filter @applyra/e2e e2e` | Playwright end-to-end tests (not part of `pnpm test`) |
-
-Scope any task to one package with `pnpm --filter <name> <task>`.
-
-## Repository layout
-
-```
-apps/web            React SPA (Vite)
-apps/api            NestJS API + worker — src/modules/<name>/, src/platform/
-packages/contracts  Zod schemas shared by web and api
-packages/config     shared tsconfig base + ESLint flat config (boundary rules)
-e2e                 Playwright tests and test plans
-docs                spec, ADRs, plans, working context
-```
-
-## Documentation
-
-- Overview: [docs/spec/00-overview.md](docs/spec/00-overview.md)
-- Architecture decisions: [docs/adr/](docs/adr/README.md)
-- MVP plan: [docs/plans/mvp.md](docs/plans/mvp.md)
-- Working context: [docs/CONTEXT.md](docs/CONTEXT.md)
-- AI-assisted workflow: [docs/AI-WORKFLOW.md](docs/AI-WORKFLOW.md)
+The pre-pivot CRM design (spec v2.1, ADRs 000–025, plans) is archived under the git tag `archive/crm-plan-v0`.

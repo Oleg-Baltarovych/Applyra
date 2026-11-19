@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Shared tsconfig base and ESLint flat config (boundaries rules from docs/spec/04-architecture.md §4.1).",
+  "description": "Shared tsconfig base and ESLint flat config.",
   "exports": {
     "./eslint": "./eslint.base.js",
     "./tsconfig.base.json": "./tsconfig.base.json"
@@ -15,12 +15,7 @@
   },
   "dependencies": {
     "@eslint/js": "^10.0.1",
-    "@typescript-eslint/parser": "^8.73.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-import-resolver-typescript": "^4.4.5",
-    "eslint-plugin-boundaries": "~7.4.3",
-    "eslint-plugin-import-x": "^4.18.1",
-    "eslint-plugin-react-hooks": "7.1.1",
     "globals": "^17.14.0",
     "typescript-eslint": "^8.73.0"
   },

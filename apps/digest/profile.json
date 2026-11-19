@@ -1,0 +1,56 @@
+{
+  "titleKeywords": [
+    "full-stack|fullstack",
+    "backend|back-end",
+    "node.js|nodejs|node",
+    "typescript",
+    "nestjs"
+  ],
+  "required": ["node.js|nodejs|node", "typescript|ts"],
+  "bonus": [
+    "nestjs",
+    "react",
+    "postgresql|postgres",
+    "redis",
+    "rabbitmq",
+    "microservices|microservice",
+    "message queues|message queue|background workers|background worker",
+    "docker",
+    "kubernetes|k8s",
+    "adtech",
+    "crypto|defi|web3|blockchain",
+    "telegram bot|telegram bots"
+  ],
+  "excludeStacks": [
+    "java",
+    ".net|asp.net|c#",
+    "php",
+    "python",
+    "golang|go",
+    "ruby",
+    "scala",
+    "rust",
+    "flutter",
+    "kotlin",
+    "swift",
+    "qa|aqa",
+    "devops",
+    "data engineer|data scientist|data analyst|ml|machine learning",
+    "1c"
+  ],
+  "excludeTitles": ["head of", "team lead|teamlead", "engineering manager"],
+  "level": {
+    "exclude": ["junior|jr", "intern|internship", "trainee", "стажер|стажист", "джуніор|джун"],
+    "allow": ["senior|sr|сеньйор|сеніор", "middle|mid|мідл"],
+    "minExperienceYears": 2
+  },
+  "remote": ["remote"],
+  "remoteUnknown": "keep",
+  "languages": ["uk", "en"],
+  "salary": {
+    "minUsdMonth": 2500,
+    "uahPerUsd": 41,
+    "uahTolerance": 0.1
+  },
+  "maxItems": 20
+}
