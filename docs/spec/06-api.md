@@ -9,7 +9,7 @@
 | Base | REST, `https://api.<domain>/api/v1`. Better Auth обслуговує `/api/auth/*`, поза версією |
 | Формат | JSON, поля в camelCase, enum-значення в `UPPER_SNAKE` (ті самі, що в `contracts`/Prisma) |
 | Дати | ISO 8601 UTC із `Z`. Дати без часу передаються як `YYYY-MM-DD`. Timezone клієнт не надсилає з кожним запитом — береться з `UserSettings.timezone` |
-| Гроші | `{ amount: int, currency: "USD", period: "MONTH" }`. Нормалізоване значення є окремим полем `*UsdMonth`, лише для читання |
+| Гроші | `{ amount: int, currency: "USD", period: "MONTH" }`. Діапазони зарплати — `{ min, max, currency, period }` (Job; Application — `{ expected, offered, currency, period }`), у БД — пласкі колонки `salary*`. Нормалізоване значення є окремим полем `*UsdMonth`, лише для читання |
 | Null | Відсутнє значення передається як `null`, а не пропуском поля. `PATCH` змінює лише передані поля, `null` очищає поле |
 | Відповіді | Ресурс повертається об'єктом без обгортки. Список має форму `{ items, nextCursor }` |
 | Контракти | Zod-схеми в `packages/contracts` + `nestjs-zod`. OpenAPI генерується; `/api/docs` доступний тільки в dev/staging |
@@ -149,12 +149,12 @@ R0 включає тільки Google OAuth, ручну форму ваканс�
 
 | Method | Path | Auth | FR | Notes |
 |---|---|---|---|---|
-| GET | `/applications` | user | FR-APP | `status[]`, `q`, `archived`, `channel`, `origin`, `sort` (`updatedAt`/`appliedAt`/`createdAt`), cursor. `view=kanban` групує по статусах, без cursor, ≤ 500 карток. Кожен item має `daysSinceActivity` і `isStale` (рахуються при читанні, P-04) |
+| GET | `/applications` | user | FR-APP | `status[]`, `q`, `archived`, `channel`, `origin`, `sort` (`updatedAt`/`appliedAt`/`createdAt`), `dir` (`asc`/`desc`, за замовчуванням `desc`), cursor. `view=kanban` групує по статусах, без cursor, ≤ 500 карток → `{ columns: [{ status, items }], truncated }`. Кожен item має `daysSinceActivity` і `isStale` (рахуються при читанні, P-04) |
 | POST | `/applications` | user | FR-APP | `jobId?` або inline `job` (створює PRIVATE Job у тій самій транзакції); без job потрібні `companyName` + `roleTitle`. Активна заявка на цей job → `409 CONFLICT_ACTIVE_APPLICATION`. IK |
 | GET | `/applications/:id` | user | FR-APP | поля + активний next action |
 | PATCH | `/applications/:id` | user | FR-APP | поля, крім `status` і `nextAction*` |
 | DELETE | `/applications/:id` | user | FR-APP | hard delete з events/reminders (A-17, P-07) |
-| POST | `/applications/:id/transitions` | user | FR-APP | `{ toStatus, occurredAt?, note? }` → event `STATUS_CHANGED`; той самий статус або архівна заявка → `409 INVALID_TRANSITION`. **IK** |
+| POST | `/applications/:id/transitions` | user | FR-APP | `{ toStatus, occurredAt?, note? }` → event `STATUS_CHANGED`, відповідь `{ application, event }` (`event.id` — для undo); той самий статус або архівна заявка → `409 INVALID_TRANSITION`. **IK** |
 | POST | `/applications/:id/archive` · `/unarchive` | user | FR-APP | unarchive може дати `409 CONFLICT_ACTIVE_APPLICATION`. Undo архівування = `unarchive` |
 | POST | `/applications/bulk/archive` | user | FR-APP | `{ ids[≤100] }` → `{ archived, notFound[] }`. IK |
 | GET | `/applications/:id/events` | user | FR-APP | timeline за `occurredAt`, cursor |

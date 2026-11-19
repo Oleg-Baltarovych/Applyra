@@ -213,11 +213,12 @@
   - Partial unique: активна заявка на (user, job) (`archivedAt IS NULL`), PRIVATE `canonicalUrl` на owner; один відкритий `NEXT_ACTION` reminder на заявку; CHECK з §7.4.
   - Integration: порушення кожного unique/CHECK дає очікувану помилку; drift = 0.
 
-### M1-02 · Contracts R0 domain
+### M1-02 · Contracts R0 domain ✅
 - FR: FR-APP-01, FR-JOB-01, FR-REM-01 · Area: contracts · Est: 1.5h · Depends: M0-09 · Flow: direct
 - AC:
   - Zod 4: enums (status, origin, channel, priority, event types, reminder kind/source), input `.strict()` без `userId/ownerId/role`, response-схеми, cursor-pagination; `ErrorCode` з M0-09 лише розширюється доменними кодами, якщо бракує.
   - Ліміти полів (`title` ≤ 300, `notes`/`descriptionText` ≤ 50 000); unit-тести схем.
+- Notes (done, plan-free): `packages/contracts/src/{common,enums,jobs,applications,reminders}.ts`; drift-тест enum contracts↔Prisma `apps/api/test/contracts-enum-drift.test.ts`; `ErrorCode` без змін. Уточнення в 06 §7.3: `dir`, форма kanban/transition-відповіді.
 
 ### M1-03 · Idempotency-Key interceptor
 - FR: FR-APP-04 · Area: api · Est: 2h · Depends: M1-01 · Flow: /feature
