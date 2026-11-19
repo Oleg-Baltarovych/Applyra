@@ -3,13 +3,20 @@
 // helpers and the IDOR tests remain the primary defence.
 
 /**
- * User-owned model → owner key. Every new user-owned model is added here with its migration (M1-01: Application,
- * ApplicationEvent, Reminder, ImportSession, IdempotencyRecord; Job/ownerId is decided there — findAccessibleJob
- * uses OR). Auth tables (User, Session, Account, Verification) are deliberately absent: Better Auth queries them
- * by token/id/email, and User is the identity itself.
+ * User-owned model → owner key. Every new user-owned model is added here with its migration. Job is guarded by
+ * `ownerId` while R0 has only PRIVATE rows (findAccessibleJob = `{ id, ownerId }`); when R2 adds PUBLIC jobs
+ * (ownerId NULL, readable by all), move Job to UNGUARDED_OWNED_MODELS with that reason. Auth tables (User, Session,
+ * Account, Verification) are deliberately absent: Better Auth queries them by token/id/email, and User is the
+ * identity itself.
  */
 export const USER_SCOPED_MODELS: Readonly<Record<string, string>> = Object.freeze({
   UserSettings: 'userId',
+  Job: 'ownerId',
+  Application: 'userId',
+  ApplicationEvent: 'userId',
+  Reminder: 'userId',
+  ImportSession: 'userId',
+  IdempotencyRecord: 'userId',
 });
 
 /**

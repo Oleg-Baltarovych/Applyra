@@ -1,5 +1,6 @@
 // Applyra database schema — source of truth for columns (05-data-model.md keeps the principles).
-// R0 baseline (M0-08): auth tables + UserSettings. Later models arrive with their release's migration
+// R0: auth tables + UserSettings (M0-08) and the domain models Job, Application, ApplicationEvent, Reminder,
+// ImportSession, IdempotencyRecord (M1-01). Later models/fields arrive with their release's migration
 // (05 §3: items marked // R1 / // R2 / // R3 in the spec are not here yet).
 // Raw SQL Prisma cannot express (extensions, f_unaccent, CHECK constraints) lives in the migrations (05 §7).
 
@@ -21,6 +22,152 @@ enum Role {
   ADMIN
 }
 
+enum WorkMode {
+  REMOTE
+  HYBRID
+  ONSITE
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  FREELANCE
+  INTERNSHIP
+}
+
+enum Seniority {
+  INTERN
+  JUNIOR
+  MIDDLE
+  SENIOR
+  LEAD
+  PRINCIPAL
+}
+
+enum SalaryPeriod {
+  HOUR
+  DAY
+  WEEK
+  MONTH
+  YEAR
+}
+
+enum CefrLevel {
+  A1
+  A2
+  B1
+  B2
+  C1
+  C2
+  NATIVE
+}
+
+enum JobVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum JobStatus {
+  OPEN
+  CLOSED
+  UNKNOWN
+}
+
+enum ExtractionMethod {
+  ADAPTER
+  JSON_LD
+  LLM
+  MANUAL
+}
+
+enum ApplicationStatus {
+  WISHLIST
+  APPLIED
+  SCREENING
+  INTERVIEW
+  TEST_TASK
+  OFFER
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+  GHOSTED
+}
+
+enum ApplicationOrigin {
+  SELF_APPLIED
+  RECRUITER_OUTREACH
+  REFERRAL
+  OTHER
+}
+
+enum ApplicationChannel {
+  DJINNI
+  DOU
+  LINKEDIN
+  EMAIL
+  TELEGRAM
+  COMPANY_SITE
+  OTHER
+}
+
+enum Priority {
+  HIGH
+  NORMAL
+  LOW
+}
+
+enum ApplicationEventType {
+  CREATED
+  STATUS_CHANGED
+  NOTE
+  MESSAGE_LOGGED
+  FOLLOW_UP_SENT
+  INTERVIEW_SCHEDULED
+  INTERVIEW_COMPLETED
+  OFFER_RECEIVED
+  ARCHIVED
+  UNARCHIVED
+}
+
+enum EventActor {
+  USER
+  IMPORT
+  SYSTEM
+}
+
+enum ReminderKind {
+  FOLLOW_UP
+  INTERVIEW
+  DEADLINE
+  CUSTOM
+}
+
+enum ReminderSource {
+  NEXT_ACTION
+  INTERVIEW_AUTO
+  MANUAL
+}
+
+enum ReminderStatus {
+  PENDING
+  DONE
+  CANCELLED
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  TELEGRAM
+}
+
+enum ImportStatus {
+  PREVIEWED
+  COMMITTED
+  EXPIRED
+  FAILED
+}
+
 /// R0 · Better Auth core + additionalFields (role, deletedAt, demoExpiresAt)
 model User {
   id            String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
@@ -34,9 +181,15 @@ model User {
   createdAt     DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt     DateTime  @updatedAt @db.Timestamptz(3)
 
-  sessions Session[]
-  accounts Account[]
-  settings UserSettings?
+  sessions           Session[]
+  accounts           Account[]
+  settings           UserSettings?
+  ownedJobs          Job[]
+  applications       Application[]
+  applicationEvents  ApplicationEvent[]
+  reminders          Reminder[]
+  importSessions     ImportSession[]
+  idempotencyRecords IdempotencyRecord[]
 
   @@index([deletedAt])
   @@index([demoExpiresAt])
@@ -103,4 +256,169 @@ model UserSettings {
   staleGhostDays          Int      @default(21) // "Mark as ghosted?" hint (only the user sets it)
   hotkeysEnabled          Boolean  @default(true) // WCAG 2.1.4 (P-14); server-side switch
   updatedAt               DateTime @updatedAt @db.Timestamptz(3)
+}
+
+/// R0 (PRIVATE, manual form) · R1 (catalogue, FTS) · R2 (PUBLIC from ingestion). CHECKs: job_*_chk (05 §7.4).
+model Job {
+  id               String           @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  visibility       JobVisibility
+  ownerId          String?          @db.Uuid // NOT NULL ⇔ PRIVATE (job_visibility_owner_chk)
+  owner            User?            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  companyNameRaw   String
+  title            String
+  normalizedTitle  String // lower + unaccent, computed on write (jobs.domain.ts, M1-04)
+  descriptionText  String // R0: pasted text (untrusted, rendered as plain text)
+  descriptionHtml  String? // sanitize-html on write (09); NULL in R0
+  locationText     String?
+  countryCode      String?          @db.Char(2) // ISO 3166-1 alpha-2 (job_country_chk)
+  workMode         WorkMode?
+  employmentType   EmploymentType?
+  seniority        Seniority?
+  englishLevel     CefrLevel?
+  salaryMin        Int?
+  salaryMax        Int?
+  salaryCurrency   String?          @db.Char(3) // ISO 4217 (job_currency_chk)
+  salaryPeriod     SalaryPeriod?
+  salaryIsGross    Boolean?
+  originalUrl      String? // as entered
+  canonicalUrl     String? // no utm/trailing slash, normalised host (A-08)
+  status           JobStatus        @default(OPEN)
+  extractionMethod ExtractionMethod @default(MANUAL)
+  publishedAt      DateTime?        @db.Timestamptz(3)
+  firstSeenAt      DateTime         @default(now()) @db.Timestamptz(3)
+  lastSeenAt       DateTime         @default(now()) @db.Timestamptz(3)
+  closedAt         DateTime?        @db.Timestamptz(3)
+  createdAt        DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime         @updatedAt @db.Timestamptz(3)
+
+  applications Application[]
+
+  @@unique([ownerId, canonicalUrl], where: raw("visibility = 'PRIVATE'"), map: "job_owner_canonical_url_private_uq") // A-08/P-12
+  @@index([ownerId, createdAt]) // A-09
+}
+
+/// R0 · CRM. CHECKs: application_*_chk (05 §7.4).
+model Application {
+  id                  String              @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId              String              @db.Uuid
+  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId               String?             @db.Uuid
+  job                 Job?                @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  companyName         String // snapshot; the only source when jobId is NULL
+  roleTitle           String // snapshot
+  origin              ApplicationOrigin   @default(SELF_APPLIED)
+  channel             ApplicationChannel?
+  status              ApplicationStatus   @default(WISHLIST)
+  priority            Priority            @default(NORMAL)
+  appliedAt           DateTime?           @db.Timestamptz(3)
+  lastActivityAt      DateTime            @default(now()) @db.Timestamptz(3) // P-04, 05 §6.3
+  staleDismissedUntil DateTime?           @db.Timestamptz(3) // P-04: "don't remind until"
+  nextActionText      String? // cache of the PENDING Reminder(NEXT_ACTION), P-05; pair CHECK with nextActionAt
+  nextActionAt        DateTime?           @db.Timestamptz(3) // cache
+  salaryExpected      Int?
+  salaryOffered       Int?
+  salaryCurrency      String?             @db.Char(3) // ISO 4217 (application_currency_chk)
+  salaryPeriod        SalaryPeriod? // A-22
+  notes               String? // markdown (untrusted, rendered as plain text)
+  importKey           String? // P-06: sha256(norm company|norm role|appliedAt::date)
+  archivedAt          DateTime?           @db.Timestamptz(3) // soft archive (P-22); status untouched
+  createdAt           DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime            @updatedAt @db.Timestamptz(3)
+
+  events    ApplicationEvent[]
+  reminders Reminder[]
+
+  @@unique([id, userId]) // target of the composite event FK (tenancy at the DB level, M1-01 Decision 5)
+  @@unique([userId, jobId], where: raw("\"jobId\" IS NOT NULL AND \"archivedAt\" IS NULL"), map: "application_user_job_active_uq") // P-22, 05 §6.1
+  @@unique([userId, importKey], map: "application_user_import_key_uq") // NULLs never conflict
+  @@index([userId, status, updatedAt(sort: Desc)])
+  @@index([userId, nextActionAt])
+  @@index([userId, lastActivityAt])
+  @@index([userId, createdAt])
+  @@index([jobId])
+}
+
+/// R0 · timeline (append-mostly; undo deletes, M1-08). CHECK: application_event_status_chk.
+model ApplicationEvent {
+  id            String               @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  applicationId String               @db.Uuid
+  // Composite FK (applicationId, userId) → Application (id, userId): an event cannot belong to another tenant.
+  application   Application          @relation(fields: [applicationId, userId], references: [id, userId], onDelete: Cascade)
+  userId        String               @db.Uuid
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          ApplicationEventType
+  actor         EventActor           @default(USER)
+  fromStatus    ApplicationStatus?
+  toStatus      ApplicationStatus?
+  payload       Json? // Zod: ApplicationEventPayload (discriminated by type)
+  occurredAt    DateTime             @db.Timestamptz(3) // may be in the past (backdated); set by the service
+  editedAt      DateTime?            @db.Timestamptz(3)
+  createdAt     DateTime             @default(now()) @db.Timestamptz(3)
+
+  @@index([applicationId, occurredAt])
+  @@index([userId, type, occurredAt])
+}
+
+/// R0 (in-app, computed when read) · R1 (delivery via ReminderDelivery). CHECKs: reminder_*_chk.
+model Reminder {
+  id            String                @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId        String                @db.Uuid
+  user          User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applicationId String?               @db.Uuid
+  // Composite FK (applicationId, userId) → Application (id, userId), MATCH SIMPLE: a NULL applicationId skips it;
+  // a set one must belong to the same tenant (M1-01 review).
+  application   Application?          @relation(fields: [applicationId, userId], references: [id, userId], onDelete: Cascade)
+  source        ReminderSource // A-05
+  kind          ReminderKind
+  title         String
+  dueAt         DateTime              @db.Timestamptz(3)
+  status        ReminderStatus        @default(PENDING)
+  snoozeCount   Int                   @default(0)
+  channels      NotificationChannel[] @default([IN_APP])
+  completedAt   DateTime?             @db.Timestamptz(3)
+  createdAt     DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime              @updatedAt @db.Timestamptz(3)
+
+  @@unique([applicationId, source], where: raw("source = 'NEXT_ACTION' AND status = 'PENDING'"), map: "reminder_next_action_active_uq") // P-05
+  @@index([userId, status, dueAt])
+  @@index([status, dueAt])
+  @@index([applicationId, userId]) // composite FK: cascade/lookup on Application delete (the partial unique can't serve it)
+}
+
+/// R0 · CSV preview → commit (P-06). CHECK: import_session_row_count_chk (06 §5: ≤ 5000 rows).
+model ImportSession {
+  id          String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId      String       @db.Uuid
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      ImportStatus @default(PREVIEWED)
+  fileName    String
+  fileSha256  String
+  rowCount    Int
+  rows        Json? // Zod: ImportRows — raw rows; cleared on commit/expiry (05 §8)
+  mapping     Json // Zod: ImportMapping {columns, statusValues, dateFormat, timezone}
+  report      Json? // Zod: ImportReport {created, skippedDuplicates, errors[{row, field, message}]}
+  committedAt DateTime?    @db.Timestamptz(3)
+  expiresAt   DateTime     @db.Timestamptz(3) // createdAt + 24 h
+  createdAt   DateTime     @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+
+/// R0 · Idempotency-Key (A-07, S-18; 06 §4). Claimed first in the mutation tx (statusCode/responseJson NULL),
+/// completed before commit. CHECKs: idempotency_*_chk (key format, response pair, 2xx–4xx only).
+model IdempotencyRecord {
+  id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId       String   @db.Uuid
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key          String // TEXT + CHECK ^[A-Za-z0-9_-]{8,128}$ (not VarChar: squawk prefer-text-field)
+  route        String // "POST /applications/:id/transitions"
+  requestHash  String // sha256(canonical JSON body + path params)
+  statusCode   Int? // NULL while claimed; 5xx never stored
+  responseJson Json? // stored response for replay (may hold user data → 24 h retention, 05 §8)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt    DateTime @db.Timestamptz(3) // createdAt + 24 h
+
+  @@unique([userId, key])
+  @@index([expiresAt])
 }

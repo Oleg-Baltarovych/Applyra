@@ -14,7 +14,19 @@ const appPrivilegesOnMigrations = () => appPrivilegesOnMigrationsAt(testInfra().
  * Tables where applyra_app may UPDATE or DELETE. A new table fails the test until it is listed here — review its
  * privileges first (e.g. AuditLog is INSERT/SELECT only, 05 §7.5).
  */
-const APP_MUTABLE_TABLES = ['Account', 'Session', 'User', 'UserSettings', 'Verification'];
+const APP_MUTABLE_TABLES = [
+  'Account',
+  'Application',
+  'ApplicationEvent', // append-mostly, not revoked: undo (M1-08) deletes events (M1-01 Decision 4)
+  'IdempotencyRecord',
+  'ImportSession',
+  'Job',
+  'Reminder',
+  'Session',
+  'User',
+  'UserSettings',
+  'Verification',
+];
 
 describe('migrations', () => {
   it('every migration folder is recorded as finished in "_prisma_migrations"', async () => {

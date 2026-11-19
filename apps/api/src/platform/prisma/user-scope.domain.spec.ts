@@ -81,8 +81,30 @@ describe('isOwnerScoped', () => {
 });
 
 describe('isUnscopedQuery', () => {
-  it('lists UserSettings by userId and no auth tables (Better Auth queries them by token/id/email)', () => {
-    expect(USER_SCOPED_MODELS).toEqual({ UserSettings: 'userId' });
+  it('lists the R0 user-owned models with their owner key and no auth tables (Better Auth queries them by token/id/email)', () => {
+    expect(USER_SCOPED_MODELS).toEqual({
+      UserSettings: 'userId',
+      Job: 'ownerId',
+      Application: 'userId',
+      ApplicationEvent: 'userId',
+      Reminder: 'userId',
+      ImportSession: 'userId',
+      IdempotencyRecord: 'userId',
+    });
+  });
+
+  it('guards Job by ownerId (R0: PRIVATE only), not userId', () => {
+    expect(isUnscopedQuery('Job', 'findFirst', { where: { id: 'j1' } })).toBe(true);
+    expect(isUnscopedQuery('Job', 'findFirst', { where: { id: 'j1', userId: 'u1' } })).toBe(true);
+    expect(isUnscopedQuery('Job', 'findFirst', { where: { id: 'j1', ownerId: 'u1' } })).toBe(false);
+  });
+
+  it('accepts the Application (id, userId) compound unique key', () => {
+    expect(
+      isUnscopedQuery('Application', 'findUnique', {
+        where: { id_userId: { id: 'a1', userId: 'u1' } },
+      }),
+    ).toBe(false);
   });
 
   it.each([

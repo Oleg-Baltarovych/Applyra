@@ -24,7 +24,17 @@ describe('user-scope guard coverage', () => {
     .filter((m): m is { model: Prisma.ModelName; column: string } => m.column !== undefined);
 
   it('finds the owner-column models of the schema', () => {
-    expect(owned.map((m) => m.model).sort()).toEqual(['Account', 'Session', 'UserSettings']);
+    expect(owned.map((m) => m.model).sort()).toEqual([
+      'Account',
+      'Application',
+      'ApplicationEvent',
+      'IdempotencyRecord',
+      'ImportSession',
+      'Job',
+      'Reminder',
+      'Session',
+      'UserSettings',
+    ]);
   });
 
   it('classifies every model with an owner column (guarded with that column, or unguarded with a reason)', () => {

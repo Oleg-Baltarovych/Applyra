@@ -10,7 +10,7 @@ import {
   type Tx,
   UnscopedQueryError,
 } from '../../src/platform/prisma/index.js';
-import { userFactory } from '../factories/index.js';
+import { applicationFactory, jobFactory, userFactory } from '../factories/index.js';
 import { testPrisma } from './support/prisma.js';
 import { testInfra } from './support/test-infra.js';
 
@@ -73,6 +73,45 @@ describe('user-scope guard (throw mode)', () => {
     ).resolves.toMatchObject({
       timezone: 'Europe/Kyiv',
     });
+  });
+});
+
+describe('user-scope guard on the R0 domain models (M1-01)', () => {
+  it('rejects job.findFirst by id alone and application.findMany({})', async () => {
+    const user = await userFactory.create(prisma);
+    const job = await jobFactory.create(prisma, { ownerId: user.id });
+
+    await expect(prisma.job.findFirst({ where: { id: job.id } })).rejects.toMatchObject({
+      name: UnscopedQueryError.name,
+      model: 'Job',
+      operation: 'findFirst',
+    });
+    await expect(prisma.application.findMany({})).rejects.toMatchObject({
+      model: 'Application',
+      operation: 'findMany',
+    });
+    await expect(
+      prisma.applicationEvent.deleteMany({ where: { type: 'NOTE' } }),
+    ).rejects.toBeInstanceOf(UnscopedQueryError);
+  });
+
+  it('passes queries pinned by ownerId / userId, incl. the (id, userId) compound key', async () => {
+    const a = await userFactory.create(prisma);
+    const b = await userFactory.create(prisma);
+    const job = await jobFactory.create(prisma, { ownerId: a.id });
+    const app = await applicationFactory.create(prisma, { userId: a.id, jobId: job.id });
+
+    await expect(
+      prisma.job.findFirst({ where: { id: job.id, ownerId: a.id } }),
+    ).resolves.toMatchObject({ id: job.id });
+    await expect(prisma.application.findMany({ where: { userId: a.id } })).resolves.toHaveLength(1);
+    await expect(
+      prisma.application.findUnique({ where: { id_userId: { id: app.id, userId: a.id } } }),
+    ).resolves.toMatchObject({ id: app.id });
+    // Owner-scoped lookup of A's row as B finds nothing (the 404 path of findOwned*).
+    await expect(
+      prisma.application.findUnique({ where: { id_userId: { id: app.id, userId: b.id } } }),
+    ).resolves.toBeNull();
   });
 });
 
