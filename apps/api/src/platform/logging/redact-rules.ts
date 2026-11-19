@@ -93,17 +93,22 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function redactUrl(url: string): string {
   const base = url.split(/[?#]/, 1)[0] ?? '';
   const authorityEnd = /^[a-z][a-z0-9+.-]*:\/\/[^/]*/i.exec(base)?.[0].length ?? 0;
+  // Userinfo (`user:password@`) never leaves: connection strings in DB/Redis errors carry credentials.
+  const authority = base
+    .slice(0, authorityEnd)
+    .replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/]*@/i, `$1${REDACTED}@`);
   const path = base
     .slice(authorityEnd)
     .split('/')
     .map((segment) => (TOKEN_SEGMENT.test(segment) && !UUID.test(segment) ? ':redacted' : segment))
     .join('/');
-  return base.slice(0, authorityEnd) + path;
+  return authority + path;
 }
 
-const URL_IN_TEXT = /https?:\/\/[^\s"'<>`)\]]+/g;
+// Any scheme, not only http(s): postgresql://, redis://, s3:// … URLs appear in driver/client error messages.
+const URL_IN_TEXT = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>`)\]]+/gi;
 
-/** Every http(s) URL inside free text (error messages) through `redactUrl`. */
+/** Every URL (any scheme) inside free text (error messages) through `redactUrl`. */
 export function redactUrlsIn(text: string): string {
   return text.replace(URL_IN_TEXT, (url) => redactUrl(url));
 }

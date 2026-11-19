@@ -17,6 +17,14 @@ describe('redactUrl', () => {
       '/api/v1/jobs/0193a7c2-7b4e-7c1a-9f2e-123456789abc',
     );
   });
+
+  it('drops userinfo (credentials) from the authority, any scheme', () => {
+    expect(redactUrl('postgresql://applyra_app:s3cret@db:5432/applyra')).toBe(
+      'postgresql://[REDACTED]@db:5432/applyra',
+    );
+    expect(redactUrl('https://user@x.test/p')).toBe('https://[REDACTED]@x.test/p');
+    expect(redactUrl('redis://:pw@redis:6379')).toBe('redis://[REDACTED]@redis:6379');
+  });
 });
 
 describe('redactUrlsIn', () => {
@@ -26,6 +34,14 @@ describe('redactUrlsIn', () => {
         `fetch https://r2.test/k?X-Amz-Signature=s failed; see "https://a.test/t/${TOKEN}".`,
       ),
     ).toBe('fetch https://r2.test/k failed; see "https://a.test/t/:redacted".');
+  });
+
+  it('redacts connection strings of any scheme (credentials in DB/Redis errors)', () => {
+    expect(
+      redactUrlsIn(
+        'connect failed: postgresql://applyra_app:s3cret@db:5432/applyra?sslmode=require',
+      ),
+    ).toBe('connect failed: postgresql://[REDACTED]@db:5432/applyra');
   });
 });
 
