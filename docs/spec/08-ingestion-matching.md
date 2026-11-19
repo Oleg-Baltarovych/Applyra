@@ -6,6 +6,8 @@
 
 **Усе в цьому файлі — R2.** У R0/R1 немає: ingestion, публічних SourceJob, дедупу між джерелами, FX-курсів, нормалізації зарплат у USD, matching, skills extraction з вакансій.
 
+**Виняток — ADR 025 (R1-lite):** skills extraction (§9) запускається синхронно в транзакції створення/оновлення job, без outbox. Matching-lite = підмножина §8.1–§8.3: Skills, Seniority, Work mode (без location), Employment type. Confidence = Σw(known) / 0.75; hard filters немає; `algorithmVersion = 'v1.0-lite'`. Результат рахується при читанні, без `MatchScore`, §8.4 і §8.5.
+
 | Що | Реліз | Модуль (див. `04-architecture.md` §3) |
 |---|---|---|
 | Adapters, scheduling, source health, дедуп (рівні 1–3) | R2 | `ingestion` |

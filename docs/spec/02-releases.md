@@ -6,7 +6,7 @@
 
 - Соло-розробка, **~15–20 год/тиждень**. Оцінки — орієнтир, не зобов'язання.
 - Кожен реліз окремо придатний до деплою (**deploy-ready**, ADR 022) і корисний сам по собі (D1, див. `01-product.md` §3). Постійно розгорнутого середовища в R0/R1 немає; хостинг — `Later — when hosting`.
-- Обсяг релізу визначається тегами `R0…R3` у `03-functional.md`; цей файл — зведення і порядок. При розбіжності правильний тег у `03-functional.md`.
+- Обсяг релізу визначається тегами `R0…R3` у `03-functional.md`; цей файл — зведення і порядок. При розбіжності правильний тег у `03-functional.md`. **Виняток — ADR 025:** R1 звужено до R1-lite (§2.2). R1-тег поза списком §2.2 означає `Later — after R1-lite` (§2.5). Тут перелічені також FR-MATCH, частково підтягнуті з R2.
 - Нове, що не влазить, → `Later`, а не в поточний реліз.
 - Єдине джерело строків — таблиця §3. Інші файли посилаються на неї.
 
@@ -33,26 +33,26 @@
 | Security headers / CSP (API + `_headers` SPA, у compose — Caddy з тими самими значеннями); Sentry SDK для api за DSN (web/worker — R1) | `09-security-privacy.md` §9, `11-testing.md` §5, `12-infra-ops.md` §9 |
 | Onboarding: «Import CSV / Add first job»; навігація: Applications · Today · Settings | FR-DASH (R0), `10-frontend-ux.md` |
 
-**Не входить у R0 (перенесено в R1):** URL fetcher (SSRF + JSON-LD) · in-app notification centre · email + password і reset · stale-підказки · contacts · interviews · Playwright E2E · outbox + worker · Prometheus/Grafana.
+**Не входить у R0 (перенесено в R1):** URL fetcher (SSRF + JSON-LD) · in-app notification centre · email + password і reset · stale-підказки · contacts · interviews · Playwright E2E · outbox + worker · Prometheus/Grafana. За ADR 025 у R1-lite лишились fetcher, worker (без outbox) і Playwright E2E; решта — §2.5 «After R1-lite».
 
 **Exit criteria:** усі поточні відгуки автора в Applyra (local); 7 днів щоденного використання без повернення до таблиці; локальний бекап відновлено вручну хоча б раз; свіжий clone → `docker compose up -d && pnpm dev` → demo sign-in працює без Google credentials; deploy-ready checks у CI зелені.
 
-### 2.2. R1 — «Public MVP / Portfolio-ready» (≈125–150 год, ~8 тижнів)
+### 2.2. R1-lite — «Portfolio-ready» (≈68 год, ~4–5 тижнів; ADR 025)
 
-| Блок | Зміст |
-|---|---|
-| Platform | outbox + BullMQ worker, AuditLog, Prometheus + Grafana (dashboards/alerts as code, local Compose-профіль), Sentry web + worker (за DSN) |
-| Auth | email + password + reset + email verification, політика паролів (≥12 + HIBP), revoke сесій, re-auth для чутливих дій |
-| Capture | URL fetcher (SSRF-safe) + JSON-LD, `extract-job` (LLM) як fallback з підтвердженням, політика доменів |
-| CRM | stale-підказки, custom reminders, редагування/видалення подій, contacts, interviews + `.ics` |
-| Profile & Docs | Career Profile, skills (каталог + aliases), CV upload/версії/parsing |
-| Jobs | список, пошук (FTS + trigram), фільтри (без зарплатного — R2), save/hide |
-| Insights | Dashboard, Analytics (base) |
-| Notifications | in-app центр, email-нагадування, daily digest, quiet hours |
-| Privacy | повний async експорт (zip), видалення акаунта, AI settings |
-| Demo & launch | ефемерний demo: обмеження, Turnstile/ліміти, purge, банер (створення — з R0); README оновлено R1-екранами і Grafana, ADR актуальні (000–022 уже є, нові — за потреби), Playwright E2E, privacy policy. Staging, release flow, restore-тест — `Later — when hosting` (ADR 022) |
+Замінює повний R1 (≈190 год за `mvp-tasks.md`). Задачі — `docs/plans/mvp-tasks.md` M3–M5 (без розділу `Later`).
 
-**Exit criteria:** незнайомий рекрутер/інженер відкриває репозиторій (README з відео/скріншотами) або Codespaces, заходить у demo і за 2 хвилини розуміє, що робить продукт; CI зелений (включно з deploy-ready checks); Grafana (local профіль) показує метрики на seed-навантаженні.
+| Блок | Зміст | Вимоги |
+|---|---|---|
+| Platform | BullMQ worker (`worker.ts`, потрібен для capture за ADR 021), AuditLog; **без outbox** (skill extraction синхронно в транзакції job); Sentry web + worker за DSN — optional | ADR 001, 021, 025 |
+| Capture | URL fetcher (SSRF-safe, окремий контейнер) + JSON-LD, політика доменів; опис зберігається як plain text (`descriptionHtml` = null) | FR-JOB-07, FR-JOB-09 |
+| AI | executor, бюджети, AiRun, `extract-job` + golden set, **один провайдер** (ADR 017 follow-up), LLM fallback у capture з підтвердженням і «Context used», AI settings + usage; demo → `StubProvider` | FR-JOB-08, FR-AI-01/03/05/06/07, FR-PRIV-03 |
+| Profile & skills (мінімум) | каталог skills + aliases, `UserSkill`; профіль лише seniority, target roles, work modes, employment types (без experience/education/languages/salary/hard filters) | FR-PROF-04; частково FR-PROF-03, FR-PROF-05 |
+| Matching-lite | детермінований score + confidence + пояснення (strengths/gaps/unknowns), рахується при читанні (без `MatchScore`). Компоненти Skills/Seniority/Work mode/Employment type (08 §8.1), `algorithmVersion = v1.0-lite`, golden set ≥ 20 пар. Бейдж + «Why?» у detail заявки | частково FR-MATCH-01 (без exclusion), FR-MATCH-02, FR-MATCH-03, FR-MATCH-05 |
+| Launch | Playwright E2E (flows 1–4 через demo sign-in) + `@smoke`, OpenAPI ↔ route table + `oasdiff`, a11y/responsive pass, `/bot` + сторінка потоків даних (LLM, AI settings, бекапи), README refresh, ADR актуальні | `11-testing.md`, `09-security-privacy.md` (API9) |
+
+Auth лишається Google OAuth + demo sign-in (local/Codespaces, production-guard M2-12). Обмеження demo (Turnstile, caps, `no-demo`, purge) повертаються з хостингом. Staging, release flow, restore-тест — `Later — when hosting` (ADR 022).
+
+**Exit criteria:** незнайомий рекрутер/інженер відкриває репозиторій (README з відео/скріншотами) або Codespaces, заходить у demo, за 2 хвилини робить capture URL → бачить чернетку (JSON-LD/LLM) → match з поясненням; CI зелений (включно з deploy-ready checks, SSRF fixtures, E2E).
 
 ### 2.3. R2 — «Discover & Match» (≈60–80 год, ~4 тижні)
 
@@ -63,7 +63,7 @@
 - OpenTelemetry traces API → queue → worker.
 - Telegram-бот для нагадувань (Could).
 
-Деталі — `08-ingestion-matching.md`, FR-DISC, FR-MATCH.
+Деталі — `08-ingestion-matching.md`, FR-DISC, FR-MATCH. ADR 025: matching v1 розширює matching-lite з R1-lite (persist `MatchScore`, тригери, salary/language/hard filters, feedback). R2 спершу забирає з «After R1-lite» потрібні передумови: outbox, Jobs list/search, `UserJob`, повний профіль.
 
 ### 2.4. R3 — «AI Assistant» (≈45–60 год, ~3 тижні)
 
@@ -78,6 +78,8 @@
 
 Browser extension (MV3) · AI-чат із діями (tool calling + confirm) · Google Calendar sync · Skill Gap Analyzer · Salary analytics · Company notes/intelligence · similarity-dedup + manual review · UA-локалізація · монетизація.
 
+**After R1-lite** (ADR 025; задачі — `mvp-tasks.md` «Later — after R1-lite», беруться за цінністю або разом із хостингом): outbox + in-app consumers · email + password, reset, verification, linking, sessions UI, re-auth (FR-AUTH-05…10) · stale-підказки, edit/delete подій, contacts, interviews + `.ics`, custom reminders (FR-APP-14…16, FR-REM-04…07, FR-INT-*) · notification centre, доставка нагадувань, quiet hours, email + digest (FR-NOTIF-01…04, FR-PROF-02) · Jobs list/search/filters/detail, `UserJob`, sanitized HTML (FR-JOB-10, FR-DISC-01…05) · documents/CV (FR-DOC-*) · решта профілю: experience, education, languages, links, salary, hard filters · Dashboard, Analytics, R1-навігація, onboarding R1 (FR-DASH-03/04, FR-ANL-*) · async export, видалення акаунта, retention (FR-PRIV-01/02) · обмеження demo і purge (FR-DEMO-02…05) · metrics + Prometheus/Grafana · k6/Lighthouse · admin TOTP + Bull Board · повна privacy policy.
+
 **When hosting** (ADR 022; лише після рішення хостити, варіанти — `12-infra-ops.md` §2.1): `terraform apply` + секрети, перший live deploy (`deploy-prod.yml` на push `main`) і перевірка `_headers` на Pages custom domain, off-site бекапи в R2 + Telegram, зовнішній uptime-check, WAL-G, scheduled restore test, staging + release flow `v*`, live `@smoke`, demo з Turnstile на публічному хості.
 
 ## 3. Єдиний таймлайн (milestones)
@@ -89,18 +91,20 @@ Browser extension (MV3) · AI-чат із діями (tool calling + confirm) ·
 | M0 Setup | 1 | 12–15 | monorepo, CI, compose, Google OAuth + allowlist, `UserSettings`, production images + `compose.prod.yml` + Terraform (deploy-ready, перевірка в CI), локальний `pg_dump`-скрипт; **spike версій**: NestJS 12 (fallback 11) з `nestjs-zod` і `@thallesp/nestjs-better-auth`, BullMQ 6 ↔ `@nestjs/bullmq` (інакше власна обгортка) — див. `04-architecture.md` §7 | |
 | M1 Tracker | 2–3 | 22–26 | applications CRUD + delete, Kanban, Table, Detail, timeline, transitions + idempotency + undo, ручна вакансія, next action, Today/Overdue | |
 | M2 Migration | 4 | 11–14 | CSV import (preview → commit), експорт CSV/JSON, IDOR-тести applications, полірування для щоденного використання, seed + demo sign-in без Google, devcontainer/Codespaces, portfolio README | **R0** (кінець тижня 4) |
-| M3 Capture & Notify | 5–6 | 30–35 | outbox + worker, URL fetcher + JSON-LD, notification centre, stale-підказки, custom reminders, email+password+reset, contacts, interviews, Playwright E2E | |
-| M4 Profile, Jobs & Extraction | 7–9 | 45–55 | profile + skills, documents, Jobs search/filters, `extract-job` + golden set → **вибір LLM-провайдера** | |
-| M5 Insights & Launch | 10–12 | 50–60 | dashboard, analytics, email + digest, privacy (export/delete), demo (обмеження, purge), Prometheus/Grafana (local профіль), security pass, README refresh, ADR | **R1** (кінець тижня 12) |
-| M6 Ingestion | 13–14 | 30–40 | adapters, normalization, salary + курси + salary-фільтр Jobs, dedup, source health | |
-| M7 Matching | 15–16 | 30–40 | matching v1, feedback, saved searches + digest, OTel | **R2** (кінець тижня 16) |
-| M8 AI | 17–19 | 45–60 | решта AI tasks, evals `analyze-job`, embeddings | **R3** (кінець тижня 19) |
+| M3 Capture | 5–6 | ≈21.5 | worker (без outbox), AuditLog, safe-fetcher + capture API/UI, Playwright infra + E2E flows 1–4 | |
+| M4 Profile, Matching & AI | 7–8 | ≈34 | мінімальний профіль + skills, синхронна skill extraction, matching-lite + UI, AI executor, `extract-job` + golden set (один провайдер), capture LLM fallback, AI settings | |
+| M5 Launch | 9 | ≈11.5 | `@smoke`, OpenAPI ↔ routes, a11y pass, `/bot`, README refresh, security pass | **R1-lite** (кінець тижня 9; ADR 025) |
+| M6 Ingestion | 10–11 | 30–40 | передумови з «After R1-lite» (outbox, Jobs list/search, `UserJob`) + adapters, normalization, salary + курси + salary-фільтр Jobs, dedup, source health | |
+| M7 Matching | 12–13 | 30–40 | matching v1 (на базі matching-lite), feedback, saved searches + digest, OTel | **R2** (кінець тижня 13) |
+| M8 AI | 14–16 | 45–60 | решта AI tasks, evals `analyze-job`, embeddings | **R3** (кінець тижня 16) |
 
 Між R0 і M3 допустима пауза на dogfooding (1–2 тижні) — таймлайн зсувається цілком.
 
 ## 4. Backlog (епіки → GitHub Issues)
 
 Нумерація issues — `E<NN>-<nn>` (наприклад `E03-04`), щоб не плутати з ID ревʼю (`A-01`, `P-04`). Кожен issue має AC і посилання на `FR-*` або розділ спеки.
+
+ADR 025: колонка «Реліз» нижче — до звуження. Зараз у R1-lite з R1-частин епіків лишились: E04 (safe fetcher, JSON-LD, політика доменів, JobDraft UI; без `UserJob`), E07 (лише skills + мінімальний профіль), E10 (worker, AuditLog, Sentry), E13 (`extract-job`), а з E12 — matching-lite. Решта R1-частин E02, E03, E05, E06, E08, E09, E10 — Later (§2.5).
 
 | Епік | Зміст | Реліз |
 |---|---|---|
@@ -140,7 +144,7 @@ Browser extension (MV3) · AI-чат із діями (tool calling + confirm) ·
 - Playwright E2E оновлено, якщо зачеплено ключовий flow (див. `11-testing.md`).
 - Background jobs / consumers ідемпотентні (стабільний `jobId` / dedup key).
 - Чутливі дії пишуться в AuditLog (перелік — див. `09-security-privacy.md`).
-- Нові метрики/алерти, якщо з'явився новий процес або черга (див. `12-infra-ops.md`).
+- Нові метрики/алерти, якщо з'явився новий процес або черга (див. `12-infra-ops.md`). У R1-lite не вимагається, поки metrics/Prometheus у Later (ADR 025).
 - Міграції backward-compatible (expand → migrate → contract), без drift.
 - SPEC / ADR оновлено, якщо змінилась поведінка або архітектура.
 
@@ -164,3 +168,4 @@ Browser extension (MV3) · AI-чат із діями (tool calling + confirm) ·
 - Q4: вибір LLM-провайдера в M4 за golden set.
 - DoD розділено на R0 (полегшений) і R1+ (повний); епіки перейменовано `E01…E13`.
 - ADR 022 (2026-11-16): R0/R1 deploy-ready, не hosted (D-01 superseded); demo sign-in (FR-DEMO-01) — у R0 для local/Codespaces; exit criteria R0/R1 без prod-хоста; хостинг-задачі — §2.5 «When hosting».
+- ADR 025 (2026-11-19): R0 без змін; R1 → R1-lite (§2.2): capture, `extract-job` (один провайдер), matching-lite (з R2, рахується при читанні), E2E; без outbox. Решта R1 — §2.5 «After R1-lite». Таймлайн M3–M8 зсунуто (R1-lite — тиждень 9). Критерій виходу «Grafana» знято.
