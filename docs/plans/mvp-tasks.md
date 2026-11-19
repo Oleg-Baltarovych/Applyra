@@ -1,4 +1,4 @@
-# MVP tasks — R0 + R1
+# MVP tasks — R0 + R1-lite
 
 > Applyra · план задач до `docs/plans/mvp.md` · джерела: `docs/spec/02-releases.md` (обсяг, DoD), `03-functional.md` (FR + AC) · 2026-11-16
 
@@ -9,6 +9,7 @@
 - `Flow`: `/feature` — plan → approve → implement → review → verify → accept; `direct` — без окремого плану (дрібне, без змін схеми): `/implement docs/plans/mvp-tasks.md <ID>`, AC задачі = кроки плану, далі `/review` + `/verify` + `qa-lead` як зазвичай; `spike` — throwaway-перевірка, результат у `docs/CONTEXT.md` §6 / ADR, код лише якщо придатний; `/e2e`, `/security-audit`, `/ship` — відповідні flow-команди.
 - DoD: R0-задачі — `02-releases.md` §5.1; з M3 — §5.2. Тести з AC — частина задачі, не окремий PR.
 - `later` — розділ `Later — when hosting` (ADR 022): задачі, потрібні лише для hosted-середовища; не плануються, поки не вирішено хостити.
+- `later-r1l` — розділ `Later — after R1-lite` (ADR 025): R1-задачі поза R1-lite; не входять у gate M5-28, беруться за цінністю або разом із хостингом.
 - `optional` — нижчий пріоритет; береться, якщо milestone іде за графіком. Не виконано → переноситься в `Later`/наступний milestone свідомо (запис у PR-описі релізу).
 - Оцінки — години роботи соло-розробника з Claude Code (включно з review/verify), не «чистий» час агента.
 
@@ -22,13 +23,22 @@
 | M1 Tracker | 22–26 | 41.5 | 1.5 | 43 |
 | M2 Migration | 11–14 | 26.5 | — | 26.5 |
 | **R0** | **45–55** | **97** | **3** | **100** |
-| M3 Capture & Notify | 30–35 | 65.5 | — | 65.5 |
-| M4 Profile, Jobs & Extraction | 45–55 | 63 | — | 63 |
-| M5 Insights & Launch | 50–60 | 57.5 | 4 | 61.5 |
-| **R1** | **125–150** | **186** | **4** | **190** |
+| M3 Capture | ≈21.5 | 21.5 | — | 21.5 |
+| M4 Profile, Matching & AI | ≈34 | 34 | — | 34 |
+| M5 Launch | ≈11.5 | 11.5 | 1 | 12.5 |
+| **R1-lite** (ADR 025) | **≈68** | **67** | **1** | **68** |
+| Later — after R1-lite | — | 122 | 4 | 126 |
 | Later — when hosting | — | 6 | 6 | 12 |
 
 **ADR 022 (2026-11-16):** R0 core 90.5 → 97 (−2 год: M0-13 у Later, M0-15 звужено; +8.5 год: M0-17 Terraform validate, M2-12 demo sign-in, M2-13 README, M2-14 devcontainer, seed +0.5); R1 core 193.5 → 186, optional 10 → 4 (M5-17/18/20 у Later, M5-19 закрито, M5-12/21/27 звужено). R0+R1 разом 297 → 290; ще 12 год лежать у Later і не потрібні без хостингу.
+
+**ADR 025 (2026-11-19):** R0 без змін. R1 (186 core + 4 optional = 190) → R1-lite (67 + 1 = 68).
+- У R1-lite лишились: M3-01, M3-03, M3-20…M3-25; M4-01…M4-06, M4-08, M4-19…M4-23; M5-21, M5-22, M5-25…M5-28; M5-14 (optional).
+- Звужено: M3-23, M4-03, M4-05, M4-21, M5-14, M5-21, M5-25, M5-26 (−8 год).
+- Нові задачі: M4-24, M4-25 (matching-lite, +6 год).
+- Решта переїхала в `Later — after R1-lite`: 116 core + 4 optional, плюс залишки звужених задач M4-03b/M4-05b/M4-21b/M5-21b/M5-26b (6 год).
+- Залежності перевірено: жодна задача R1-lite не залежить від Later.
+- R0-задачі, що готують лише відкладене: M0-16 (optional spike presigned PUT, тільки для documents) — пропустити.
 
 **Висновок:** core-обсяг R0 ≈ 1.8–2.2× від оцінки 02, R1 ≈ 1.2–1.5×. Колонка «02 (ціль)» лишається як орієнтир; при відставанні першими знімаються `optional` (правило `mvp.md` §7), але це закриває лише ~3 год R0 / ~4 год R1 — решта розриву вирішується календарем або правкою спеки (варіанти — `mvp.md` §2). Нічого з FR не вирізано.
 
@@ -443,7 +453,7 @@
 
 ---
 
-## M3 Capture & Notify (тижні 5–6)
+## M3 Capture (тижні 5–6)
 
 **E10 Platform**
 
@@ -454,133 +464,13 @@
   - Graceful shutdown ≤ 30 с; `/health` на :9465 + heartbeat; worker-контейнер у compose і deploy (SIGTERM → close → новий).
   - Integration: processor ідемпотентний за `jobId`.
 
-### M3-02 · Transactional outbox
-- FR: — · Area: worker, db · Est: 3h · Depends: M3-01 · Flow: /feature
-- AC:
-  - `OutboxEvent` міграція + partial index; `OutboxWriter.append(tx, …)`; relay claim (`FOR UPDATE SKIP LOCKED`, коротка tx) → publish (`jobId = <eventId>_<consumer>`, `consumer` = `<queue>-<job>` — BullMQ забороняє `:` у custom jobId) → mark/backoff; dead після 10.
-  - Integration: crash між publish і mark → без дубля; Redis down → події накопичуються й доганяються; scheduler `outbox:cleanup` (job `outbox/cleanup`) 7 днів.
-- Notes: `04-architecture.md` §5.2, ADR 006.
-
-### M3-02b · Outbox producers in R0 code
-- FR: FR-NOTIF-01, FR-DISC-01 · Area: api, contracts · Est: 2h · Depends: M3-02 · Flow: /feature
-- AC:
-  - Payload-схеми подій (Zod у contracts: ids + `occurredAt` + версія) для типів `DomainEventType`, чий producer живе в R0-коді (`04-architecture.md` §5.3):
-    - `JobCreated` — `POST /jobs` і inline job у `POST /applications` (M1-04, M1-06); `JobUpdated` — `PATCH /jobs/:id` (M1-04);
-    - `ApplicationStatusChanged` — transitions і undo-revert (M1-08); CSV import його не емітить (рядки — `ImportCommitted`, щоб не спамити нотифікаціями);
-    - `ImportCommitted` — `POST /import/csv/commit` (M2-02).
-  - `outbox.append(tx, …)` у тій самій `$transaction`, що й мутація; синхронні R0-ефекти (A-03, §5.1) не переводяться на події.
-  - Integration на кожен producer: рядок `OutboxEvent` записано разом з мутацією; rollback мутації → рядка немає; IK-replay → без другого рядка.
-- Notes: решта R1-подій (`DocumentUploaded`, `DocumentDeleted`, `DataExportRequested`, `UserDeletionRequested`) додають свої задачі (M4-14/16, M5-08/09); revert статусу в M3-12 теж емітить `ApplicationStatusChanged`.
-
 ### M3-03 · AuditLog
 - FR: — · Area: api, db, security · Est: 2h · Depends: M3-01 · Flow: /feature
 - AC:
   - Міграція + grants (`applyra_app` тільки INSERT/SELECT — тест, що UPDATE падає); `AuditService.record(tx, …)`.
   - Події sign-in/out, session revoke, `IMPORT_COMMITTED`; IP /24; retention 90 днів (maintenance-роль).
 
-**E02 Auth**
-
-### M3-04 · Email infrastructure
-- FR: FR-NOTIF-02 · Area: api, worker · Est: 2h · Depends: M3-01 · Flow: /feature
-- AC:
-  - `EmailSender` (Mailpit локально, provider adapter — для hosted-середовища, when hosting; у R1 перевіряється з sandbox-ключем або лише unit/contract), черга `email`, job `send` з ідемпотентним `jobId` (без `:`, `04-architecture.md` §5.4); шаблони (text + HTML).
-  - Вибір Resend vs Postmark зафіксовано (рядок в ADR 011 або новий ADR).
-
-### M3-05 · Email + password sign-up / sign-in + verification
-- FR: FR-AUTH-05, FR-AUTH-07, FR-AUTH-02 · Area: api, security · Est: 3h · Depends: M3-04, M3-03 · Flow: /feature
-- AC:
-  - Пароль 12–128, HIBP (k-anonymity) → відмова з поясненням; allowlist діє; verification email.
-  - Enumeration: невідомий email vs неправильний пароль — ідентичні відповідь/статус; sign-up на зайнятий email = відповідь успіху + лист власнику; dummy-hash.
-  - До верифікації export/delete/linking → відхилено (тест).
-
-### M3-06 · Reset password + change password
-- FR: FR-AUTH-06, FR-AUTH-09 · Area: api, security · Est: 2h · Depends: M3-05 · Flow: /feature
-- AC:
-  - Токен одноразовий, TTL 30 хв; відповідь однакова для будь-якого email.
-  - Reset і change password інвалідують усі інші сесії; audit `PASSWORD_*`.
-
-### M3-07 · Auth rate limits
-- FR: FR-AUTH-07 · Area: api, security · Est: 1.5h · Depends: M3-05, M2-06 · Flow: /feature
-- AC:
-  - sign-in 5/хв на (IP, email) і 30/год на IP; reset 3/год на email; sign-up 10/год на IP → 429; лічильники для `auth_failures_total`/`rate_limit_hits_total`.
-
-### M3-08 · Google ↔ email account linking
-- FR: FR-AUTH-08 · Area: api, security · Est: 1.5h · Depends: M3-05 · Flow: /feature
-- AC:
-  - Автолінк лише при `email_verified` з обох сторін; інакше `409 ACCOUNT_LINK_REQUIRES_VERIFICATION`; audit `ACCOUNT_LINKED`.
-
-### M3-09 · Sessions management + re-auth
-- FR: FR-AUTH-09, FR-AUTH-10 · Area: api · Est: 2.5h · Depends: M3-06 · Flow: /feature
-- AC:
-  - `list-sessions`, `revoke-session`, revoke all others, `POST /api/auth/revoke-sessions` (R1); audit.
-  - `@RequireRecentAuth` (freshAge 10 хв) → `403 FRESH_SESSION_REQUIRED`; route-table тест: кожен `fresh` route має декоратор.
-
-### M3-10 · Web: auth screens, sessions, re-auth
-- FR: FR-AUTH-05, FR-AUTH-06, FR-AUTH-09, FR-AUTH-10 · Area: web · Est: 3h · Depends: M3-09 · Flow: /feature
-- AC:
-  - `/sign-in` (Google + email/password), sign-up, verify, forgot/reset; generic повідомлення.
-  - `/settings/sessions` (список, revoke, «Sign out everywhere»), `/settings/account` (change password); `ReauthDialog` на `FRESH_SESSION_REQUIRED`.
-
-**E03 Applications**
-
-### M3-11 · Stale hints
-- FR: FR-APP-14 · Area: api, web · Est: 2.5h · Depends: M1-10, M1-14 · Flow: /feature
-- AC:
-  - Domain (unit): пороги з `UserSettings` по статусах, `staleGhostDays` → «Mark as ghosted?», dismiss до `staleDismissedUntil`, нова активність знімає dismiss; система ніколи не змінює статус.
-  - `POST /applications/:id/stale/dismiss` (IDOR); `isStale`/hint у list/detail; UI-підказки на картці й у detail.
-
-### M3-12 · Edit / delete timeline events
-- FR: FR-APP-15 · Area: api, web · Est: 2.5h · Depends: M1-09, M1-16, M3-02b · Flow: /feature
-- AC:
-  - `PATCH /applications/:id/events/:eventId`: текст + `occurredAt` для NOTE/MESSAGE/FOLLOW_UP; тільки `occurredAt` для `STATUS_CHANGED`.
-  - `DELETE`: останній `STATUS_CHANGED` без 15-с вікна (статус → `fromStatus`, `ApplicationStatusChanged` в outbox), `CREATED` → 409; `lastActivityAt` перераховується (integration).
-  - `TimelineEventEditor` у detail; IDOR.
-
-### M3-13 · Contacts
-- FR: FR-APP-16 · Area: db, api, web · Est: 3.5h · Depends: M1-06 · Flow: /feature
-- AC:
-  - Міграція `Contact`, `ApplicationContact`; `GET/POST /contacts` (cursor, `q`), `GET/PATCH/DELETE /contacts/:id`, link/unlink до заявки.
-  - Видалення контакту — повне, без audit metadata; заявки лишаються; видалення заявки знімає зв'язки.
-  - Вкладка Contacts у detail; IDOR для всіх маршрутів (link чужого контакту → 404).
-
-### M3-14 · Interviews API + auto-reminders
-- FR: FR-INT-01, FR-INT-02, FR-INT-05 · Area: db, api · Est: 3h · Depends: M1-11 · Flow: /feature
-- AC:
-  - Міграція `Interview`; CRUD (`/applications/:id/interviews`, `/interviews/:id`), подія `INTERVIEW_SCHEDULED`, `meetingUrl` тільки http(s).
-  - Авто-reminders 24 год / 1 год (`INTERVIEW_AUTO`): перенесення оновлює `dueAt`, видалення скасовує.
-  - `GET /interviews?from&to` (≤ 92 дні, sorted); IDOR.
-- Notes: глобальний вимикач авто-reminders — spec gap G-04 (`mvp.md` §6).
-
-### M3-15 · Interviews UI + debrief + `.ics`
-- FR: FR-INT-01, FR-INT-03, FR-INT-04 · Area: api, web · Est: 2.5h · Depends: M3-14 · Flow: /feature
-- AC:
-  - Вкладка Interviews: форма, debrief-шаблон однією дією в порожнє поле.
-  - `GET /interviews/:id/ics`: стабільний UID, коректний TZ (unit на генератор); ручна перевірка Google Calendar + Outlook.
-
-**E05 Reminders & Notifications**
-
-### M3-16 · Custom reminders + follow-up templates
-- FR: FR-REM-04, FR-REM-07 · Area: api, web · Est: 2h · Depends: M1-11, M1-18 · Flow: /feature
-- AC:
-  - `source = MANUAL`, опційно з заявкою, не впливають на `nextAction*`, без ліміту кількості.
-  - Статичні follow-up шаблони: тільки «Copy» / `mailto:`; нічого не надсилається від імені користувача.
-
-### M3-17 · Notification centre
-- FR: FR-NOTIF-01 · Area: db, api, web · Est: 3h · Depends: M3-02 · Flow: /feature
-- AC:
-  - Міграція `Notification` (`dedupeKey`), `NotificationPreference`; `NotificationsService.notify` ідемпотентний за `dedupeKey`.
-  - `GET /notifications` (cursor, unread), `PATCH /:id/read`, `POST /read-all`; дзвіночок з лічильником; IDOR.
-
-### M3-18 · Reminder delivery + quiet hours
-- FR: FR-REM-05, FR-REM-06, FR-PROF-02 · Area: worker, api · Est: 3h · Depends: M3-17 · Flow: /feature
-- AC:
-  - Scheduler `reminders:scan-due` (job `reminders/scan-due`) щохвилини; `ReminderDelivery` unique (reminder, dueAt, channel): retry не дублює, snooze дозволяє нову доставку.
-  - Quiet hours у `UserSettings` (default 22:00–08:00, вимикаються) відкладають доставку; списки Today не залежать (unit з DST).
-
-### M3-19 · Outbox consumers → in-app
-- FR: FR-NOTIF-01 · Area: worker · Est: 1h · Depends: M3-17, M3-02b · Flow: /feature
-- AC:
-  - `ApplicationStatusChanged`, `ImportCommitted` → notifications (jobs `notifications/status-changed`, `notifications/import-committed`, `04-architecture.md` §5.4); consumer читає поточний стан, видалений агрегат → no-op.
+> M3-02, M3-02b, M3-04…M3-19 — у `Later — after R1-lite` (ADR 025).
 
 **E04 Capture**
 
@@ -596,10 +486,11 @@
 ### M3-21 · Capture API: domain policy + JSON-LD → JobDraft
 - FR: FR-JOB-07, FR-JOB-09 · Area: api, contracts · Est: 3.5h · Depends: M3-20, M1-04 · Flow: /feature
 - AC:
-  - `POST /jobs/capture` (IK, no-demo, 30/год): API ставить BullMQ job `capture/capture` зі стабільним `jobId` (`capture-<sha256>`) і чекає результат ≤ 6 с; fetch робить лише worker (ADR 021); тайм-аут → `504 CAPTURE_TIMEOUT` (`06-api.md` §3.1, ADR 021). Integration: повтор із тим самим IK не ставить другий job.
+  - `POST /jobs/capture` (IK, 30/год; `no-demo` — з M5-12, коли хостимо: у R1-lite demo лише local, ADR 025): API ставить BullMQ job `capture/capture` зі стабільним `jobId` (`capture-<sha256>`) і чекає результат ≤ 6 с; fetch робить лише worker (ADR 021); тайм-аут → `504 CAPTURE_TIMEOUT` (`06-api.md` §3.1, ADR 021). Integration: повтор із тим самим IK не ставить другий job.
   - LinkedIn paste-only, `robots.txt` для UA, denylist конфігом → «Paste the job text instead».
   - JSON-LD `JobPosting` mapper (фікстури) → `JobDraft` з `source` + confidence на поле; нічого не зберігається.
   - Недоступна сторінка → `422 CAPTURE_UNAVAILABLE` без повторів; captured — завжди PRIVATE.
+  - Опис з JSON-LD (HTML) → plain text у `descriptionText` (теги видалено, unit на фікстурах з `<script>`/`<img onerror>`); `descriptionHtml` = null. Sanitized HTML — M4-11 (Later, ADR 025).
 
 ### M3-22 · Web: URL capture
 - FR: FR-JOB-07, FR-AI-05 · Area: web · Est: 2.5h · Depends: M3-21, M1-13 · Flow: /feature
@@ -609,17 +500,17 @@
 **E2E**
 
 ### M3-23 · Playwright infrastructure
-- FR: — · Area: e2e, ci · Est: 3h · Depends: M3-10 · Flow: /e2e
+- FR: — · Area: e2e, ci · Est: 2.5h · Depends: M2-12, M3-20 · Flow: /e2e
 - AC:
-  - Workspace `e2e` (з M0-01, pinned `@playwright/test`) + `@axe-core/playwright`; `compose.ci.yml` (production images, Caddy з headers, Mailpit, stub LLM, stub capture-сайт); `e2e/seed.spec.ts`.
+  - Workspace `e2e` (з M0-01, pinned `@playwright/test`) + `@axe-core/playwright`; `compose.ci.yml` (production images, Caddy з headers, worker + safe-fetcher, stub LLM, stub capture-сайт; Mailpit — з M3-04, Later); вхід через demo sign-in (M2-12); `e2e/seed.spec.ts`.
   - CI job на PR; trace on first retry, 1 retry тільки в CI; role-based locators.
 - Notes: після інсталяції перевірити `.mcp.json` playwright-test (`CONTEXT.md` §6).
 
 ### M3-24 · E2E flows 1, 3, 4
 - FR: FR-APP-05, FR-APP-06, FR-IMP-02, FR-AUTH-03 · Area: e2e · Est: 3h · Depends: M3-23 · Flow: /e2e
 - AC:
-  - Flow 1 (sign up → onboarding → paste job → application → drag → Undo → Move to (keyboard) → next action → Today → export), axe на кожному екрані, desktop + 375px.
-  - Flow 3 (CSV import + повтор без дублів), flow 4 (user B: UI + прямі URL → 404).
+  - Flow 1 (demo sign-in → onboarding R0 → paste job → application → drag → Undo → Move to (keyboard) → next action → Today → export), axe на кожному екрані, desktop + 375px. Email sign-up — разом із M3-05 (Later, ADR 025).
+  - Flow 3 (CSV import + повтор без дублів), flow 4 (другий demo-користувач B: UI + прямі URL → 404).
 
 ### M3-25 · E2E flow 2 (capture)
 - FR: FR-JOB-07 · Area: e2e · Est: 1h · Depends: M3-22, M3-23 · Flow: /e2e
@@ -628,14 +519,14 @@
 
 ---
 
-## M4 Profile, Jobs & Extraction (тижні 7–9)
+## M4 Profile, Matching & AI (тижні 7–8)
 
 **E07 Profile & Skills**
 
 ### M4-01 · Profile & skills schema
-- FR: FR-PROF-03, FR-PROF-04, FR-PROF-05 · Area: db · Est: 1.5h · Depends: M3-02 · Flow: /feature (`/prisma-migration`)
+- FR: FR-PROF-03, FR-PROF-04, FR-PROF-05 · Area: db · Est: 1.5h · Depends: M2-11 · Flow: /feature (`/prisma-migration`)
 - AC:
-  - `CareerProfile`, `Experience`, `Education`, `Language`, `Skill`, `SkillAlias`, `UserSkill`; unique (user, skill); trigram на name/alias.
+  - `CareerProfile` (повна таблиця за `05-data-model.md`, щоб M4-03b не мігрував її знову), `Skill`, `SkillAlias`, `UserSkill`, `JobSkill` (з R2, ADR 025); unique (user, skill), (job, skill); trigram на name/alias. `Experience`/`Education`/`Language` — M4-03b (Later).
 
 ### M4-02 · Skills catalogue + search
 - FR: FR-PROF-04 · Area: api, db · Est: 3h · Depends: M4-01 · Flow: /feature
@@ -644,109 +535,60 @@
   - `GET /skills/search?q=` по name + aliases повертає канонічну навичку.
 - Notes: джерело списку — gap G-07.
 
-### M4-03 · Career profile API
-- FR: FR-PROF-03, FR-PROF-05 · Area: api, contracts · Est: 3h · Depends: M4-01 · Flow: /feature
+### M4-03 · Career profile API (narrowed, ADR 025)
+- FR: FR-PROF-03, FR-PROF-05 (частково) · Area: api, contracts · Est: 1.5h · Depends: M4-01 · Flow: /feature
 - AC:
-  - `GET/PATCH /profile` (+ preferences, `hardFilters` окремо від значень), experiences/educations CRUD, `PUT /profile/languages` (CEFR).
-  - Посилання тільки http(s); timezone відсутній у профілі; IDOR для `:id`-маршрутів.
+  - `GET/PATCH /profile` лише з полями для matching-lite: `seniority`, `targetRoles`, `workModes`, `employmentTypes`; профіль створюється ліниво (upsert), scoped by `userId`.
+  - Timezone відсутній у профілі; невідомі поля → `400 VALIDATION_ERROR`.
+  - Решта (personal/links, experience, education, languages, salary, `hardFilters`) — M4-03b (Later).
 
 ### M4-04 · User skills API
 - FR: FR-PROF-04 · Area: api · Est: 1.5h · Depends: M4-02 · Flow: /feature
 - AC:
   - `GET /profile/skills`, `PUT/DELETE /profile/skills/:skillId` (level 1–5, years, lastUsed, preference); дубль неможливий; IDOR.
 
-### M4-05 · Web: Profile
-- FR: FR-PROF-03, FR-PROF-05 · Area: web · Est: 4h · Depends: M4-03 · Flow: /feature
+### M4-05 · Web: Profile (narrowed, ADR 025)
+- FR: FR-PROF-03, FR-PROF-05 (частково) · Area: web · Est: 2h · Depends: M4-03 · Flow: /feature
 - AC:
-  - `/profile`: personal, summary, experience, education, languages, preferences з позначкою hard/soft; empty states з CTA; responsive.
+  - `/profile`: seniority, target roles, work modes, employment types (RHF + contracts) + місце під секцію skills (M4-06); empty state з CTA; responsive; пункт навігації Profile.
+  - Решта секцій — M4-05b (Later).
 
 ### M4-06 · Web: skills combobox
 - FR: FR-PROF-04 · Area: web · Est: 2h · Depends: M4-04, M4-05 · Flow: /feature
 - AC:
   - `SkillCombobox` (alias → канонічна, keyboard, ARIA combobox), список навичок з level/preference.
 
-**E09 / E04 Jobs search**
-
-### M4-07 · Jobs search schema
-- FR: FR-DISC-02, FR-JOB-10 · Area: db · Est: 2h · Depends: M4-01 · Flow: /feature (`/prisma-migration`)
+### M4-08 · Skill extraction on job write (sync, ADR 025)
+- FR: FR-PROF-04, FR-MATCH-01 (передумова) · Area: api · Est: 2h · Depends: M4-02 · Flow: /feature
 - AC:
-  - `Company`, `UserJob`, `JobSkill` (gap G-03); `search_vector` generated (`f_unaccent`) + GIN, trigram на title/company (`05-data-model.md` §7.3); `CONCURRENTLY` де потрібно, squawk зелений.
-  - Створення `UserJob` у jobs-сервісі з цього моменту + backfill `UserJob` для R0-вакансій (ідемпотентний; R0 створював лише PRIVATE `Job`, G-08).
+  - Jobs-сервіс у тій самій транзакції, що create/update job (`POST /jobs`, inline job у `POST /applications`, `PATCH /jobs/:id`, збереження captured job), викликає `skills.extractFromText` (через `index.ts` модуля skills) → replace `JobSkill` (source `DICTIONARY`, REQUIRED/NICE за 08 §9); повтор/IK-replay не дублює (integration).
+  - Ідемпотентний backfill-скрипт `JobSkill` для R0-вакансій.
+- Notes: без outbox; перехід на consumer `JobCreated`/`JobUpdated` — разом з M3-02b (Later).
 
-### M4-08 · Skill extraction consumer
-- FR: FR-DISC-01, FR-DISC-03 · Area: worker · Est: 2h · Depends: M4-02, M4-07, M3-02b · Flow: /feature
+> M4-07, M4-09…M4-18 — у `Later — after R1-lite` (ADR 025).
+
+**E12 Matching-lite (ADR 025)**
+
+### M4-24 · Matching-lite: domain + `GET /jobs/:id/match`
+- FR: FR-MATCH-01 (без exclusion), FR-MATCH-02, FR-MATCH-05 · Area: api, contracts · Est: 4h · Depends: M4-03, M4-04, M4-08 · Flow: /feature (test-first)
 - AC:
-  - `JobCreated`/`JobUpdated` (outbox) → `extractFromText` → upsert `JobSkill` (source `DICTIONARY`); повтор не дублює.
+  - `matching/score.domain.ts` (чисті функції, ≥ 90% coverage): компоненти Skills 0.35 / Seniority 0.20 / Work mode 0.15 / Employment type 0.05 за 08 §8.1; `null` = unknown знижує confidence, не score; confidence = Σw(known) / 0.75; `excludedReasons` = []; `algorithmVersion = 'v1.0-lite'`.
+  - `MatchExplanation` (Zod у contracts, 08 §8.3) зі strengths/gaps/unknowns, детерміновані тексти; golden set ≥ 20 пар (профіль, вакансія) з очікуваними діапазонами score/confidence.
+  - `GET /jobs/:id/match` рахує при читанні (без `MatchScore`); чужа/неіснуюча вакансія → 404 (IDOR-тест); без профілю/skills → `score: null` + unknowns, не помилка.
 
-### M4-09 · `GET /jobs` (JobQuery)
-- FR: FR-DISC-01, FR-DISC-02, FR-DISC-03, FR-DISC-04 · Area: api, contracts · Est: 4h · Depends: M4-07, M4-08 · Flow: /feature
+### M4-25 · Web: match badge + «Why?»
+- FR: FR-MATCH-03 · Area: web · Est: 2h · Depends: M4-24, M1-16 · Flow: /feature
 - AC:
-  - FTS + trigram: `Reakt` → `React Developer`, нечутливо до регістру/діакритики (integration на реальному PG).
-  - Фільтри (AND): work mode, seniority, salary disclosed, employment type, country, date posted, source, skills include/exclude, excluded companies, saved/hidden; hidden за замовчуванням виключені.
-  - Sort newest / relevance; keyset cursor без дублів/пропусків при рівних значеннях (тест).
-  - Чужі приватні ніколи у списку (IDOR list).
-
-### M4-10 · UserJob state + companies autocomplete
-- FR: FR-JOB-10 · Area: api · Est: 2h · Depends: M4-07 · Flow: /feature
-- AC:
-  - `PATCH /jobs/:id/user-state` (saved, hidden, reason, note); `GET /jobs/:id` ставить `viewedAt`; стан не впливає на інших користувачів.
-  - `GET /companies/search?q=` (trigram); IDOR.
-
-### M4-11 · Sanitized job HTML
-- FR: FR-DISC-05 · Area: api, web, security · Est: 1.5h · Depends: M4-07 · Flow: /feature
-- AC:
-  - `sanitize-html` на запис з allowlist `09-security-privacy.md` §7; `SafeHtml` у web; XSS fixtures (`<img onerror>`, `javascript:`, `<svg>`, `style`) — unit.
-
-### M4-12 · Web: Jobs list + filters
-- FR: FR-DISC-01, FR-DISC-03, FR-JOB-10 · Area: web · Est: 4h · Depends: M4-09, M4-10 · Flow: /feature
-- AC:
-  - `/jobs`: `FilterPanel` (drawer на tablet/mobile), `JobCard`, пошук, стан у URL, infinite scroll за cursor; save/hide.
-  - Empty/loading/error стани; тести filters з MSW.
-
-### M4-13 · Web: Job detail
-- FR: FR-DISC-05 · Area: web · Est: 2.5h · Depends: M4-11, M4-12 · Flow: /feature
-- AC:
-  - `/jobs/:id` (split view ≥ 1280px): поля, `SafeHtml`, note, «Create application», «Open original» (`rel=noopener`).
-
-**E08 Documents**
-
-### M4-14 · Documents: schema, storage, upload init/complete
-- FR: FR-DOC-01, FR-DOC-02 · Area: db, api · Est: 3.5h · Depends: M3-02 · Flow: /feature
-- AC:
-  - Якщо spike M0-16 не виконано: спершу перевірити presigned PUT у R2 з підписаними `Content-Length`/`Content-Type` (інший розмір/тип → відмова; R2 і MinIO); не працює → fallback upload через API з лімітом (ADR 010).
-  - `Document`, `DocumentVersion` (status PENDING/READY/REJECTED); storage client (MinIO/R2), quarantine lifecycle 1 день.
-  - `POST /documents/uploads` (no-demo) → presigned PUT ≤ 5 хв з підписаними length/type; `.../complete` → HEAD (розмір = заявлений) → outbox `DocumentUploaded` у тій самій транзакції (`04-architecture.md` §5.3) → consumer `documents/validate` (`04-architecture.md` §5.4; outbox `jobId` = `<eventId>_documents-validate`, ідемпотентний за `versionId`: не-`PENDING` версія → no-op).
-  - `/health/ready` + storage HEAD (кеш 30 с); IDOR.
-
-### M4-15 · Validate + parse sandbox
-- FR: FR-DOC-01, FR-DOC-04 · Area: worker, security · Est: 4h · Depends: M4-14 · Flow: /feature (+ security-reviewer)
-- AC:
-  - Magic bytes ↔ MIME, `.docm`/зашифрований PDF → REJECTED + delete object; успіх → promote у `documents/<userId>/`.
-  - Parse у child process (256 MB, 20 с SIGKILL, env очищений, без мережі); DOCX/PDF ліміти; `parsedText` ≤ 200 000; помилка → `FAILED`, файл доступний.
-  - Усі upload fixtures `11-testing.md` §5.2 зелені; worker живий після kill parser.
-
-### M4-16 · Download, delete, default CV
-- FR: FR-DOC-02, FR-DOC-05, FR-DOC-06 · Area: api · Est: 2.5h · Depends: M4-15 · Flow: /feature
-- AC:
-  - `GET /documents`, `GET/PATCH/DELETE /documents/:id` (один default CV), download URL ≤ 5 хв тільки READY, `Content-Disposition: attachment`, audit `DOCUMENT_DOWNLOADED`.
-  - Видалення версії/документа → `DocumentDeleted` → об'єкт видалено ≤ 1 год; повторний download → 404; IDOR.
-
-### M4-17 · Application ↔ DocumentVersion
-- FR: FR-DOC-03 · Area: api, web · Est: 1.5h · Depends: M4-16, M1-16 · Flow: /feature
-- AC:
-  - Заявка посилається на конкретну версію; нова версія не змінює заявки; видалена → «CV version deleted»; вкладка CV у detail; IDOR на чужу версію.
-
-### M4-18 · Web: Documents
-- FR: FR-DOC-01, FR-DOC-02, FR-DOC-06 · Area: web · Est: 3h · Depends: M4-16 · Flow: /feature
-- AC:
-  - `/profile/documents`: upload (прогрес, PUT напряму в storage), статус перевірки, версії, default, download, delete з confirm.
+  - У detail заявки (секція job) бейдж Strong ≥ 80 / Good ≥ 60 / Weak; confidence < 0.4 → «Not enough data»; popover/disclosure «Why?» з компонентами, strengths/gaps/unknowns; CTA «Complete profile» → `/profile`.
+  - Loading/error стани; keyboard + ARIA; тести з MSW.
 
 **E13 AI**
 
 ### M4-19 · AI module: provider, executor, budgets
-- FR: FR-AI-05, FR-AI-06, FR-AI-07 · Area: api, db · Est: 5h · Depends: M3-02 · Flow: /feature (`/ai-task`)
+- FR: FR-AI-05, FR-AI-06, FR-AI-07 · Area: api, db · Est: 5h · Depends: M2-11 · Flow: /feature (`/ai-task`)
 - AC:
   - `AIProvider`, `StubProvider`; `defineTask` registry; executor: `AI_MODE` → global cap → user budget → policy (aiEnabled) → cache → provider → Zod + repair → `AiRun`.
+  - Demo-користувач → `StubProvider` (`07-ai.md` §4.3; раніше в M5-12, ADR 025).
   - `AiUsageDaily`/`AiGlobalUsageDaily` атомарний reserve/settle/release (integration на конкурентність); перевищення → `429 AI_BUDGET_EXCEEDED` / `AI_DISABLED`, provider не викликається, `AiRun = BUDGET_EXCEEDED`.
   - AI вимкнено → жодного виклику (перевірка в executor).
 - Notes: `07-ai.md` §4–§9, ADR 017.
@@ -757,10 +599,11 @@
   - Схема JSON-schema-safe, delimited untrusted input, `promptVersion`; невалідний вивід після repair → чернетка без LLM-полів, не 500.
   - Golden set ≥ 20 вакансій + injection-кейси; `pnpm --filter api ai:eval` (manual) з JSON-звітом.
 
-### M4-21 · Provider adapters + selection (ADR)
-- FR: FR-AI-01 · Area: api, docs · Est: 3h · Depends: M4-20 · Flow: /feature
+### M4-21 · Provider adapter (one provider, ADR 025)
+- FR: FR-AI-01 · Area: api, docs · Est: 2h · Depends: M4-20 · Flow: /feature
 - AC:
-  - Адаптери для 2 кандидатів; прогін golden set (pass rate, cost, latency) → вибір провайдера + no-training/retention у follow-up ADR 017; моделі в конфігу (`AI_MODEL_FAST`).
+  - Адаптер одного провайдера, обраного власником до старту задачі; прогін golden set дає pass rate ≥ порогу (поріг у плані задачі), cost і latency записано; no-training/retention — у follow-up ADR 017; моделі в конфігу (`AI_MODEL_FAST`); `AIProvider` лишається змінним.
+  - Другий адаптер і порівняння — M4-21b (Later).
 
 ### M4-22 · Capture LLM fallback + «Context used»
 - FR: FR-JOB-08, FR-AI-03, FR-AI-05 · Area: api, web · Est: 2h · Depends: M4-20, M3-22 · Flow: /feature
@@ -769,166 +612,329 @@
   - AI вимкнено → чернетка лише з JSON-LD / порожня без помилки; «Context used» = фактичний контекст (contract-тест).
 
 ### M4-23 · AI settings + usage
-- FR: FR-PRIV-03, FR-AI-06, FR-AI-07 · Area: api, web · Est: 2h · Depends: M4-19 · Flow: /feature
+- FR: FR-PRIV-03, FR-AI-06, FR-AI-07 · Area: api, web · Est: 2h · Depends: M4-19, M3-03 · Flow: /feature
 - AC:
   - `PATCH /me/settings` (`aiEnabled`, `aiAllowedProfileParts`) + audit `AI_SETTINGS_CHANGED`; заборонені частини ніколи в контексті (contract-тест).
   - `/settings/ai`, `GET /ai/usage` (сьогодні / ліміт).
 
 ---
 
-## M5 Insights & Launch (тижні 10–12) → R1
+## M5 Launch (тиждень 9) → R1-lite
 
-**E09 Dashboard & Analytics**
-
-### M5-01 · Analytics API
-- FR: FR-ANL-01, FR-ANL-02, FR-ANL-03, FR-ANL-04, FR-ANL-05 · Area: api · Est: 4h · Depends: M2-02 · Flow: /feature (test-first)
-- AC:
-  - Funnel за досягнутими стадіями з подій (пропущені = досягнуті; `REJECTED` після `INTERVIEW`) — domain unit + integration на імпортованих даних.
-  - Response rate (SELF_APPLIED + REFERRAL; RECRUITER_OUTREACH окремо), сегменти channel/origin (сума = total), median time-to-first-response, `n` і `insufficientData` при n < 5.
-  - `GET /analytics/overview|funnel|channels?from&to`; IDOR list.
-
-### M5-02 · Web: Analytics
-- FR: FR-ANL-01, FR-ANL-05 · Area: web · Est: 2.5h · Depends: M5-01 · Flow: /feature
-- AC:
-  - Recharts funnel/bar + таблична альтернатива (a11y), фільтр періоду, «not enough data».
-
-### M5-03 · Dashboard API
-- FR: FR-DASH-03, FR-INT-05 · Area: api · Est: 2.5h · Depends: M5-01, M3-14, M3-11 · Flow: /feature
-- AC:
-  - `GET /dashboard`: Today, інтерв'ю 7 днів, pipeline counts, needs attention (stale), this week; числа = Analytics за той самий період (integration).
-
-### M5-04 · Web: Dashboard + R1 navigation
-- FR: FR-DASH-03 · Area: web · Est: 3h · Depends: M5-03 · Flow: /feature
-- AC:
-  - `/dashboard` (StatCard, PipelineBar → Applications з фільтром), quick actions (Add job, Add application, Log recruiter message).
-  - Навігація R1, landing `/dashboard`, хоткеї `G→D/J/P/Y`.
-
-### M5-05 · Onboarding R1
-- FR: FR-DASH-04 · Area: web · Est: 1.5h · Depends: M4-05, M4-06 · Flow: /feature
-- AC:
-  - 3 кроки (target role + work mode + salary → skills top 10 → Import / Add job), кожен пропускається.
-
-**E05 Notifications**
-
-### M5-06 · Email reminders, daily digest, unsubscribe
-- FR: FR-NOTIF-02, FR-NOTIF-03, FR-NOTIF-04, FR-NOTIF-01, FR-REM-06 · Area: worker, api · Est: 4h · Depends: M3-04, M3-18 · Flow: /feature
-- AC:
-  - Scheduler `notifications:digest` (job `notifications/digest`) о 08:00 локального часу, лише якщо є зміст; матриця тип × канал × mode.
-  - Quiet hours відкладають email (unit з DST); one-click unsubscribe на тип (signed token, `List-Unsubscribe`).
-  - Щоденний scan stale (scheduler `notifications:scan-stale`) → `STALE_APPLICATION` in-app (gap G-05).
-
-### M5-07 · Web: notification preferences
-- FR: FR-NOTIF-02, FR-PROF-02 · Area: web · Est: 1.5h · Depends: M5-06 · Flow: direct
-- AC:
-  - `/settings/notifications`: матриця, quiet hours (вкл/викл, час).
-
-**E06 / E10 Privacy**
-
-### M5-08 · Full async export (zip)
-- FR: FR-PRIV-01, FR-AUTH-10 · Area: api, worker · Est: 3.5h · Depends: M3-09, M4-16 · Flow: /feature
-- AC:
-  - `POST /me/export` (fresh, no-demo, 3/добу, один активний) → `202`; consumer `export/build-zip` збирає JSON (усе, включно з контактами) + CV у zip у S3; `EXPORT_READY` нотифікація.
-  - `GET /me/exports/:id` → signed URL ≤ 5 хв; після 24 год недоступно (`EXPIRED`); audit `DATA_EXPORT_*`; IDOR.
-
-### M5-09 · Account deletion pipeline
-- FR: FR-PRIV-02, FR-AUTH-10 · Area: api, worker, security · Est: 4h · Depends: M3-09, M4-16 · Flow: /feature
-- AC:
-  - `DELETE /me` (fresh): `deletedAt`, усі сесії revoke, дані одразу недоступні → `202`.
-  - `UserDeletionRequested` → `deletion/delete-account`, hard delete ≤ 24 год: БД cascade, S3 prefixes, Redis-ключі, Sentry user; `DeletedUserTombstone`; AuditLog анонімізується.
-  - Integration: після pipeline — жодних рядків/об'єктів/ключів за таблицею `09-security-privacy.md` §12.1.
-
-### M5-10 · Retention schedulers
-- FR: — · Area: worker, db · Est: 2h · Depends: M5-09 · Flow: /feature
-- AC:
-  - Job schedulers за `05-data-model.md` §8 (Session, Verification, ImportSession, DataExport, IdempotencyRecord, Notification, ReminderDelivery, AiRun, AiUsage*, tombstones, AuditLog — maintenance pool); кожен ідемпотентний, integration на межі дат. Іменування — `04-architecture.md` §5.4: job `cleanup-<model>` на черзі модуля-власника, scheduler `<queue>:cleanup-<model>`; нові черги дописуються в таблицю §5.4.
-
-### M5-11 · Web: Settings → Data
-- FR: FR-PRIV-01, FR-PRIV-02 · Area: web · Est: 1.5h · Depends: M5-08, M5-09 · Flow: direct
-- AC:
-  - Export (статус, download), `DangerZone` delete account з `ReauthDialog`.
-
-**E10 Demo**
-
-### M5-12 · Demo restrictions + anti-abuse
-- FR: FR-DEMO-03, FR-DEMO-04, FR-DEMO-05 · Area: api, security · Est: 3h · Depends: M2-12, M4-19, M5-09 · Flow: /feature
-- AC:
-  - Створення demo — з R0 (M2-12). Тут: Turnstile server-verify, ≤ 3/добу на IP, ≤ 200 активних → дружнє повідомлення; audit `DEMO_CREATED`; з Turnstile-конфігом знімається production-guard M2-12.
-  - `no-demo` guard: uploads, capture, email, auth-зміни, export → `403 DEMO_FEATURE_DISABLED`; AI → `StubProvider`.
-  - IDOR між двома demo-користувачами на R1-routes.
-
-### M5-13 · Demo purge + «Request access»
-- FR: FR-DEMO-02, FR-DEMO-06 · Area: worker, web · Est: 2h · Depends: M5-12 · Flow: /feature
-- AC:
-  - Scheduler `deletion:purge-demo` (job `deletion/purge-demo`, `04-architecture.md` §5.4) — той самий pipeline, що delete account (integration); прибирає й demo-користувачів, накопичених з R0.
-  - CTA «Request access» у demo-банері (банер і «Try demo» — з M2-12; gap G-06).
+> M5-01…M5-13, M5-15, M5-16, M5-23, M5-24 — у `Later — after R1-lite` (ADR 025). M5-17 (WAL-G), M5-18 (restore-test workflow), M5-20 (staging + release) — у `Later — when hosting`; M5-19 закрито (Terraform-код — M0-17, plan/apply і remote state — M0-13). ADR 022.
 
 **E10 Ops & observability**
 
-### M5-14 · Sentry web/worker + SPA CSP final
-- FR: — · Area: obs, security, web · Est: 2h · Depends: M5-12 · Flow: direct
+### M5-14 · Sentry web/worker (narrowed, ADR 025) · **optional**
+- FR: — · Area: obs, web · Est: 1h · Depends: M0-15, M3-01 · Flow: direct
 - AC:
-  - Sentry web + worker — лише при DSN (ADR 022); sourcemaps генеруються і видаляються з `dist` (upload у Sentry — у deploy, when hosting); `_headers` і Caddy-static з Turnstile/Sentry/report-to; header check у `nightly.yml` проти `compose.ci.yml` (на hosted — when hosting).
-
-### M5-15 · Metrics instrumentation
-- FR: — · Area: obs, api, worker · Est: 3h · Depends: M3-02, M4-19 · Flow: /feature
-- AC:
-  - `prom-client` на внутрішніх портах (9464/9465/9466); усі R1-метрики `12-infra-ops.md` §10; labels без userId/raw path (тест на route template).
-
-### M5-16 · Prometheus / Grafana / Alertmanager as code
-- FR: — · Area: obs, infra · Est: 4h · Depends: M5-15 · Flow: /feature
-- AC:
-  - Compose-профіль `observability` (`docker compose --profile observability up -d`): prometheus, grafana (provisioning read-only), alertmanager, node/postgres/redis exporters — тільки `internal`; local — порти лише `127.0.0.1`, hosted — через Tailscale.
-  - Dashboards (api, queues-outbox, ai-cost, capture, postgres-redis, host); alert rules R1 + `promtool check/test rules` у CI; routing у Telegram/email — receivers з env, без секретів нічого не надсилається (ADR 022).
-  - Скрипт навантаження на seed (`pnpm db:seed --volume` + короткий k6/скрипт) показує живі графіки для скріншота README.
-
-> M5-17 (WAL-G), M5-18 (restore-test workflow), M5-20 (staging + release) — у `Later — when hosting`; M5-19 закрито (Terraform-код — M0-17, plan/apply і remote state — M0-13). ADR 022.
+  - Sentry web + worker — лише при DSN (ADR 022); sourcemaps генеруються і видаляються з `dist`; CSP `connect-src` для Sentry у `_headers` і Caddy-static. Turnstile/report-to і nightly header check — з M5-12 (Later).
 
 **E2E / QA**
 
-### M5-21 · E2E flows 5, 6 + `@smoke` suite
-- FR: FR-PRIV-02, FR-DEMO-03 · Area: e2e, ci · Est: 2h · Depends: M5-11, M5-13 · Flow: /e2e
+### M5-21 · `@smoke` suite (narrowed, ADR 025)
+- FR: — · Area: e2e, ci · Est: 1h · Depends: M3-24 · Flow: /e2e
 - AC:
-  - Flow 5 (delete account з re-auth → вхід неможливий), flow 6 (demo → upload вимкнено → вихід).
-  - `@smoke` (health, demo sign-in, Applications, створити й видалити заявку, headers) post-merge проти `compose.ci.yml`; запуск проти hosted-середовища — M5-20 (when hosting).
+  - `@smoke` (health, demo sign-in, Applications, створити й видалити заявку, headers) post-merge проти `compose.ci.yml`; запуск проти hosted-середовища — M5-20 (when hosting). Flows 5, 6 — M5-21b (Later).
 
 ### M5-22 · OpenAPI ↔ route table + oasdiff
-- FR: — · Area: contracts, ci · Est: 2h · Depends: M4-09 · Flow: /feature
+- FR: — · Area: contracts, ci · Est: 2h · Depends: M3-21, M4-23, M4-24 · Flow: /feature
 - AC:
-  - OpenAPI з nestjs-zod; тест: кожен route задокументований, немає «примарних» шляхів; `oasdiff breaking` проти `main` у CI.
-
-### M5-23 · k6 + Lighthouse nightly
-- FR: — · Area: ci, obs · Est: 2h · Depends: M3-23, M2-08 · Flow: direct · **optional**
-- AC:
-  - `nightly.yml` проти `compose.ci.yml` у CI: k6 (read, search, transitions на seed 2 000 / 20 000) і Lighthouse (Dashboard, Applications) з thresholds NFR як орієнтир (runner ≠ prod); падіння → issue. На staging — when hosting.
-
-### M5-24 · Admin TOTP + Bull Board
-- FR: — · Area: api, security · Est: 2h · Depends: M3-09 · Flow: /feature · **optional**
-- AC:
-  - TOTP обов'язковий для `ADMIN`; Bull Board за admin-guard, не через Caddy (local — `127.0.0.1`, hosted — Tailscale); не-admin → 404; audit `ADMIN_ACCESS`.
+  - OpenAPI з nestjs-zod; тест: кожен route задокументований, немає «примарних» шляхів; `oasdiff breaking` проти `main` у CI (OWASP API9 [R1], `09-security-privacy.md`).
 
 ### M5-25 · Accessibility + responsive pass
-- FR: — · Area: web · Est: 3h · Depends: M5-04, M4-12 · Flow: /feature (ui-reviewer)
+- FR: — · Area: web · Est: 2.5h · Depends: M3-22, M4-06, M4-23, M4-25 · Flow: /feature (ui-reviewer)
 - AC:
-  - WCAG 2.2 AA на R1-екранах (axe без порушень, фокус, контраст, 2.5.7 альтернативи drag); 375px без горизонтального скролу.
+  - WCAG 2.2 AA на R0- і R1-lite-екранах (capture, Profile, skills, match, AI settings; axe без порушень, фокус, контраст, 2.5.7 альтернативи drag); 375px без горизонтального скролу.
 
 **Docs & release**
 
-### M5-26 · Privacy policy + bot page
-- FR: — · Area: docs, web · Est: 1.5h · Depends: M5-09 · Flow: direct
+### M5-26 · Bot page + data-flow page (narrowed, ADR 025)
+- FR: — · Area: docs, web · Est: 1h · Depends: M4-21 · Flow: direct
 - AC:
-  - Сторінка privacy policy з таблицею сховищ/retention (`09-security-privacy.md` §12), включно з backups/LLM/email; `/bot` для `ApplyraBot` UA; посилання з sign-in і footer.
+  - `/bot` для `ApplyraBot` UA; сторінка «How your data is used»: що йде в LLM-провайдера (і no-training/retention з ADR 017 follow-up), AI settings, локальні бекапи; посилання з sign-in і footer. Повна privacy policy — M5-26b (Later).
 
-### M5-27 · README refresh (R1), ADRs, demo script
-- FR: — · Area: docs · Est: 2h · Depends: M2-13, M5-13, M5-16 · Flow: direct (architect)
+### M5-27 · README refresh (R1-lite), ADRs, demo script
+- FR: — · Area: docs · Est: 2h · Depends: M2-13, M4-22, M4-25 · Flow: direct (architect)
 - AC:
-  - README з M2-13 оновлено: скріншоти/GIF R1 (Jobs, Dashboard, Analytics, capture, Grafana), нове відео 2 хв, діаграма з worker/outbox/safe-fetcher, security highlights; Codespaces-шлях перевірено на R1.
-  - ADR-індекс актуальний (рішення спайків, провайдер LLM, email-провайдер); 2-хвилинний demo-сценарій у `docs/demo.md`.
+  - README з M2-13 оновлено: скріншоти/GIF R1-lite (capture → draft → match «Why?», AI settings), нове відео 2 хв, діаграма з worker/safe-fetcher, security highlights (SSRF, LLM budgets/injection); Codespaces-шлях перевірено.
+  - ADR-індекс актуальний (рішення спайків, провайдер LLM); 2-хвилинний demo-сценарій у `docs/demo.md`.
 
-### M5-28 · R1 release
-- FR: — · Area: security, docs · Est: 3h · Depends: усі не-optional задачі R1 — M3-01, M3-02, M3-02b, M3-03…M3-25, M4-01…M4-23, M5-01…M5-16, M5-21, M5-22, M5-25…M5-27 (поза gate: optional M5-23, M5-24; поза R1: `Later — when hosting`) · Flow: /security-audit → /ship
+### M5-28 · R1-lite release
+- FR: — · Area: security, docs · Est: 3h · Depends: усі не-optional задачі R1-lite — M3-01, M3-03, M3-20…M3-25, M4-01…M4-06, M4-08, M4-19…M4-25, M5-21, M5-22, M5-25…M5-27 (поза gate: optional M5-14; поза R1-lite: обидва розділи `Later`) · Flow: /security-audit → /ship
 - AC:
-  - `/security-audit` повний (OWASP API мапінг, SSRF, uploads, demo) без відкритих high/critical; fixes — окремими PR.
-  - CI зелений (включно з deploy-ready checks); Grafana (local профіль) показує метрики на seed-навантаженні; тег `v1.0.0`; exit-критерій R1 (README/Codespaces → demo за 2 хв) перевірено на незнайомій людині.
+  - `/security-audit` (OWASP API мапінг, SSRF, LLM injection/budgets, demo production-guard) без відкритих high/critical; fixes — окремими PR.
+  - CI зелений (включно з deploy-ready checks, SSRF fixtures, E2E); тег `v1.0.0`; exit-критерій R1-lite (README/Codespaces → demo → capture → match за 2 хв) перевірено на незнайомій людині.
+
+---
+
+## Later — after R1-lite
+
+ADR 025: R1-задачі поза R1-lite. ID збережено; GitHub milestone `Later`, label `later-r1l`. Не входять у gate M5-28 і в підсумок R1-lite. Беруться за цінністю або разом із хостингом (тоді — разом із `Later — when hosting`). Передумови R2: M3-02, M3-02b, M4-07, M4-09, M4-10, M4-03b. AC нижче — до звуження; при поверненні задачі перевірити залежності (жодна з них не блокує R1-lite).
+
+| ID | Назва | Est | Причина відкладення |
+|---|---|---|---|
+| M3-02 | Transactional outbox | 3h | немає consumer-а в R1-lite (skill extraction синхронна) |
+| M3-02b | Outbox producers in R0 code | 2h | без M3-02 |
+| M3-04 | Email infrastructure | 2h | немає email-фіч без password auth/notifications |
+| M3-05 | Email + password sign-up / sign-in | 3h | лише Google + demo; знімає поверхню паролів |
+| M3-06 | Reset / change password | 2h | без M3-05 |
+| M3-07 | Auth rate limits | 1.5h | без M3-05 |
+| M3-08 | Google ↔ email linking | 1.5h | без M3-05 |
+| M3-09 | Sessions management + re-auth | 2.5h | потрібне для export/delete, теж відкладених |
+| M3-10 | Web: auth screens, sessions, re-auth | 3h | без M3-05/M3-09 |
+| M3-11 | Stale hints | 2.5h | CRM-полірування, не showcase |
+| M3-12 | Edit / delete timeline events | 2.5h | залежить від outbox; CRM-полірування |
+| M3-13 | Contacts | 3.5h | CRM-розширення |
+| M3-14 | Interviews API + auto-reminders | 3h | CRM-розширення |
+| M3-15 | Interviews UI + `.ics` | 2.5h | без M3-14 |
+| M3-16 | Custom reminders + follow-up templates | 2h | CRM-розширення |
+| M3-17 | Notification centre | 3h | нотифікації — для багатокористувацького продукту |
+| M3-18 | Reminder delivery + quiet hours | 3h | без M3-17 |
+| M3-19 | Outbox consumers → in-app | 1h | без M3-02/M3-17 |
+| M4-03b | Career profile: решта (personal/links, experience, education, languages, salary, hard filters) | 1.5h | matching-lite не використовує |
+| M4-05b | Web: Profile — решта секцій | 2h | без M4-03b |
+| M4-07 | Jobs search schema (Company, UserJob, search_vector) | 2h | match показується в detail заявки, список не потрібен |
+| M4-09 | `GET /jobs` (JobQuery) | 4h | без Jobs list |
+| M4-10 | UserJob state + companies autocomplete | 2h | без Jobs list |
+| M4-11 | Sanitized job HTML | 1.5h | captured опис — plain text |
+| M4-12 | Web: Jobs list + filters | 4h | не потрібен для match |
+| M4-13 | Web: Job detail | 2.5h | match — у detail заявки |
+| M4-14 | Documents: schema, storage, upload | 3.5h | documents не в showcase; без upload — менша поверхня атаки |
+| M4-15 | Validate + parse sandbox | 4h | без M4-14 |
+| M4-16 | Download, delete, default CV | 2.5h | без M4-14 |
+| M4-17 | Application ↔ DocumentVersion | 1.5h | без M4-16 |
+| M4-18 | Web: Documents | 3h | без M4-16 |
+| M4-21b | Другий AI-адаптер + порівняння | 1h | вистачає одного провайдера |
+| M5-01 | Analytics API | 4h | insights — після CRM-розширень |
+| M5-02 | Web: Analytics | 2.5h | без M5-01 |
+| M5-03 | Dashboard API | 2.5h | залежить від interviews/stale |
+| M5-04 | Web: Dashboard + R1 navigation | 3h | без M5-03; R0-навігація + Profile достатньо |
+| M5-05 | Onboarding R1 | 1.5h | без повного профілю |
+| M5-06 | Email reminders, digest, unsubscribe | 4h | без email/notifications |
+| M5-07 | Web: notification preferences | 1.5h | без M5-06 |
+| M5-08 | Full async export (zip) | 3.5h | R0 sync export вистачає; потрібне при хостингу |
+| M5-09 | Account deletion pipeline | 4h | потрібне при хостингу (чужі дані) |
+| M5-10 | Retention schedulers | 2h | без M5-09; AuditLog retention — у M3-03 |
+| M5-11 | Web: Settings → Data | 1.5h | без M5-08/M5-09 |
+| M5-12 | Demo restrictions + anti-abuse | 3h | demo лише local (production-guard M2-12) |
+| M5-13 | Demo purge + «Request access» | 2h | без M5-12 |
+| M5-15 | Metrics instrumentation | 3h | Prometheus відкладено |
+| M5-16 | Prometheus / Grafana / Alertmanager | 4h | ops-showcase поступається capture/AI/matching |
+| M5-21b | E2E flows 5, 6 | 1h | без M5-09/M5-12 |
+| M5-23 | k6 + Lighthouse nightly · optional | 2h | optional; без staging |
+| M5-24 | Admin TOTP + Bull Board · optional | 2h | optional; без admin-ролі в R1-lite |
+| M5-26b | Повна privacy policy | 0.5h | потрібна при хостингу |
+
+Разом: 122 год core + 4 год optional.
+
+### Deferred task bodies (AC as of 2026-11-16)
+
+### M3-02 · Transactional outbox · `later-r1l`
+- FR: — · Area: worker, db · Est: 3h · Depends: M3-01 · Flow: /feature
+- AC:
+  - `OutboxEvent` міграція + partial index; `OutboxWriter.append(tx, …)`; relay claim (`FOR UPDATE SKIP LOCKED`, коротка tx) → publish (`jobId = <eventId>_<consumer>`, `consumer` = `<queue>-<job>` — BullMQ забороняє `:` у custom jobId) → mark/backoff; dead після 10.
+  - Integration: crash між publish і mark → без дубля; Redis down → події накопичуються й доганяються; scheduler `outbox:cleanup` (job `outbox/cleanup`) 7 днів.
+- Notes: `04-architecture.md` §5.2, ADR 006.
+
+### M3-02b · Outbox producers in R0 code · `later-r1l`
+- FR: FR-NOTIF-01, FR-DISC-01 · Area: api, contracts · Est: 2h · Depends: M3-02 · Flow: /feature
+- AC:
+  - Payload-схеми подій (Zod у contracts: ids + `occurredAt` + версія) для `JobCreated`, `JobUpdated` (M1-04, M1-06), `ApplicationStatusChanged` (M1-08; CSV import не емітить), `ImportCommitted` (M2-02) — `04-architecture.md` §5.3.
+  - `outbox.append(tx, …)` у тій самій `$transaction`, що й мутація; синхронні R0-ефекти (A-03) і синхронна skill extraction M4-08 переводяться на події лише свідомо.
+  - Integration на кожен producer: рядок записано разом з мутацією; rollback → рядка немає; IK-replay → без другого рядка.
+
+### M3-04 · Email infrastructure · `later-r1l`
+- FR: FR-NOTIF-02 · Area: api, worker · Est: 2h · Depends: M3-01 · Flow: /feature
+- AC: `EmailSender` (Mailpit локально, provider adapter — when hosting), черга `email`, job `send` з ідемпотентним `jobId`; шаблони (text + HTML); вибір Resend vs Postmark зафіксовано.
+
+### M3-05 · Email + password sign-up / sign-in + verification · `later-r1l`
+- FR: FR-AUTH-05, FR-AUTH-07, FR-AUTH-02 · Area: api, security · Est: 3h · Depends: M3-04, M3-03 · Flow: /feature
+- AC: пароль 12–128, HIBP (k-anonymity); allowlist; verification email. Enumeration-safe відповіді, sign-up на зайнятий email = успіх + лист власнику, dummy-hash. До верифікації export/delete/linking → відхилено.
+
+### M3-06 · Reset password + change password · `later-r1l`
+- FR: FR-AUTH-06, FR-AUTH-09 · Area: api, security · Est: 2h · Depends: M3-05 · Flow: /feature
+- AC: токен одноразовий, TTL 30 хв, однакова відповідь для будь-якого email; reset/change інвалідують інші сесії; audit `PASSWORD_*`.
+
+### M3-07 · Auth rate limits · `later-r1l`
+- FR: FR-AUTH-07 · Area: api, security · Est: 1.5h · Depends: M3-05, M2-06 · Flow: /feature
+- AC: sign-in 5/хв на (IP, email) і 30/год на IP; reset 3/год на email; sign-up 10/год на IP → 429.
+
+### M3-08 · Google ↔ email account linking · `later-r1l`
+- FR: FR-AUTH-08 · Area: api, security · Est: 1.5h · Depends: M3-05 · Flow: /feature
+- AC: автолінк лише при `email_verified` з обох сторін; інакше `409 ACCOUNT_LINK_REQUIRES_VERIFICATION`; audit `ACCOUNT_LINKED`.
+
+### M3-09 · Sessions management + re-auth · `later-r1l`
+- FR: FR-AUTH-09, FR-AUTH-10 · Area: api · Est: 2.5h · Depends: M3-06 · Flow: /feature
+- AC: `list-sessions`, `revoke-session`, revoke all others, `POST /api/auth/revoke-sessions`; audit. `@RequireRecentAuth` (freshAge 10 хв) → `403 FRESH_SESSION_REQUIRED`; route-table тест для `fresh` routes.
+
+### M3-10 · Web: auth screens, sessions, re-auth · `later-r1l`
+- FR: FR-AUTH-05, FR-AUTH-06, FR-AUTH-09, FR-AUTH-10 · Area: web · Est: 3h · Depends: M3-09 · Flow: /feature
+- AC: `/sign-in` (Google + email/password), sign-up, verify, forgot/reset; `/settings/sessions`, change password; `ReauthDialog` на `FRESH_SESSION_REQUIRED`.
+
+### M3-11 · Stale hints · `later-r1l`
+- FR: FR-APP-14 · Area: api, web · Est: 2.5h · Depends: M1-10, M1-14 · Flow: /feature
+- AC: domain (unit): пороги з `UserSettings`, `staleGhostDays` → «Mark as ghosted?», dismiss до `staleDismissedUntil`, нова активність знімає dismiss; статус система не змінює. `POST /applications/:id/stale/dismiss` (IDOR); hint у list/detail.
+
+### M3-12 · Edit / delete timeline events · `later-r1l`
+- FR: FR-APP-15 · Area: api, web · Est: 2.5h · Depends: M1-09, M1-16, M3-02b · Flow: /feature
+- AC: `PATCH /applications/:id/events/:eventId` (текст + `occurredAt` для NOTE/MESSAGE/FOLLOW_UP; лише `occurredAt` для `STATUS_CHANGED`); `DELETE` останнього `STATUS_CHANGED` → статус `fromStatus` + `ApplicationStatusChanged` в outbox, `CREATED` → 409; `lastActivityAt` перераховується; `TimelineEventEditor`; IDOR.
+
+### M3-13 · Contacts · `later-r1l`
+- FR: FR-APP-16 · Area: db, api, web · Est: 3.5h · Depends: M1-06 · Flow: /feature
+- AC: міграція `Contact`, `ApplicationContact`; CRUD `/contacts` (cursor, `q`), link/unlink; повне видалення контакту; вкладка Contacts; IDOR (link чужого → 404).
+
+### M3-14 · Interviews API + auto-reminders · `later-r1l`
+- FR: FR-INT-01, FR-INT-02, FR-INT-05 · Area: db, api · Est: 3h · Depends: M1-11 · Flow: /feature
+- AC: міграція `Interview`; CRUD, подія `INTERVIEW_SCHEDULED`, `meetingUrl` лише http(s); авто-reminders 24 год / 1 год; `GET /interviews?from&to` (≤ 92 дні); IDOR. Notes: gap G-04.
+
+### M3-15 · Interviews UI + debrief + `.ics` · `later-r1l`
+- FR: FR-INT-01, FR-INT-03, FR-INT-04 · Area: api, web · Est: 2.5h · Depends: M3-14 · Flow: /feature
+- AC: вкладка Interviews, debrief-шаблон; `GET /interviews/:id/ics` (стабільний UID, TZ, unit); ручна перевірка Google Calendar + Outlook.
+
+### M3-16 · Custom reminders + follow-up templates · `later-r1l`
+- FR: FR-REM-04, FR-REM-07 · Area: api, web · Est: 2h · Depends: M1-11, M1-18 · Flow: /feature
+- AC: `source = MANUAL`, опційно з заявкою, не впливають на `nextAction*`; статичні шаблони лише «Copy» / `mailto:`.
+
+### M3-17 · Notification centre · `later-r1l`
+- FR: FR-NOTIF-01 · Area: db, api, web · Est: 3h · Depends: M3-02 · Flow: /feature
+- AC: міграція `Notification` (`dedupeKey`), `NotificationPreference`; `notify` ідемпотентний; `GET /notifications`, `PATCH /:id/read`, `POST /read-all`; дзвіночок; IDOR.
+
+### M3-18 · Reminder delivery + quiet hours · `later-r1l`
+- FR: FR-REM-05, FR-REM-06, FR-PROF-02 · Area: worker, api · Est: 3h · Depends: M3-17 · Flow: /feature
+- AC: scheduler `reminders:scan-due` щохвилини; `ReminderDelivery` unique (reminder, dueAt, channel); quiet hours (22:00–08:00, вимикаються) відкладають доставку (unit з DST).
+
+### M3-19 · Outbox consumers → in-app · `later-r1l`
+- FR: FR-NOTIF-01 · Area: worker · Est: 1h · Depends: M3-17, M3-02b · Flow: /feature
+- AC: `ApplicationStatusChanged`, `ImportCommitted` → notifications; consumer читає поточний стан, видалений агрегат → no-op.
+
+### M4-03b / M4-05b · Career profile: решта (API + web) · `later-r1l`
+- FR: FR-PROF-03, FR-PROF-05 · Area: db, api, web · Est: 1.5h + 2h · Depends: M4-03, M4-05 · Flow: /feature
+- AC: міграція `Experience`, `Education`, `Language`; `PATCH /profile` + personal/links (лише http(s)), salary, preferences з `hardFilters` окремо від значень; experiences/educations CRUD, `PUT /profile/languages` (CEFR); IDOR для `:id`; web-секції з позначкою hard/soft.
+
+### M4-07 · Jobs search schema · `later-r1l`
+- FR: FR-DISC-02, FR-JOB-10 · Area: db · Est: 2h · Depends: M4-01 · Flow: /feature (`/prisma-migration`)
+- AC: `Company`, `UserJob`; `search_vector` generated (`f_unaccent`) + GIN, trigram на title/company (`05-data-model.md` §7.3); squawk зелений; створення `UserJob` у jobs-сервісі + ідемпотентний backfill для R0-вакансій (G-08). (`JobSkill` уже створено в M4-01.)
+
+### M4-09 · `GET /jobs` (JobQuery) · `later-r1l`
+- FR: FR-DISC-01…04 · Area: api, contracts · Est: 4h · Depends: M4-07, M4-08 · Flow: /feature
+- AC: FTS + trigram (`Reakt` → `React Developer`, integration); фільтри AND (work mode, seniority, salary disclosed, employment type, country, date posted, source, skills include/exclude, excluded companies, saved/hidden); sort newest/relevance; keyset cursor без дублів; IDOR list.
+
+### M4-10 · UserJob state + companies autocomplete · `later-r1l`
+- FR: FR-JOB-10 · Area: api · Est: 2h · Depends: M4-07 · Flow: /feature
+- AC: `PATCH /jobs/:id/user-state` (saved, hidden, reason, note); `viewedAt`; `GET /companies/search?q=`; IDOR.
+
+### M4-11 · Sanitized job HTML · `later-r1l`
+- FR: FR-DISC-05 · Area: api, web, security · Est: 1.5h · Depends: M4-07 · Flow: /feature
+- AC: `sanitize-html` на запис з allowlist `09-security-privacy.md` §7; `SafeHtml`; XSS fixtures — unit.
+
+### M4-12 · Web: Jobs list + filters · `later-r1l`
+- FR: FR-DISC-01, FR-DISC-03, FR-JOB-10 · Area: web · Est: 4h · Depends: M4-09, M4-10 · Flow: /feature
+- AC: `/jobs`: `FilterPanel`, `JobCard` (+ match-бейдж з M4-25), пошук, стан у URL, infinite scroll; save/hide; empty/loading/error; MSW-тести.
+
+### M4-13 · Web: Job detail · `later-r1l`
+- FR: FR-DISC-05 · Area: web · Est: 2.5h · Depends: M4-11, M4-12 · Flow: /feature
+- AC: `/jobs/:id` (split view ≥ 1280px): поля, `SafeHtml`, note, «Create application», «Open original» (`rel=noopener`), match «Why?».
+
+### M4-14 · Documents: schema, storage, upload init/complete · `later-r1l`
+- FR: FR-DOC-01, FR-DOC-02 · Area: db, api · Est: 3.5h · Depends: M3-02 · Flow: /feature
+- AC: spike presigned PUT (M0-16), інакше fallback через API (ADR 010); `Document`, `DocumentVersion`; storage client, quarantine 1 день; `POST /documents/uploads` (no-demo) → presigned PUT ≤ 5 хв; `.../complete` → HEAD → outbox `DocumentUploaded` → consumer `documents/validate` (ідемпотентний за `versionId`); `/health/ready` + storage HEAD; IDOR.
+
+### M4-15 · Validate + parse sandbox · `later-r1l`
+- FR: FR-DOC-01, FR-DOC-04 · Area: worker, security · Est: 4h · Depends: M4-14 · Flow: /feature (+ security-reviewer)
+- AC: magic bytes ↔ MIME, `.docm`/зашифрований PDF → REJECTED + delete; parse у child process (256 MB, 20 с SIGKILL, env очищений, без мережі); `parsedText` ≤ 200 000; fixtures `11-testing.md` §5.2.
+
+### M4-16 · Download, delete, default CV · `later-r1l`
+- FR: FR-DOC-02, FR-DOC-05, FR-DOC-06 · Area: api · Est: 2.5h · Depends: M4-15 · Flow: /feature
+- AC: `GET /documents`, `GET/PATCH/DELETE /documents/:id`, download URL ≤ 5 хв лише READY, audit `DOCUMENT_DOWNLOADED`; `DocumentDeleted` → об'єкт видалено ≤ 1 год; IDOR.
+
+### M4-17 · Application ↔ DocumentVersion · `later-r1l`
+- FR: FR-DOC-03 · Area: api, web · Est: 1.5h · Depends: M4-16, M1-16 · Flow: /feature
+- AC: заявка посилається на конкретну версію; видалена → «CV version deleted»; вкладка CV; IDOR.
+
+### M4-18 · Web: Documents · `later-r1l`
+- FR: FR-DOC-01, FR-DOC-02, FR-DOC-06 · Area: web · Est: 3h · Depends: M4-16 · Flow: /feature
+- AC: `/profile/documents`: upload з прогресом, статус, версії, default, download, delete з confirm.
+
+### M4-21b · Second AI adapter + comparison · `later-r1l`
+- FR: FR-AI-01 · Area: api, docs · Est: 1h · Depends: M4-21 · Flow: /feature
+- AC: адаптер другого кандидата; golden set (pass rate, cost, latency) порівняно; рішення в ADR 017 follow-up.
+
+### M5-01 · Analytics API · `later-r1l`
+- FR: FR-ANL-01…05 · Area: api · Est: 4h · Depends: M2-02 · Flow: /feature (test-first)
+- AC: funnel за досягнутими стадіями (domain unit + integration); response rate, сегменти channel/origin, median time-to-first-response, `insufficientData` при n < 5; `GET /analytics/overview|funnel|channels?from&to`; IDOR list.
+
+### M5-02 · Web: Analytics · `later-r1l`
+- FR: FR-ANL-01, FR-ANL-05 · Area: web · Est: 2.5h · Depends: M5-01 · Flow: /feature
+- AC: Recharts funnel/bar + таблична альтернатива, фільтр періоду, «not enough data».
+
+### M5-03 · Dashboard API · `later-r1l`
+- FR: FR-DASH-03, FR-INT-05 · Area: api · Est: 2.5h · Depends: M5-01, M3-14, M3-11 · Flow: /feature
+- AC: `GET /dashboard`: Today, інтерв'ю 7 днів, pipeline counts, needs attention, this week; числа = Analytics.
+
+### M5-04 · Web: Dashboard + R1 navigation · `later-r1l`
+- FR: FR-DASH-03 · Area: web · Est: 3h · Depends: M5-03 · Flow: /feature
+- AC: `/dashboard` (StatCard, PipelineBar, quick actions); навігація R1, landing `/dashboard`, хоткеї `G→D/J/P/Y`.
+
+### M5-05 · Onboarding R1 · `later-r1l`
+- FR: FR-DASH-04 · Area: web · Est: 1.5h · Depends: M4-05b, M4-06 · Flow: /feature
+- AC: 3 кроки (target role + work mode + salary → skills top 10 → Import / Add job), кожен пропускається.
+
+### M5-06 · Email reminders, daily digest, unsubscribe · `later-r1l`
+- FR: FR-NOTIF-01…04, FR-REM-06 · Area: worker, api · Est: 4h · Depends: M3-04, M3-18 · Flow: /feature
+- AC: scheduler `notifications:digest` о 08:00 локального часу; quiet hours відкладають email (unit з DST); one-click unsubscribe (signed token, `List-Unsubscribe`); `notifications:scan-stale` → `STALE_APPLICATION` (G-05).
+
+### M5-07 · Web: notification preferences · `later-r1l`
+- FR: FR-NOTIF-02, FR-PROF-02 · Area: web · Est: 1.5h · Depends: M5-06 · Flow: direct
+- AC: `/settings/notifications`: матриця, quiet hours.
+
+### M5-08 · Full async export (zip) · `later-r1l`
+- FR: FR-PRIV-01, FR-AUTH-10 · Area: api, worker · Est: 3.5h · Depends: M3-09, M4-16 · Flow: /feature
+- AC: `POST /me/export` (fresh, no-demo, 3/добу, один активний) → `202`; `export/build-zip` (JSON + CV) у S3; `EXPORT_READY`; `GET /me/exports/:id` → signed URL ≤ 5 хв, 24 год → `EXPIRED`; audit; IDOR.
+
+### M5-09 · Account deletion pipeline · `later-r1l`
+- FR: FR-PRIV-02, FR-AUTH-10 · Area: api, worker, security · Est: 4h · Depends: M3-09, M4-16 · Flow: /feature
+- AC: `DELETE /me` (fresh) → `deletedAt`, revoke сесій, `202`; `deletion/delete-account` hard delete ≤ 24 год (БД, S3, Redis, Sentry user), `DeletedUserTombstone`, AuditLog анонімізується; integration за `09-security-privacy.md` §12.1.
+
+### M5-10 · Retention schedulers · `later-r1l`
+- FR: — · Area: worker, db · Est: 2h · Depends: M5-09 · Flow: /feature
+- AC: schedulers за `05-data-model.md` §8 (job `cleanup-<model>`, scheduler `<queue>:cleanup-<model>`), ідемпотентні, integration на межі дат.
+
+### M5-11 · Web: Settings → Data · `later-r1l`
+- FR: FR-PRIV-01, FR-PRIV-02 · Area: web · Est: 1.5h · Depends: M5-08, M5-09 · Flow: direct
+- AC: export (статус, download), `DangerZone` delete account з `ReauthDialog`.
+
+### M5-12 · Demo restrictions + anti-abuse · `later-r1l`
+- FR: FR-DEMO-03, FR-DEMO-04, FR-DEMO-05 · Area: api, security · Est: 3h · Depends: M2-12, M4-19, M5-09 · Flow: /feature
+- AC: Turnstile server-verify, ≤ 3/добу на IP, ≤ 200 активних; audit `DEMO_CREATED`; знімає production-guard M2-12; `no-demo` guard (uploads, capture, email, auth-зміни, export) → `403 DEMO_FEATURE_DISABLED`; IDOR між двома demo-користувачами; CSP для Turnstile/report-to + nightly header check (решта колишнього M5-14).
+
+### M5-13 · Demo purge + «Request access» · `later-r1l`
+- FR: FR-DEMO-02, FR-DEMO-06 · Area: worker, web · Est: 2h · Depends: M5-12 · Flow: /feature
+- AC: scheduler `deletion:purge-demo` (pipeline M5-09), прибирає й накопичених demo-користувачів; CTA «Request access» (G-06).
+
+### M5-15 · Metrics instrumentation · `later-r1l`
+- FR: — · Area: obs, api, worker · Est: 3h · Depends: M3-01, M4-19 · Flow: /feature
+- AC: `prom-client` на 9464/9465/9466; метрики `12-infra-ops.md` §10; labels без userId/raw path.
+
+### M5-16 · Prometheus / Grafana / Alertmanager as code · `later-r1l`
+- FR: — · Area: obs, infra · Est: 4h · Depends: M5-15 · Flow: /feature
+- AC: Compose-профіль `observability` (тільки `internal`, local — `127.0.0.1`); dashboards + alert rules + `promtool` у CI; receivers з env; скрипт навантаження на seed для скріншота README.
+
+### M5-21b · E2E flows 5, 6 · `later-r1l`
+- FR: FR-PRIV-02, FR-DEMO-03 · Area: e2e · Est: 1h · Depends: M5-11, M5-13 · Flow: /e2e
+- AC: flow 5 (delete account з re-auth → вхід неможливий), flow 6 (demo → upload вимкнено → вихід).
+
+### M5-23 · k6 + Lighthouse nightly · `later-r1l` · **optional**
+- FR: — · Area: ci, obs · Est: 2h · Depends: M3-23, M2-08 · Flow: direct
+- AC: `nightly.yml` проти `compose.ci.yml`: k6 (seed 2 000 / 20 000) і Lighthouse з NFR-порогами як орієнтир; падіння → issue.
+
+### M5-24 · Admin TOTP + Bull Board · `later-r1l` · **optional**
+- FR: — · Area: api, security · Est: 2h · Depends: M3-09 · Flow: /feature
+- AC: TOTP для `ADMIN`; Bull Board за admin-guard, не через Caddy; не-admin → 404; audit `ADMIN_ACCESS`.
+
+### M5-26b · Full privacy policy · `later-r1l`
+- FR: — · Area: docs, web · Est: 0.5h · Depends: M5-26, M5-09 · Flow: direct
+- AC: таблиця сховищ/retention (`09-security-privacy.md` §12), включно з exports/deletion/email.
 
 ---
 
@@ -1029,4 +1035,6 @@ ADR 022: виконуються лише після рішення хостит�
 | | | | FR-DEMO-05 | M5-12 |
 | | | | FR-DEMO-06 | M2-12, M5-13 |
 
-Не покрито свідомо: немає. Поза R0/R1 (не плануються): FR-PROF-06, FR-DISC-06/07, FR-MATCH-*, FR-AI-02/04, FR-NOTIF-05, FR-DASH-05, FR-ANL-06.
+Не покрито свідомо: немає. Поза R0/R1 (не плануються): FR-PROF-06, FR-DISC-06/07, FR-MATCH-04/06, FR-AI-02/04, FR-NOTIF-05, FR-DASH-05, FR-ANL-06.
+
+ADR 025: FR-MATCH-01/02/05 → M4-24 (частково), FR-MATCH-03 → M4-25; FR-PROF-04 також M4-08. Задачі з таблиці, позначені `later-r1l`, не входять у R1-lite (список — розділ `Later — after R1-lite`). У R1-lite FR-PROF-03/05 покрито частково (M4-03, M4-05).
