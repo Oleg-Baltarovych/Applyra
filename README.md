@@ -34,7 +34,7 @@ Requires Node 26 and pnpm 11 (`npm i -g pnpm`).
 ```sh
 pnpm install
 pnpm --filter @applyra/digest dry-run           # fake source + example profile, prints the digest
-pnpm lint && pnpm typecheck && pnpm test
+pnpm check
 ```
 
 A real local send: put `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` into a root `.env` (see `.env.example`),

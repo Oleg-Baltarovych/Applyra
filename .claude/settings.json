@@ -14,7 +14,6 @@
       "Bash(pnpm --filter * typecheck *)",
       "Bash(pnpm --filter * test *)",
       "Bash(pnpm --filter * build *)",
-      "Bash(pnpm turbo run *)",
       "Bash(git status *)",
       "Bash(git diff *)",
       "Bash(git log *)",

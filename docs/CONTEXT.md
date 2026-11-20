@@ -18,7 +18,7 @@ Pre-pivot CRM (spec v2.1, ADRs 000–025, plans, api/web code) → git tag `arch
   - `src/dedup.ts` keys/state ops · `filter.ts` profile parse + evaluate/rank · `format.ts` Telegram HTML · `telegram.ts` · `state.ts`
   - `profile.json` (owner, committed, no personal data) · `profile.example.json` · `test/` (Vitest)
 - `packages/config/` — shared `tsconfig.base.json` + ESLint flat config (+ a test that the strict rules fire)
-- `.github/workflows/` — `ci.yml` (lint, typecheck, unit, gitleaks, audit, osv-scanner, actionlint), `sast.yml` (Semgrep), `digest.yml` (daily cron)
+- `.github/workflows/` — `ci.yml` (one job, PRs + weekly: lint, format, typecheck, unit, audit, gitleaks, osv-scanner, Semgrep, actionlint), `digest.yml` (daily cron)
 - `docs/spec.md` (source of truth) · `docs/adr/` (026+)
 
 ## 3. Sources
@@ -31,7 +31,7 @@ Pre-pivot CRM (spec v2.1, ADRs 000–025, plans, api/web code) → git tag `arch
 
 ## 4. Commands
 
-- `pnpm lint && pnpm typecheck && pnpm test` · `pnpm format:check` · `pnpm audit --audit-level=high`
+- `pnpm check` (lint, format:check, typecheck, test) · `pnpm audit --audit-level=high`
 - `pnpm --filter @applyra/digest dry-run` — fake source + example profile, prints the digest
 - `pnpm --filter @applyra/digest start -- --dry-run --source=fake` — same with the owner profile
 - real run: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `DIGEST_SOURCES` in env → `pnpm --filter @applyra/digest start`
@@ -59,5 +59,6 @@ Pre-pivot CRM (spec v2.1, ADRs 000–025, plans, api/web code) → git tag `arch
 - Dry run wraps output in `::stop-commands::<uuid>` … `::<uuid>::` and indents it: feed text must not become workflow commands. normalize collapses CR/LF in single-line fields; source errors go through `redact()` (urls without query/userinfo, ≤ 300 chars).
 - format.ts budgets are in ESCAPED chars (`escapeFit`); a block that still does not fit falls back to the bare title.
 - Actions cache keys are immutable → save under `digest-state-<run_id>-<attempt>`, restore by prefix `digest-state-`; entries idle 7 days are evicted. Schedules run only from the default branch.
+- Private repo on the Free plan: 2,000 Actions min/month, each job billed rounded up to a whole minute → CI is one job, PRs + weekly only (no run on push to main). When the quota is out, jobs do not start at all (incl. the digest cron).
 - Node 26 LTS, pnpm 11 via `npm i -g pnpm` (self-switches to `packageManager` via `pmOnFail: download`). TS 6: `types` defaults to `[]` → set `"types": ["node"]` per package.
 - Windows/Git Bash: heredocs with quotes break and the guard hook blocks any command text mentioning `.env` — write files with the editor tool instead.

@@ -8,7 +8,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
-  { ignores: ['**/dist/**', '**/coverage/**', '**/.turbo/**', '**/.state/**'] },
+  { ignores: ['**/dist/**', '**/coverage/**', '**/.state/**'] },
   {
     linterOptions: { reportUnusedDisableDirectives: 'error' },
     // Everything in this repo runs on Node (the digest is a CLI run by GitHub Actions).
