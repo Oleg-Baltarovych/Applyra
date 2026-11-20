@@ -147,14 +147,30 @@ describe('dkimPassDomains', () => {
       'Authentication-Results: forged.example; dkim=pass header.d=linkedin.com',
       '',
     ].join('\r\n');
-    expect(dkimPassDomains(headers)).toEqual(['work.ua']);
+    expect(dkimPassDomains(headers, 'mx.google.com')).toEqual(['work.ua']);
   });
   it('accepts header.d and returns nothing without the header', () => {
     expect(
-      dkimPassDomains('Authentication-Results: mx; dkim=pass (2048-bit) header.d=LinkedIn.com'),
+      dkimPassDomains(
+        'Authentication-Results: mx.google.com; dkim=pass (2048-bit) header.d=LinkedIn.com',
+        'mx.google.com',
+      ),
     ).toEqual(['linkedin.com']);
-    expect(dkimPassDomains('Subject: hi\r\n')).toEqual([]);
-    expect(dkimPassDomains('')).toEqual([]);
+    expect(dkimPassDomains('Subject: hi\r\n', 'mx.google.com')).toEqual([]);
+    expect(dkimPassDomains('', 'mx.google.com')).toEqual([]);
+  });
+  it('ignores clauses smuggled in through quoted strings or comments', () => {
+    const smuggled = [
+      'Authentication-Results: mx.google.com;',
+      '       dkim=fail header.d=evil.example;',
+      '       spf=neutral (google.com: x;dkim=pass header.d=work.ua) smtp.mailfrom="x;dkim=pass header.d=work.ua"@evil.example',
+    ].join('\r\n');
+    expect(dkimPassDomains(smuggled, 'mx.google.com')).toEqual([]);
+  });
+  it('trusts only the expected receiving server', () => {
+    const other = 'Authentication-Results: attacker.example; dkim=pass header.d=work.ua';
+    expect(dkimPassDomains(other, 'mx.google.com')).toEqual([]);
+    expect(dkimPassDomains(other, 'attacker.example')).toEqual(['work.ua']);
   });
 });
 
@@ -198,6 +214,7 @@ describe('readImapConfig', () => {
       port: 993,
       user: 'box@example.com',
       password: 'p',
+      authservId: 'mx.google.com',
     });
     expect(() => readImapConfig({ IMAP_USER: 'u', IMAP_PASSWORD: 'p', IMAP_PORT: 'x' })).toThrow(
       /IMAP_PORT/,

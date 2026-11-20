@@ -16,6 +16,8 @@ export interface ImapConfig {
   port: number;
   user: string;
   password: string;
+  /** authserv-id of the receiving server whose Authentication-Results header is trusted (Gmail: mx.google.com). */
+  authservId: string;
 }
 
 /** Mails from the last N days are read every run (covers a missed day or two). */
@@ -31,7 +33,13 @@ export function readImapConfig(env: Record<string, string | undefined>): ImapCon
   const port = Number(env.IMAP_PORT || 993);
   if (!Number.isInteger(port) || port <= 0 || port > 65535)
     throw new Error('email: IMAP_PORT must be a port number');
-  return { host: env.IMAP_HOST?.trim() || 'imap.gmail.com', port, user, password };
+  return {
+    host: env.IMAP_HOST?.trim() || 'imap.gmail.com',
+    port,
+    user,
+    password,
+    authservId: env.IMAP_AUTHSERV_ID?.trim() || 'mx.google.com',
+  };
 }
 
 /** The text/html part number of a message structure (single-part html → '1'), if any. */
@@ -126,7 +134,7 @@ export function imapMailbox(config: ImapConfig): Mailbox {
             const date = Number.isNaN(received.getTime()) ? since : received;
             out.push({
               from,
-              dkimDomains: dkimPassDomains(m.headers?.toString('utf8') ?? ''),
+              dkimDomains: dkimPassDomains(m.headers?.toString('utf8') ?? '', config.authservId),
               date,
               html: await readAll(download.content),
             });
