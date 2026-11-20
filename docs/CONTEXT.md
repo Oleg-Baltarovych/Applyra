@@ -37,6 +37,9 @@ Pre-pivot CRM (spec v2.1, ADRs 000–025, plans, api/web code) → git tag `arch
 - real run: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `DIGEST_SOURCES` in env → `pnpm --filter @applyra/digest start`
 - actionlint: `MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/repo:ro" -w /repo rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -color`
 - renovate config: `npx --yes --package renovate@latest -- renovate-config-validator --strict`
+- live dry run (real feeds, sends nothing): `pnpm --filter @applyra/digest start -- --dry-run --source=dou,djinni`
+- Windows stop-gap runner (Actions quota out): `apps/digest/scripts/windows-task.ps1` (`-Unregister` to remove)
+- Semgrep locally: scan a `git archive` copy, not the work tree — a bind mount with `node_modules` on Windows hangs for hours
 
 ## 5. Key decisions
 
