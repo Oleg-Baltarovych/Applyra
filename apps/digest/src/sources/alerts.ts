@@ -19,19 +19,50 @@ const MAX_HEADER = 8000;
  * server (e.g. mx.google.com) prepends; headers further down may come from the sender and are not trusted.
  * `rawHeaders` is the header block as fetched (folded lines allowed).
  */
-export function dkimPassDomains(rawHeaders: string): string[] {
+export function dkimPassDomains(rawHeaders: string, authservId: string): string[] {
   const unfolded = rawHeaders.slice(0, 64_000).replace(/\r?\n[ \t]+/g, ' ');
   const line = unfolded
     .split(/\r?\n/)
     .find((l) => asciiLower(l.slice(0, 23)) === 'authentication-results:');
   if (!line) return [];
+  // The server reflects sender-controlled values (e.g. a quoted local part `"x;dkim=pass header.d=…"@evil`):
+  // drop quoted strings and comments before splitting into clauses (RFC 8601 / 5322 syntax).
+  const [server = '', ...clauses] = stripCommentsAndQuotes(line.slice(23, 23 + MAX_HEADER)).split(
+    ';',
+  );
+  // Only the expected receiving server's verdict counts (its id is the first token).
+  if (asciiLower(server.trim().split(/\s+/)[0] ?? '') !== asciiLower(authservId)) return [];
   const domains: string[] = [];
-  for (const clause of line.slice(0, MAX_HEADER).split(';')) {
+  for (const clause of clauses) {
     if (!/^\s*dkim=pass(?![a-z])/i.test(clause)) continue;
     const d = /\bheader\.(?:d=|i=@?)([a-z0-9.-]{1,253})/i.exec(clause)?.[1];
     if (d) domains.push(asciiLower(d).replace(/^\.+|\.+$/g, ''));
   }
   return domains;
+}
+
+/** Removes `"quoted strings"` (with `\` escapes) and nested `(comments)`; linear, one pass. */
+function stripCommentsAndQuotes(s: string): string {
+  let out = '';
+  let depth = 0;
+  let quoted = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\' && (quoted || depth > 0)) {
+      i++; // escaped char inside a quote/comment
+    } else if (quoted) {
+      if (c === '"') quoted = false;
+    } else if (c === '(') {
+      depth++;
+    } else if (depth > 0) {
+      if (c === ')') depth--;
+    } else if (c === '"') {
+      quoted = true;
+    } else {
+      out += c;
+    }
+  }
+  return out;
 }
 
 interface Site {

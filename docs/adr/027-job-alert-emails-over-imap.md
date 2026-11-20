@@ -17,7 +17,8 @@ dedups everything in one place.
   `INBOX` over IMAP/TLS **read-only** (nothing is marked, moved or deleted), mails of the last 3 days (≤ 100, html
   part ≤ 1 MB); dedup state drops repeats, so re-reading is harmless and runs stay idempotent.
 - **Authenticity:** a mail is parsed only when its From domain is the site's and the topmost `Authentication-Results`
-  header (prepended by the receiving server) shows `dkim=pass` for the site's domain — a forged From alone could
+  header was written by the expected receiving server (authserv-id, default `mx.google.com`, env `IMAP_AUTHSERV_ID`)
+  and — after stripping comments and quoted strings, which carry reflected sender values — shows `dkim=pass` for the site's domain — a forged From alone could
   inject titles. If a site signs with another domain its alerts are skipped (visible as no items from it).
 - Parsing is **template-agnostic**: at most 100 vacancies per mail; every link whose (url-decoded) target is a
   vacancy page becomes one item, titled by its first descriptive link text; the url is rebuilt from the id, so
