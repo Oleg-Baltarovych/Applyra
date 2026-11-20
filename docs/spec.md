@@ -29,7 +29,7 @@ Work.ua, robota.ua and LinkedIn have no permitted public feed (robots rules, ant
 through their own **job-alert e-mails** (source `email`). The owner subscribes a dedicated mailbox to the alerts;
 the digest reads it over IMAP (TLS, `INBOX` read-only, nothing marked or deleted), mails of the last 3 days, at most
 100, html part ≤ 1 MB. Only mail from the sites' own domains with `dkim=pass` for that domain in the topmost Authentication-Results written by the expected server (authserv-id
-`mx.google.com`, env `IMAP_AUTHSERV_ID`; comments/quoted strings ignored) is parsed, at
+`mx.google.com`, env `IMAP_AUTHSERV_ID`; only the leading strictly formed dkim clauses are read) is parsed, at
 most 100 vacancies per mail. Parsing is template-agnostic: every link to
 a vacancy page (`work.ua/jobs/<id>`, `robota.ua/company<c>/vacancy<v>`, `linkedin.com/jobs/view/<id>`, also inside
 url-encoded tracking redirects) becomes one item, titled by its first descriptive link text; the url is rebuilt

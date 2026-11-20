@@ -14,6 +14,10 @@ export interface MailMessage {
 
 const MAX_HEADER = 8000;
 
+/** `dkim=<result> header.x=value …` with plain tokens only (no comments, quotes or escapes). */
+const DKIM_CLAUSE =
+  /^\s*dkim=([a-z]{1,10})((?:\s+header\.[a-z]{1,10}=[^\s;()"\\]{1,300}){0,8})\s*$/i;
+
 /**
  * Domains that passed DKIM according to the **topmost** Authentication-Results header — the one the receiving
  * server (e.g. mx.google.com) prepends; headers further down may come from the sender and are not trusted.
@@ -25,44 +29,22 @@ export function dkimPassDomains(rawHeaders: string, authservId: string): string[
     .split(/\r?\n/)
     .find((l) => asciiLower(l.slice(0, 23)) === 'authentication-results:');
   if (!line) return [];
-  // The server reflects sender-controlled values (e.g. a quoted local part `"x;dkim=pass header.d=…"@evil`):
-  // drop quoted strings and comments before splitting into clauses (RFC 8601 / 5322 syntax).
-  const [server = '', ...clauses] = stripCommentsAndQuotes(line.slice(23, 23 + MAX_HEADER)).split(
-    ';',
-  );
+  const [server = '', ...clauses] = line.slice(23, 23 + MAX_HEADER).split(';');
   // Only the expected receiving server's verdict counts (its id is the first token).
   if (asciiLower(server.trim().split(/\s+/)[0] ?? '') !== asciiLower(authservId)) return [];
+  // The server reflects sender-controlled text (SPF comment, smtp.mailfrom, ARC) in later clauses — and does not
+  // escape it reliably, so no tokenizer can tell injected clauses from real ones. The DKIM verdicts come first
+  // (Gmail: dkim…; arc…; spf…; dmarc…) and their values cannot hold ';' (it separates DKIM-Signature tags), so
+  // only the leading run of strictly formed dkim clauses is read; the first other clause ends it.
   const domains: string[] = [];
   for (const clause of clauses) {
-    if (!/^\s*dkim=pass(?![a-z])/i.test(clause)) continue;
-    const d = /\bheader\.(?:d=|i=@?)([a-z0-9.-]{1,253})/i.exec(clause)?.[1];
+    const m = DKIM_CLAUSE.exec(clause);
+    if (!m) break;
+    if (asciiLower(m[1] ?? '') !== 'pass') continue;
+    const d = /\bheader\.(?:d=|i=[^@\s]*@)([a-z0-9.-]{1,253})(?=\s|$)/i.exec(clause)?.[1];
     if (d) domains.push(asciiLower(d).replace(/^\.+|\.+$/g, ''));
   }
   return domains;
-}
-
-/** Removes `"quoted strings"` (with `\` escapes) and nested `(comments)`; linear, one pass. */
-function stripCommentsAndQuotes(s: string): string {
-  let out = '';
-  let depth = 0;
-  let quoted = false;
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (c === '\\' && (quoted || depth > 0)) {
-      i++; // escaped char inside a quote/comment
-    } else if (quoted) {
-      if (c === '"') quoted = false;
-    } else if (c === '(') {
-      depth++;
-    } else if (depth > 0) {
-      if (c === ')') depth--;
-    } else if (c === '"') {
-      quoted = true;
-    } else {
-      out += c;
-    }
-  }
-  return out;
 }
 
 interface Site {
