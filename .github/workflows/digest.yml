@@ -48,6 +48,9 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Source `email` (job-alert mailbox, read-only); unused unless DIGEST_SOURCES lists it.
+          IMAP_USER: ${{ secrets.IMAP_USER }}
+          IMAP_PASSWORD: ${{ secrets.IMAP_PASSWORD }}
           DIGEST_SOURCES: ${{ vars.DIGEST_SOURCES }}
           DRY_RUN: ${{ inputs.dry-run && 'true' || 'false' }}
         run: |

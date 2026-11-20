@@ -6,8 +6,8 @@
 ## 1. Status
 
 Pivot done (ADR 026): one package `apps/digest`. Pipeline, profile filter/score, dedup, Telegram format/send,
-state file, CLI and `digest.yml` cron work and are tested; sources: DOU + Djinni RSS (Node.js + Fullstack feeds; repo variable `DIGEST_SOURCES=dou,djinni`). Next: email
-alerts (Work.ua, robota.ua, LinkedIn) via IMAP, cross-source dedup.
+state file, CLI and `digest.yml` cron work and are tested; sources: DOU + Djinni RSS (Node.js + Fullstack feeds; repo variable `DIGEST_SOURCES=dou,djinni`). Source `email`
+(job-alert mails over IMAP) is in, waiting for the mailbox. Next: check the alert parser on real mails, cross-source dedup.
 Pre-pivot CRM (spec v2.1, ADRs 000–025, plans, api/web code) → git tag `archive/crm-plan-v0`.
 
 ## 2. Repo map
@@ -28,6 +28,7 @@ Pre-pivot CRM (spec v2.1, ADRs 000–025, plans, api/web code) → git tag `arch
 | fake | ✅ dry-run only (`--source=fake`) |
 | DOU RSS (`dou`) | ✅ Node.js + Fullstack, remote; fields parsed from the title |
 | Djinni RSS (`djinni`) | ✅ Node.js + Fullstack, remote, 2y+; feed rejected if any item lacks the keyword category |
+| e-mail alerts (`email`) | ✅ code; needs the mailbox + `IMAP_USER`/`IMAP_PASSWORD` secrets — Work.ua, robota.ua, LinkedIn via IMAP (`sources/email.ts`, parser `alerts.ts`); parser not yet checked against real mails |
 
 ## 4. Commands
 
@@ -44,6 +45,7 @@ Pre-pivot CRM (spec v2.1, ADRs 000–025, plans, api/web code) → git tag `arch
 ## 5. Key decisions
 
 - 026 Pivot to a daily Telegram vacancy digest on GitHub Actions cron, no hosting/DB; state in Actions cache.
+- 027 Work.ua / robota.ua / LinkedIn via their job-alert e-mails over IMAP (read-only, template-agnostic link parsing); dep `imapflow`.
 
 ## 6. Supply chain
 

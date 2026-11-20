@@ -4,6 +4,7 @@ import { markSent, pruneState, selectNew } from './dedup.ts';
 import { parseProfile, rank, type Profile } from './filter.ts';
 import { formatDigest } from './format.ts';
 import { normalize } from './normalize/normalize.ts';
+import { emailSource, imapMailbox, readImapConfig } from './sources/email.ts';
 import { feedSources } from './sources/feeds.ts';
 import { FakeSource, SAMPLE_ITEMS, type Source } from './sources/source.ts';
 import { DEFAULT_STATE_PATH, fileStore, type StateStore } from './state.ts';
@@ -126,14 +127,23 @@ export async function run(o: RunOptions): Promise<RunSummary> {
 const flag = (args: string[], name: string) =>
   args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 
-/** Site names → sources (sources/feeds.ts). `fake` is dry-run only. */
-export function createSources(names: string[], dryRun: boolean): Source[] {
+/**
+ * Source names → sources: RSS sites (sources/feeds.ts), `email` (IMAP alerts, needs IMAP_* env),
+ * `fake` (dry-run only).
+ */
+export function createSources(
+  names: string[],
+  dryRun: boolean,
+  env: Record<string, string | undefined> = {},
+  now: Date = new Date(),
+): Source[] {
   // A Set: a repeated name must not fetch its feeds twice (one request per feed per run).
   return [...new Set(names)].flatMap((name) => {
     if (name === 'fake') {
       if (!dryRun) throw new Error('Source "fake" is allowed only with --dry-run');
       return [new FakeSource(SAMPLE_ITEMS)];
     }
+    if (name === 'email') return [emailSource(imapMailbox(readImapConfig(env)), now)];
     const sources = feedSources(name);
     if (!sources) throw new Error(`Unknown source: ${name}`);
     return sources;
@@ -150,7 +160,8 @@ export async function cli(args: string[], env: Record<string, string | undefined
     console.log('No sources configured (DIGEST_SOURCES or --source=); nothing to do.');
     return;
   }
-  const sources = createSources(names, dryRun);
+  const now = new Date();
+  const sources = createSources(names, dryRun, env, now);
   const profilePath = flag(args, 'profile') ?? env.DIGEST_PROFILE_PATH ?? 'profile.json';
   const profile = parseProfile(JSON.parse(await readFile(profilePath, 'utf8')));
   const telegram = dryRun ? undefined : readTelegramConfig(env);
@@ -159,7 +170,7 @@ export async function cli(args: string[], env: Record<string, string | undefined
     profile,
     store: fileStore(env.DIGEST_STATE_PATH || DEFAULT_STATE_PATH),
     dryRun,
-    now: new Date(),
+    now,
     send: async (html) => {
       if (!telegram) throw new Error('Telegram is not configured');
       await sendMessage(telegram, html);

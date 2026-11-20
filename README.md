@@ -21,9 +21,13 @@ fetch (public feeds) → normalize → dedup (already sent?) → filter + score 
    - environment secrets `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (not repository secrets)
    - variable `DIGEST_SOURCES` — comma-separated source names (empty = the run does nothing); an environment
      or repository variable both work
-4. **Edit your profile**: `apps/digest/profile.json` (keywords, exclusions, level, remote, salary floor).
+4. **Optional — Work.ua / robota.ua / LinkedIn** (no public feeds): create a dedicated Gmail box, enable 2FA, create
+   an App Password; subscribe that address to the job alerts on those sites (filters: Node.js / Full-stack, remote);
+   add environment secrets `IMAP_USER` (the address) and `IMAP_PASSWORD` (the App Password) to `digest`, and add
+   `email` to `DIGEST_SOURCES` (e.g. `dou,djinni,email`). The digest only reads that inbox.
+5. **Edit your profile**: `apps/digest/profile.json` (keywords, exclusions, level, remote, salary floor).
    No personal data in it — it is committed. Format: [docs/spec.md](docs/spec.md#profile).
-5. The workflow [`digest.yml`](.github/workflows/digest.yml) runs daily at 06:00 UTC; run it by hand from the
+6. The workflow [`digest.yml`](.github/workflows/digest.yml) runs daily at 06:00 UTC; run it by hand from the
    Actions tab (optionally as a dry run).
 
 ## Run locally

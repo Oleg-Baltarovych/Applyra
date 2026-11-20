@@ -16,5 +16,8 @@
     "eslint": "^10.15.0",
     "typescript": "~6.0.3",
     "vitest": "^4.1.12"
+  },
+  "dependencies": {
+    "imapflow": "2.12.1"
   }
 }

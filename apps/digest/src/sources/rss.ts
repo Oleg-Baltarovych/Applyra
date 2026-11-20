@@ -56,7 +56,7 @@ const BLOCK_TAG = /^\/?(p|br|li|ul|ol|div|h[1-6]|tr|td|th|table|blockquote|hr|pr
  * (`Java<b>Script</b>` → `JavaScript`), entities decoded.
  */
 export function htmlToText(html: string): string {
-  const lower = html.toLowerCase();
+  const lower = asciiLower(html); // same length as html, so indices line up
   let out = '';
   let i = 0;
   while (i < html.length) {
@@ -151,3 +151,9 @@ export function isLinkOn(link: string, host: string): boolean {
     return false;
   }
 }
+
+/**
+ * Lower-cases A–Z only. Unlike toLowerCase() it never changes the string length ("İ" → "i̇" adds a code unit),
+ * so indices found in the result are valid in the original.
+ */
+export const asciiLower = (s: string): string => s.replace(/[A-Z]/g, (c) => c.toLowerCase());
