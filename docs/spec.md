@@ -25,7 +25,16 @@ Requests: User-Agent `ApplyraDigest/1.0 (personal daily job digest; RSS reader)`
 with a 2 MB cap, redirects refused; a non-RSS response (e.g. an anti-bot page) fails the feed. The parser is linear
 (no backtracking regex over feed text) and reads at most 300 items; items whose link is not https on the site's own
 host are dropped. Source-side pre-filtering keeps feeds small; the profile filter still runs.
-Other sites (Work.ua, robota.ua, LinkedIn…) only after a spike confirms a public feed and permitted use.
+Work.ua, robota.ua and LinkedIn have no permitted public feed (robots rules, anti-bot, Cloudflare): they come in
+through their own **job-alert e-mails** (source `email`). The owner subscribes a dedicated mailbox to the alerts;
+the digest reads it over IMAP (TLS, `INBOX` read-only, nothing marked or deleted), mails of the last 3 days, at most
+100, html part ≤ 1 MB. Only mail from the sites' own domains with `dkim=pass` for that domain (topmost Authentication-Results) is parsed, at
+most 100 vacancies per mail. Parsing is template-agnostic: every link to
+a vacancy page (`work.ua/jobs/<id>`, `robota.ua/company<c>/vacancy<v>`, `linkedin.com/jobs/view/<id>`, also inside
+url-encoded tracking redirects) becomes one item, titled by its first descriptive link text; the url is rebuilt
+from the id. Ids: `workua:<id>`, `robotaua:<vacancy id>`, `linkedin:<id>`. Mails carry no description, so these
+items rank on the title (level/remote often "unclear"). Env: `IMAP_USER`, `IMAP_PASSWORD` (secrets),
+`IMAP_HOST` (default `imap.gmail.com`), `IMAP_PORT` (993). Other sites only after a spike confirms a public feed.
 
 ## 3. Pipeline (`apps/digest/src`)
 
