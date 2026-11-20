@@ -1,0 +1,25 @@
+{
+  "name": "@applyra/bot",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker: Telegram status buttons and /status for the digest (ADR 028).",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 migrations apply applyra --remote",
+    "setup": "node scripts/setup.ts"
+  },
+  "dependencies": {
+    "@applyra/digest": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "eslint": "^10.15.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.12",
+    "wrangler": "4.164.0"
+  }
+}

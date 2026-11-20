@@ -17,6 +17,7 @@ Pre-pivot CRM (spec v2.1, ADRs 000–025, plans, api/web code) → git tag `arch
   - `src/sources/`: `source.ts` (`Source`, `FakeSource`), `feeds.ts` (site → one source per feed), `rss.ts`, `http.ts`, `dou.ts`, `djinni.ts` · `normalize/` url + RawItem→Vacancy
   - `src/dedup.ts` keys/state ops · `filter.ts` profile parse + evaluate/rank · `format.ts` Telegram HTML · `telegram.ts` · `state.ts`
   - `profile.json` (owner, committed, no personal data) · `profile.example.json` · `test/` (Vitest)
+- `apps/bot/` — `@applyra/bot`, Cloudflare Worker for the status buttons + `/status` (D1 table `statuses`, `wrangler.toml`, `migrations/`, `scripts/setup.ts`); imports the button protocol from `@applyra/digest/status` (ADR 028)
 - `packages/config/` — shared `tsconfig.base.json` + ESLint flat config (+ a test that the strict rules fire)
 - `.github/workflows/` — `ci.yml` (one job, PRs + weekly: lint, format, typecheck, unit, audit, gitleaks, osv-scanner, Semgrep, actionlint), `digest.yml` (daily cron)
 - `docs/spec.md` (source of truth) · `docs/adr/` (026+)
@@ -45,6 +46,7 @@ Pre-pivot CRM (spec v2.1, ADRs 000–025, plans, api/web code) → git tag `arch
 ## 5. Key decisions
 
 - 026 Pivot to a daily Telegram vacancy digest on GitHub Actions cron, no hosting/DB; state in Actions cache.
+- 028 Status buttons: one message per vacancy + Cloudflare Worker webhook with D1 (`apps/bot`); amends 026 "no hosting/DB/tracking".
 - 027 Work.ua / robota.ua / LinkedIn via their job-alert e-mails over IMAP (read-only, template-agnostic link parsing); dep `imapflow`.
 
 ## 6. Supply chain

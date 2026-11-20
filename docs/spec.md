@@ -49,10 +49,10 @@ items rank on the title (level/remote often "unclear"). Env: `IMAP_USER`, `IMAP_
 4. **filter + score** (`filter.ts`) — hard rejects, then a score with reasons and caveats (§4).
 5. **format** (`format.ts`) — Telegram HTML, every field escaped, http(s) links only, field sizes capped
    in escaped characters (title 200, company 100, city 50 × 3, href 1000 else no link), a block that still
-   does not fit becomes title-only; split into messages ≤ 4096 chars without breaking an item; header with
-   date and count.
-6. **send** (`telegram.ts`) — Bot API `sendMessage` via `fetch`, `parse_mode: HTML`, previews off, one retry
-   on 429. The token never appears in logs or errors.
+   does not fit becomes title-only. A short header (date, count), then **one message per vacancy** with status
+   buttons (§8).
+6. **send** (`telegram.ts`) — Bot API `sendMessage` via `fetch`, `parse_mode: HTML`, previews off, inline keyboard,
+   messages ≥ 1.1 s apart, one retry on 429. The token never appears in logs or errors.
 7. **remember** — after each delivered message its vacancies are added to the state. A 400 content error
    (too long, can't parse entities, empty) quarantines that message's vacancies (remembered, counted as
    `rejected`) and the run continues; any other send error stops the run. The state is saved even after a
@@ -107,5 +107,16 @@ local (`apps/digest/.state/`), so only one runner may be active at a time.
 
 ## 7. Non-goals
 
-No web UI, no database, no hosting, no multi-user, no application tracking/CRM, no auto-apply, no scraping
+No web UI, no multi-user, no CRM beyond the status buttons (no notes, reminders, pipelines), no auto-apply, no scraping
 behind login/CAPTCHA, no LLM in v1 (an optional LLM re-ranking step may come later behind its own ADR).
+
+## 8. Status buttons (`apps/bot`, ADR 028)
+
+Each vacancy message carries ✅ Відгукнувся · 🔄 В процесі · ❌ Відмова · 🚫 Не цікаво (callback `s:<code>:<id>`,
+`apps/digest/src/status.ts`). The bot's webhook is a Cloudflare Worker (free plan): a press stores the status in D1
+(`statuses`: id, status, title, meta, url, updated_at; copied from the message), redraws the keyboard with
+`Статус: <label> · dd.mm` on top and confirms; pressing the current status clears it. `/status` lists marked
+vacancies by status (in progress, applied, rejected; "not interested" as a count), ≤ 4000 chars. Only the owner's
+chat is served; requests need the webhook secret header. Worker secrets: `TELEGRAM_BOT_TOKEN`, `OWNER_CHAT_ID`,
+`WEBHOOK_SECRET` (set by `apps/bot/scripts/setup.ts`, which also calls `setWebhook`). Deploy by hand:
+`pnpm --filter @applyra/bot deploy` (+ `db:migrate` for schema changes).
