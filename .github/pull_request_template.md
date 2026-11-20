@@ -4,7 +4,7 @@
 
 ## How it was verified
 
-- [ ] `pnpm lint && pnpm typecheck && pnpm test` green
+- [ ] `pnpm check` green
 - [ ] Parser / filter / dedup changes covered by tests (test-first)
 - [ ] `pnpm --filter @applyra/digest dry-run` output looks right (if pipeline/format changed)
 

@@ -1,7 +1,7 @@
 # Applyra — Working Context
 
 > Living map for AI agents and humans. Terse and current; update in the same change that alters structure,
-> commands or decisions. Last updated: 2026-11-19 (pivot to vacancy digest, ADR 026)
+> commands or decisions. Last updated: 2026-11-20 (DOU/Djinni RSS, e-mail alerts ADR 027, one-job CI)
 
 ## 1. Status
 
@@ -51,7 +51,7 @@ Pre-pivot CRM (spec v2.1, ADRs 000–025, plans, api/web code) → git tag `arch
 
 - `minimumReleaseAge: 1440` (strict) and `allowBuilds` (only esbuild) in `pnpm-workspace.yaml`; Renovate weekly, 3-day age.
 - Audit exception policy: never `|| true`. A temporary exception = `auditConfig.ignoreGhsas` (GHSA + reason + expiry
-  comment) mirrored in `osv-scanner.toml` with `effectiveUntil`. Current: picomatch 4.0.7 GHSA-fc5q-39xc-vjpf until 2026-12-15.
+  comment) mirrored in `osv-scanner.toml` with `effectiveUntil`. Current: none.
 
 ## 7. Gotchas
 

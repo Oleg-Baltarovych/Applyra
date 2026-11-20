@@ -25,7 +25,7 @@ export const escapeHtml = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 /** Escape, keeping the escaped result ≤ max chars; cuts between characters, never inside an entity. */
-export function escapeFit(s: string, max: number): string {
+function escapeFit(s: string, max: number): string {
   const full = escapeHtml(s);
   if (full.length <= max) return full;
   let out = '';
