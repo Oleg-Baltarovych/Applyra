@@ -1,5 +1,6 @@
 import type { Ranked } from './filter.ts';
 import { isHttpUrl } from './normalize/url.ts';
+import { statusKeyboard, type InlineKeyboard } from './status.ts';
 import type { Salary, Vacancy } from './types.ts';
 
 /** Telegram sendMessage text limit. Measured on the raw HTML (stricter than Telegram's own count). */
@@ -19,6 +20,8 @@ export interface Message {
   text: string;
   /** Vacancies in this message — marked as sent only after it is delivered. */
   vacancies: Vacancy[];
+  /** Status buttons (ADR 028); absent on the header. */
+  replyMarkup?: InlineKeyboard;
 }
 
 export const escapeHtml = (s: string): string =>
@@ -79,29 +82,26 @@ function block(r: Ranked, max: number): string {
   return full.length <= max ? full : titleOnly(r, max);
 }
 
-const SEPARATOR = '\n\n';
-
-/** Ranked vacancies → Telegram messages, each ≤ limit; blocks are never split across messages. */
+/**
+ * Ranked vacancies → Telegram messages: a short header, then one message per vacancy with status buttons
+ * (ADR 028), so each vacancy can be marked on its own. Every message is ≤ limit.
+ */
 export function formatDigest(items: Ranked[], opts: { date: Date; limit?: number }): Message[] {
   if (items.length === 0) return [];
   const limit = opts.limit ?? TELEGRAM_LIMIT;
-  const header = `<b>Applyra · ${opts.date.toISOString().slice(0, 10)} · ${items.length} new</b>`;
-  const messages: Message[] = [];
-  let current: Message = { text: header, vacancies: [] };
-  // Every block must fit a message on its own, even the first one next to the header.
-  const maxBlock = limit - header.length - SEPARATOR.length;
-  for (const item of items) {
-    const b = block(item, maxBlock);
-    if (current.text.length + SEPARATOR.length + b.length > limit && current.vacancies.length) {
-      messages.push(current);
-      current = { text: b, vacancies: [item.vacancy] };
-    } else {
-      current = {
-        text: current.text + SEPARATOR + b,
-        vacancies: [...current.vacancies, item.vacancy],
+  const header: Message = {
+    text: `<b>Applyra · ${opts.date.toISOString().slice(0, 10)} · ${items.length} new</b>`,
+    vacancies: [],
+  };
+  return [
+    header,
+    ...items.map((item): Message => {
+      const keyboard = statusKeyboard(item.vacancy.id);
+      return {
+        text: block(item, limit),
+        vacancies: [item.vacancy],
+        ...(keyboard ? { replyMarkup: keyboard } : {}),
       };
-    }
-  }
-  messages.push(current);
-  return messages;
+    }),
+  ];
 }

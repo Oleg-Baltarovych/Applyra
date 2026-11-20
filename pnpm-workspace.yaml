@@ -15,4 +15,5 @@ pmOnFail: download
 # pnpm 11: dependency build scripts are denied unless approved here; strictDepBuilds (default true) fails
 # `pnpm install` on any unreviewed build script.
 allowBuilds:
-  esbuild: true # postinstall verifies the platform binary; pulled by vite (vitest)
+  esbuild: true # postinstall verifies the platform binary; pulled by vite (vitest) and wrangler
+  workerd: true # Cloudflare's runtime binary (postinstall picks the platform build); pulled by wrangler (apps/bot)

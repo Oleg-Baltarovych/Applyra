@@ -1,6 +1,8 @@
 // Telegram Bot API client. The token is part of the request URL, so it must never reach a log line
 // or an error message: errors below carry only the HTTP status and Telegram's `description`.
 
+import type { InlineKeyboard } from './status.ts';
+
 export interface TelegramConfig {
   token: string;
   chatId: string;
@@ -67,11 +69,15 @@ const readBody = async (res: Response): Promise<{ description?: string; retryAft
   };
 };
 
-/** sendMessage with parse_mode HTML; retries once on 429 (honouring retry_after ≤ 30 s). */
+/** sendMessage with parse_mode HTML (+ optional inline keyboard); retries once on 429 (retry_after ≤ 30 s). */
 export async function sendMessage(
   config: TelegramConfig,
   html: string,
-  deps: { fetch?: Fetch; sleep?: (ms: number) => Promise<void> } = {},
+  deps: {
+    fetch?: Fetch;
+    sleep?: (ms: number) => Promise<void>;
+    replyMarkup?: InlineKeyboard | undefined;
+  } = {},
 ): Promise<void> {
   const doFetch = deps.fetch ?? fetch;
   const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
@@ -84,6 +90,7 @@ export async function sendMessage(
         text: html,
         parse_mode: 'HTML',
         link_preview_options: { is_disabled: true },
+        ...(deps.replyMarkup ? { reply_markup: deps.replyMarkup } : {}),
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     }).catch((err: unknown) => {

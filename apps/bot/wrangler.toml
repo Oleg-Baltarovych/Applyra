@@ -1,0 +1,14 @@
+# Cloudflare Worker for the status buttons (ADR 028). Deploy: `pnpm --filter @applyra/bot deploy`.
+# Secrets (never here): TELEGRAM_BOT_TOKEN, OWNER_CHAT_ID, WEBHOOK_SECRET — set by `pnpm --filter @applyra/bot setup`.
+name = "applyra-bot"
+main = "src/worker.ts"
+compatibility_date = "2026-11-01"
+workers_dev = true
+send_metrics = false # no wrangler usage telemetry
+
+[[d1_databases]]
+binding = "DB"
+database_name = "applyra"
+# Not a secret: the id only works with this account's credentials. Filled in after `wrangler d1 create applyra`.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"

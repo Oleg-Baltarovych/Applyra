@@ -25,9 +25,13 @@ fetch (public feeds) → normalize → dedup (already sent?) → filter + score 
    an App Password; subscribe that address to the job alerts on those sites (filters: Node.js / Full-stack, remote);
    add environment secrets `IMAP_USER` (the address) and `IMAP_PASSWORD` (the App Password) to `digest`, and add
    `email` to `DIGEST_SOURCES` (e.g. `dou,djinni,email`). The digest only reads that inbox.
-5. **Edit your profile**: `apps/digest/profile.json` (keywords, exclusions, level, remote, salary floor).
+5. **Status buttons** (optional, free Cloudflare account): `cd apps/bot`, `pnpm exec wrangler login`,
+   `pnpm exec wrangler d1 create applyra` (put the id into `wrangler.toml`), `pnpm db:migrate`, `pnpm run deploy`,
+   then `node --env-file=../../.env scripts/setup.ts https://applyra-bot.<subdomain>.workers.dev` (sets the Worker
+   secrets and the bot webhook). Buttons under each vacancy then work, and `/status` lists your applications.
+6. **Edit your profile**: `apps/digest/profile.json` (keywords, exclusions, level, remote, salary floor).
    No personal data in it — it is committed. Format: [docs/spec.md](docs/spec.md#profile).
-6. The workflow [`digest.yml`](.github/workflows/digest.yml) runs daily at 06:00 UTC; run it by hand from the
+7. The workflow [`digest.yml`](.github/workflows/digest.yml) runs daily at 06:00 UTC; run it by hand from the
    Actions tab (optionally as a dry run).
 
 ## Run locally

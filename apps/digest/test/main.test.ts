@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyState, selectNew } from '../src/dedup.ts';
 import { parseProfile } from '../src/filter.ts';
+import type { Message } from '../src/format.ts';
 import { createSources, redact, run, type RunOptions } from '../src/main.ts';
 import { normalize } from '../src/normalize/normalize.ts';
 import { FakeSource, SAMPLE_ITEMS, type Source } from '../src/sources/source.ts';
@@ -28,7 +29,7 @@ afterEach(async () => {
 
 const options = (over: Partial<RunOptions> = {}) => {
   const lines: string[] = [];
-  const send = vi.fn<(html: string) => Promise<void>>(async () => {});
+  const send = vi.fn<(message: Message) => Promise<void>>(async () => {});
   const opts: RunOptions = {
     sources: [new FakeSource(SAMPLE_ITEMS)],
     profile,
@@ -96,7 +97,7 @@ describe('run', () => {
   it('sends once, remembers it, and sends nothing on the next run', async () => {
     const first = options();
     expect((await run(first.opts)).sent).toBe(2);
-    expect(first.send).toHaveBeenCalledTimes(1);
+    expect(first.send).toHaveBeenCalledTimes(3); // header + one message per vacancy
 
     const second = options();
     expect(await run(second.opts)).toMatchObject({ fresh: 2, matched: 0, sent: 0 });
@@ -126,7 +127,8 @@ describe('run', () => {
 
   it('a Telegram 400 on one message quarantines its vacancies and the run continues', async () => {
     const send = vi
-      .fn<(html: string) => Promise<void>>()
+      .fn<(message: Message) => Promise<void>>()
+      .mockResolvedValueOnce(undefined) // header
       .mockRejectedValueOnce(new TelegramApiError(400, 'Bad Request: message is too long'))
       .mockResolvedValue(undefined);
     const { opts, lines } = options({ send, sources: [new FakeSource(manyItems)] });
@@ -135,7 +137,7 @@ describe('run', () => {
     expect(summary.rejected).toBeGreaterThan(0);
     expect(summary.sent).toBeGreaterThan(0);
     expect(summary.rejected + summary.sent).toBe(20);
-    expect(lines.some((l) => l.includes('message 1 rejected by Telegram'))).toBe(true);
+    expect(lines.some((l) => l.includes('message 2 rejected by Telegram'))).toBe(true);
     // Both the delivered and the quarantined vacancies are remembered: nothing is retried forever.
     expect(selectNew(manyItems.map(toVacancy), await loadState(statePath))).toEqual([]);
   });

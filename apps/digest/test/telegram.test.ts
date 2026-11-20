@@ -28,6 +28,15 @@ describe('sendMessage', () => {
       text: '<b>hi</b>',
       parse_mode: 'HTML',
     });
+    expect(JSON.parse(String(init?.body))).not.toHaveProperty('reply_markup');
+  });
+
+  it('attaches the inline keyboard when given', async () => {
+    const fetch = vi.fn<Fetch>(async () => json(200, { ok: true }));
+    const replyMarkup = { inline_keyboard: [[{ text: '✅', callback_data: 's:a:dou:1' }]] };
+    await sendMessage(config, 'x', { fetch, replyMarkup });
+    const [, init] = fetch.mock.calls[0] ?? [];
+    expect(JSON.parse(String(init?.body)).reply_markup).toEqual(replyMarkup);
   });
 
   it('never puts the token into an error', async () => {

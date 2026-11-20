@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { markSent, pruneState, selectNew } from './dedup.ts';
 import { parseProfile, rank, type Profile } from './filter.ts';
-import { formatDigest } from './format.ts';
+import { formatDigest, type Message } from './format.ts';
+
+const SEND_GAP_MS = 1100;
 import { normalize } from './normalize/normalize.ts';
 import { emailSource, imapMailbox, readImapConfig } from './sources/email.ts';
 import { feedSources } from './sources/feeds.ts';
@@ -18,7 +20,7 @@ export interface RunOptions {
   /** Print the messages instead of sending; the state is left untouched. */
   dryRun: boolean;
   now: Date;
-  send: (html: string) => Promise<void>;
+  send: (message: Message) => Promise<void>;
   log: (line: string) => void;
 }
 
@@ -93,7 +95,7 @@ export async function run(o: RunOptions): Promise<RunSummary> {
   let failure: { error: unknown } | undefined;
   for (const [i, m] of messages.entries()) {
     try {
-      await o.send(m.text);
+      await o.send(m);
       summary.sent += m.vacancies.length;
     } catch (error) {
       if (!isRejectedMessage(error)) {
@@ -165,15 +167,20 @@ async function cli(args: string[], env: Record<string, string | undefined>): Pro
   const profilePath = flag(args, 'profile') ?? env.DIGEST_PROFILE_PATH ?? 'profile.json';
   const profile = parseProfile(JSON.parse(await readFile(profilePath, 'utf8')));
   const telegram = dryRun ? undefined : readTelegramConfig(env);
+  // One message per vacancy: stay under Telegram's ~1 message/second per chat.
+  let lastSent = 0;
   await run({
     sources,
     profile,
     store: fileStore(env.DIGEST_STATE_PATH || DEFAULT_STATE_PATH),
     dryRun,
     now,
-    send: async (html) => {
+    send: async (message) => {
       if (!telegram) throw new Error('Telegram is not configured');
-      await sendMessage(telegram, html);
+      const wait = lastSent + SEND_GAP_MS - Date.now();
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      lastSent = Date.now();
+      await sendMessage(telegram, message.text, { replyMarkup: message.replyMarkup });
     },
     log: (line) => console.log(line),
   });

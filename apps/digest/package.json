@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./status": "./src/status.ts"
+  },
   "description": "Daily Telegram digest of relevant vacancies (fetch → normalize → dedup → filter/score → send).",
   "scripts": {
     "start": "node src/main.ts",

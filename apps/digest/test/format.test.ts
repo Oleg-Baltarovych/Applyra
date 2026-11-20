@@ -24,11 +24,11 @@ describe('formatDigest', () => {
   });
 
   it('renders a header and an escaped, linked item', () => {
-    const [msg] = formatDigest(
+    const [header, msg] = formatDigest(
       [ranked({ title: 'Node <Dev> & Co', company: 'A"B', url: 'https://x.test/1?a=1&b="2"' })],
       { date },
     );
-    expect(msg?.text).toContain('2026-11-19');
+    expect(header).toEqual({ text: '<b>Applyra · 2026-11-19 · 1 new</b>', vacancies: [] });
     expect(msg?.text).toContain(
       '<a href="https://x.test/1?a=1&amp;b=&quot;2&quot;">Node &lt;Dev&gt; &amp; Co</a>',
     );
@@ -37,14 +37,14 @@ describe('formatDigest', () => {
   });
 
   it('shows the salary when present', () => {
-    const [msg] = formatDigest([ranked({ salary: { min: 3000, max: 4000, currency: 'USD' } })], {
+    const [, msg] = formatDigest([ranked({ salary: { min: 3000, max: 4000, currency: 'USD' } })], {
       date,
     });
     expect(msg?.text).toContain('3000–4000 USD');
   });
 
   it('does not link non-http urls', () => {
-    const [msg] = formatDigest([ranked({ url: 'javascript:alert(1)' })], { date });
+    const [, msg] = formatDigest([ranked({ url: 'javascript:alert(1)' })], { date });
     expect(msg?.text).not.toContain('href');
   });
 
@@ -53,24 +53,31 @@ describe('formatDigest', () => {
       ...ranked({}, ['node.js', 'nestjs', 'react', 'redis']),
       caveats: ['remote unclear'],
     };
-    const [msg] = formatDigest([item], { date });
+    const [, msg] = formatDigest([item], { date });
     expect(msg?.text).toContain('node.js · nestjs · remote unclear');
     expect(msg?.text).not.toContain('react');
   });
 
-  it('splits into messages within the limit, each vacancy exactly once, in order', () => {
-    const items = Array.from({ length: 60 }, (_, i) =>
-      ranked({ title: `Senior Node.js Developer ${i} ${'x'.repeat(150)}` }),
-    );
-    const messages = formatDigest(items, { date });
-    expect(messages.length).toBeGreaterThan(1);
+  it('sends one message per vacancy, in order, each with its own status buttons', () => {
+    const items = Array.from({ length: 3 }, (_, i) => ranked({ id: `dou:${100 + i}` }));
+    const [header, ...messages] = formatDigest(items, { date });
+    expect(header?.replyMarkup).toBeUndefined();
+    expect(messages.map((m) => m.vacancies.map((v) => v.id))).toEqual([
+      ['dou:100'],
+      ['dou:101'],
+      ['dou:102'],
+    ]);
     for (const m of messages) expect(m.text.length).toBeLessThanOrEqual(TELEGRAM_LIMIT);
-    const ids = messages.flatMap((m) => m.vacancies.map((v) => v.id));
-    expect(ids).toEqual(items.map((r) => r.vacancy.id));
+    expect(messages[1]?.replyMarkup?.inline_keyboard.flat().map((b) => b.callback_data)).toEqual([
+      's:a:dou:101',
+      's:p:dou:101',
+      's:r:dou:101',
+      's:x:dou:101',
+    ]);
   });
 
   it('truncates huge fields so a single item still fits', () => {
-    const [msg] = formatDigest(
+    const [, msg] = formatDigest(
       [
         ranked({
           title: 'T'.repeat(10_000),
@@ -86,13 +93,13 @@ describe('formatDigest', () => {
   it('measures the url cap on the escaped href: an &-heavy url loses its link', () => {
     // 600 raw chars, but every "&" becomes "&amp;" → ~1800 escaped chars.
     const url = `https://x.test/?${'a=1&'.repeat(150)}`;
-    const [msg] = formatDigest([ranked({ url })], { date });
+    const [, msg] = formatDigest([ranked({ url })], { date });
     expect(msg?.text).not.toContain('href');
     expect(msg?.text).toContain('Senior Node.js Developer');
   });
 
   it('truncates a 10 000-char city', () => {
-    const [msg] = formatDigest(
+    const [, msg] = formatDigest(
       [ranked({ location: { cities: ['K'.repeat(10_000), 'Lviv'], remote: 'remote' } })],
       { date },
     );
@@ -101,7 +108,7 @@ describe('formatDigest', () => {
   });
 
   it('caps escaped text: a title full of "&" stays within the title budget', () => {
-    const [msg] = formatDigest([ranked({ title: '&'.repeat(10_000) })], { date });
+    const [, msg] = formatDigest([ranked({ title: '&'.repeat(10_000) })], { date });
     expect(msg?.text.length).toBeLessThan(600);
     expect(msg?.text).not.toMatch(/&(?!amp;|quot;|lt;|gt;)/); // no entity cut in half
   });
@@ -112,7 +119,7 @@ describe('formatDigest', () => {
       'nestjs',
       'react',
     ]);
-    const [msg] = formatDigest([item], { date, limit: 120 });
+    const [, msg] = formatDigest([item], { date, limit: 120 });
     expect(msg?.text.length).toBeLessThanOrEqual(120);
     expect(msg?.text).toContain('<b>Node.js Developer</b>');
     expect(msg?.vacancies).toEqual([item.vacancy]);
