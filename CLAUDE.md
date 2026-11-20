@@ -13,13 +13,13 @@ Pre-pivot CRM design is archived under the git tag `archive/crm-plan-v0` — do 
 
 ## Stack
 
-pnpm workspaces + Turborepo · Node 26 ESM, TypeScript strict (`noUncheckedIndexedAccess`), run directly by Node
+pnpm workspaces · Node 26 ESM, TypeScript strict (`noUncheckedIndexedAccess`), run directly by Node
 (type stripping: `.ts` imports, erasable syntax only) · Vitest · global `fetch` · GitHub Actions.
 Packages: `@applyra/digest` (`apps/digest`), `@applyra/config` (tsconfig + ESLint).
 
 ## Commands
 
-- `pnpm lint && pnpm typecheck && pnpm test` — must be green before a task is done
+- `pnpm check` (= lint, format:check, typecheck, test) — must be green before a task is done
 - `pnpm format:check` · `pnpm audit --audit-level=high` (CI also: gitleaks, osv-scanner, actionlint, Semgrep)
 - `pnpm --filter @applyra/digest dry-run` — fake source + example profile, prints the digest, sends nothing
 - `pnpm --filter @applyra/digest start -- [--dry-run] [--source=a,b] [--profile=path]`

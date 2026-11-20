@@ -1,13 +1,14 @@
-# CI gates for the digest: static checks, unit tests, supply chain, workflow lint.
-# Every job is meant to be a required check; keep job names stable (branch protection refers to them).
+# CI gates for the digest in ONE job: GitHub bills every job rounded up to a whole minute, so eight
+# 20-second jobs cost eight minutes while one job running the same steps costs one or two.
+# Steps: static checks, unit tests, supply chain (gitleaks, pnpm audit, osv-scanner), SAST (Semgrep CE),
+# workflow lint. No branch protection on this private Free-plan repo, so the job name is free to change.
 name: CI
 
 on:
+  # PRs only: main changes only through PRs, so a second run after each merge would test the same code.
   pull_request:
-  push:
-    branches: [main]
-  # Weekly: new advisories / leaked-secret rules hit an unchanged lockfile and history. Only the
-  # supply-chain jobs run (secrets, audit, deps); SAST has its own schedule in sast.yml.
+  # Weekly: new advisories / leaked-secret / SAST rules hit an unchanged lockfile and history.
+  # Only the supply-chain and SAST steps run then.
   schedule:
     - cron: '17 5 * * 1' # Mondays 05:17 UTC
   workflow_dispatch:
@@ -16,65 +17,49 @@ permissions:
   contents: read
 
 concurrency:
-  # event_name in the key: a scheduled run on main is never queued behind / replaced by a push run.
   group: ci-${{ github.event_name }}-${{ github.ref }}
-  # PRs: a new push supersedes the running check. main: let every commit finish.
+  # A new push to a PR supersedes the running check.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  lint:
-    name: lint
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-      - name: ESLint
-        run: pnpm lint
-      - name: Prettier check
-        run: pnpm format:check
-
-  typecheck:
-    name: typecheck
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-      - run: pnpm typecheck
-
-  unit:
-    name: unit
-    if: github.event_name != 'schedule'
+  ci:
+    name: ci
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-      - run: pnpm test
-
-  secrets:
-    name: secrets (gitleaks)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    env:
+      CODE: ${{ github.event_name != 'schedule' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # full history: gitleaks scans every commit
           persist-credentials: false
+      - uses: ./.github/actions/setup
+
+      - name: ESLint
+        if: ${{ !cancelled() && env.CODE == 'true' }}
+        run: pnpm lint
+      - name: Prettier check
+        if: ${{ !cancelled() && env.CODE == 'true' }}
+        run: pnpm format:check
+      - name: typecheck
+        if: ${{ !cancelled() && env.CODE == 'true' }}
+        run: pnpm typecheck
+      - name: unit tests
+        if: ${{ !cancelled() && env.CODE == 'true' }}
+        run: pnpm test
+
+      # Supply chain + SAST run on every event, and keep running after an earlier failure (`!cancelled()`)
+      # so one red step does not hide the others.
+      - name: pnpm audit
+        if: ${{ !cancelled() }}
+        run: pnpm audit --audit-level=high
+
       # gitleaks CLI in its official image, pinned by digest (no gitleaks-action: no licence key needed,
       # same command locally). Non-root, read-only mount; safe.directory via GIT_CONFIG_* env because git
       # rejects a checkout owned by another uid ("dubious ownership").
       # gitleaks exits 0 when git itself fails (then "0 commits scanned") — fail closed on any ERR line.
       - name: gitleaks (full history)
+        if: ${{ !cancelled() }}
         run: |
           set -o pipefail
           docker run --rm --cap-drop ALL --security-opt no-new-privileges \
@@ -87,34 +72,12 @@ jobs:
             exit 1
           fi
 
-  audit:
-    name: audit
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-        with:
-          install: 'false' # pnpm audit reads pnpm-lock.yaml only
-      - run: pnpm audit --audit-level=high
-
-  deps:
-    name: deps (osv-scanner)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # osv-scanner CLI in its official image, pinned by digest: same docker pattern as gitleaks, same
-      # command locally. Not the reusable google/osv-scanner-action workflow: it is built around a SARIF
-      # upload to code scanning (unavailable on this private repo) and adds another action to pin.
+      # osv-scanner CLI in its official image, pinned by digest: same docker pattern as gitleaks.
       # No severity threshold: any known vulnerability fails. Ignores only in osv-scanner.toml with
       # reason + effectiveUntil (policy: docs/CONTEXT.md "Supply chain"). Exit 1 = vulns, 127/128 = error/no packages.
       # Fail closed: a lockfile parsed into 0 packages must not pass.
       - name: osv-scanner (pnpm-lock.yaml)
+        if: ${{ !cancelled() }}
         run: |
           set -o pipefail
           docker run --rm --cap-drop ALL --security-opt no-new-privileges \
@@ -126,18 +89,48 @@ jobs:
             exit 1
           fi
 
-  # SAST (Semgrep CE) lives in sast.yml: own weekly schedule.
+      # SAST: Semgrep CE CLI in its official image, pinned by digest: no login, no token, no metrics.
+      # (Private repo: CodeQL needs GitHub Code Security. TODO(public): add CodeQL when the repo goes public.)
+      # Non-root (HOME=/tmp), read-only source mount; only $RUNNER_TEMP is writable (JSON report).
+      # Scope: apps/ + packages/ + .github/, filtered by .semgrepignore (tests are scanned).
+      # Exit 1 = findings (`--error`), >= 2 = semgrep failed. Inline suppression: `nosemgrep: <rule-id>` + reason.
+      - name: semgrep scan
+        if: ${{ !cancelled() }}
+        run: |
+          docker run --rm --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/src \
+            -v "$PWD:/src:ro" -v "$RUNNER_TEMP:/out" -w /src \
+            semgrep/semgrep:1.184.0@sha256:cc1b68266f267878b39739373ea9985b9a78e5d64497dd875c8de100b22695ed \
+            semgrep scan --metrics=off --oss-only --error \
+              --config p/typescript --config p/javascript --config p/nodejs \
+              --config p/owasp-top-ten --config p/secrets --config p/github-actions \
+              --json-output=/out/semgrep.json \
+              apps packages .github
+      # Fail closed: a scan that read no files or hit errors (parse/rule/network) must not pass as green.
+      - name: semgrep guard (files scanned, no errors)
+        if: ${{ !cancelled() }}
+        run: |
+          report="$RUNNER_TEMP/semgrep.json"
+          scanned=$(jq '.paths.scanned | length' "$report")
+          errors=$(jq '.errors | length' "$report")
+          if ! jq -e '[.paths.scanned[] | select(startswith("apps/digest/src/"))] | length > 0' "$report" >/dev/null; then
+            echo "::error::semgrep scanned nothing under apps/digest/src (scope or .semgrepignore broke)"
+            exit 1
+          fi
+          echo "semgrep scanned ${scanned} files, ${errors} errors"
+          if [ "$scanned" -eq 0 ]; then
+            echo "::error::semgrep scanned 0 files"
+            exit 1
+          fi
+          if [ "$errors" -ne 0 ]; then
+            jq -r '.errors[] | "\(.level // "error"): \(.type // "") \(.message // "")"' "$report"
+            echo "::error::semgrep reported ${errors} error(s)"
+            exit 1
+          fi
 
-  actionlint:
-    name: actionlint
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
       - name: actionlint (bundles shellcheck)
+        if: ${{ !cancelled() && env.CODE == 'true' }}
         run: |
           docker run --rm --cap-drop ALL --security-opt no-new-privileges \
             --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" -w /repo \

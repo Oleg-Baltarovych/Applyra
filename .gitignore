@@ -5,7 +5,6 @@ node_modules/
 # Build / tool output
 dist/
 coverage/
-.turbo/
 *.tsbuildinfo
 
 # Digest state (sent ids): lives in the Actions cache, never in git

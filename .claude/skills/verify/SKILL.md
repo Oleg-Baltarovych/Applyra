@@ -2,7 +2,7 @@
 name: verify
 description: Definition-of-Done gate — run the checks and a dry run, walk the short DoD checklist.
 ---
-1. Run `pnpm lint && pnpm typecheck && pnpm test` and `pnpm format:check`. Quote failures verbatim. Do not "fix" by weakening or skipping tests.
+1. Run `pnpm check` (lint, format:check, typecheck, test). Quote failures verbatim. Do not "fix" by weakening or skipping tests.
 2. If the pipeline, a source or the format changed: `pnpm --filter @applyra/digest dry-run` and check the output.
 3. If `.github/workflows/**` changed: actionlint (command in `docs/CONTEXT.md`).
 4. DoD (yes / no / n.a. with evidence, `file:line` or test name):
