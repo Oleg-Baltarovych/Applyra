@@ -16,12 +16,3 @@ pmOnFail: download
 # `pnpm install` on any unreviewed build script.
 allowBuilds:
   esbuild: true # postinstall verifies the platform binary; pulled by vite (vitest)
-
-# Temporary `pnpm audit` exceptions (policy: docs/CONTEXT.md "Supply chain"). Each: GHSA id + reason + expiry; delete
-# on expiry or when a fix lands. pnpm does not expire these itself, so the date below is the contract; the mirror
-# entry in osv-scanner.toml enforces it via `effectiveUntil`.
-auditConfig:
-  ignoreGhsas:
-    # picomatch <= 4.0.7 ReDoS (HIGH), no patched release (checked 2026-11-19). Dev tooling only (typescript-eslint via
-    # tinyglobby, vite/vitest); globs from our own config, never user input. Expires 2026-12-15.
-    - GHSA-fc5q-39xc-vjpf

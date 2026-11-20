@@ -3,7 +3,7 @@
 export type FetchImpl = typeof fetch;
 
 /** Identifies the client honestly; no personal data. */
-export const USER_AGENT = 'ApplyraDigest/1.0 (personal daily job digest; RSS reader)';
+const USER_AGENT = 'ApplyraDigest/1.0 (personal daily job digest; RSS reader)';
 const TIMEOUT_MS = 20_000;
 /** Real feeds are ≤ ~0.5 MB (100 Djinni items). */
 export const MAX_BYTES = 2_000_000;

@@ -150,7 +150,7 @@ export function createSources(
   });
 }
 
-export async function cli(args: string[], env: Record<string, string | undefined>): Promise<void> {
+async function cli(args: string[], env: Record<string, string | undefined>): Promise<void> {
   const dryRun = args.includes('--dry-run');
   const names = (flag(args, 'source') ?? env.DIGEST_SOURCES ?? '')
     .split(',')

@@ -7,7 +7,7 @@ export interface SentState {
   sent: Record<string, string>;
 }
 
-export const DEFAULT_TTL_DAYS = 30;
+const DEFAULT_TTL_DAYS = 30;
 
 export const emptyState = (): SentState => ({ version: 1, sent: {} });
 
@@ -31,7 +31,7 @@ function fuzzyKey(v: Vacancy): string | undefined {
   return `tc:${company.join(' ')}|${title.join(' ')}`;
 }
 
-export function dedupKeys(v: Vacancy): string[] {
+function dedupKeys(v: Vacancy): string[] {
   const fuzzy = fuzzyKey(v);
   return [`url:${canonicalUrl(v.url)}`, ...(fuzzy ? [fuzzy] : [])];
 }

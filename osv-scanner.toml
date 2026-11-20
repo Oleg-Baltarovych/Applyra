@@ -1,15 +1,4 @@
 # osv-scanner ignores (CI job `deps (osv-scanner)`). Policy = pnpm audit (docs/CONTEXT.md "Supply chain"):
 # every entry has the advisory id, a reason and `effectiveUntil` (expiry); on expiry the ignore stops
-# applying and the gate fails again. Remove the entry as soon as a fix lands. Prefer `[[PackageOverrides]]`
-# pinned to name + version + ecosystem over a global `[[IgnoredVulns]]`.
-
-[[PackageOverrides]]
-# GHSA-fc5q-39xc-vjpf: picomatch ReDoS, HIGH, affects <= 4.0.7, no patched release yet (checked 2026-11-19).
-# Dev tooling only (`pnpm why picomatch -r`: typescript-eslint via tinyglobby/fdir, vite/vitest); patterns come
-# from our own config files, never user input. Recheck for picomatch >= 4.0.8 and delete this entry.
-name = "picomatch"
-version = "4.0.7"
-ecosystem = "npm"
-vulnerability.ignore = true
-effectiveUntil = 2026-12-15
-reason = "GHSA-fc5q-39xc-vjpf: dev tooling only (typescript-eslint, vite/vitest); globs from our config; no fix released"
+# applying and the gate fails again. Remove the entry as soon as a fix lands. Prefer `
+# No ignores at the moment.
