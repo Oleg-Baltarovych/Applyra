@@ -7,8 +7,7 @@ Runs on a GitHub Actions cron: no server, no database.
 fetch (public feeds) → normalize → dedup (already sent?) → filter + score (profile.json) → Telegram message(s)
 ```
 
-> Status: scaffold. The pipeline, filter, dedup, formatting and Telegram sender work; real source adapters
-> (DOU, Djinni RSS) are the next step — until then only the `fake` source exists (dry run only).
+> Status: v1 — sources DOU and Djinni (public RSS). Next: Work.ua, robota.ua, LinkedIn via e-mail alerts.
 > Spec: [docs/spec.md](docs/spec.md).
 
 ## Setup
@@ -40,6 +39,19 @@ pnpm check
 A real local send: put `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` into a root `.env` (see `.env.example`),
 then from `apps/digest`: `node --env-file=../../.env src/main.ts --source=<name>`.
 Sent ids are remembered in `apps/digest/.state/sent.json` (git-ignored).
+
+### Daily run on Windows (when GitHub Actions can't run)
+
+If the Actions minutes are used up, the cron does not start. Stop-gap: a Task Scheduler job on your machine
+(runs daily, catches up after sleep; needs the root `.env` above):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File apps/digest/scripts/windows-task.ps1 -At 09:00
+Start-ScheduledTask -TaskName 'Applyra digest'   # run once now; log: apps/digest/.state/local.log
+```
+
+Remove it (`... windows-task.ps1 -Unregister`) once the Actions cron runs again — the two runners keep separate
+state, so the same vacancies would be sent twice.
 
 ## Rules
 

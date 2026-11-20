@@ -91,6 +91,10 @@ Job `environment: digest` (restricted to main). Env: `TELEGRAM_BOT_TOKEN`, `TELE
 secrets), `DIGEST_SOURCES` (variable),
 `DIGEST_PROFILE_PATH`, `DIGEST_STATE_PATH` (optional). CLI: `--dry-run`, `--source=a,b`, `--profile=path`.
 
+Stop-gap when Actions cannot run (minutes quota): `apps/digest/scripts/windows-task.ps1` registers a daily
+Windows Task Scheduler job (catch-up after sleep) that runs the same CLI with the repo-root `.env`; its state is
+local (`apps/digest/.state/`), so only one runner may be active at a time.
+
 ## 7. Non-goals
 
 No web UI, no database, no hosting, no multi-user, no application tracking/CRM, no auto-apply, no scraping
