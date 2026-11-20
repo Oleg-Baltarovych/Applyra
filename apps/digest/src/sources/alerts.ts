@@ -18,6 +18,34 @@ const MAX_HEADER = 8000;
 const DKIM_CLAUSE =
   /^\s*dkim=([a-z]{1,10})((?:\s+header\.[a-z]{1,10}=[^\s;()"\\]{1,300}){0,8})\s*$/i;
 
+const DOMAIN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)+$/;
+
+/**
+ * The signing domain from a dkim clause's `header.x=value` tokens, read from one whole token value only:
+ * `header.d=<domain>` (preferred) or `header.i=<local>@<domain>`. A repeated d/i tag or a malformed value
+ * rejects the clause, so text inside another tag's value can never be picked up.
+ */
+function signingDomain(tokens: string): string | undefined {
+  const tags = new Map<string, string[]>();
+  for (const token of tokens.trim().split(/\s+/)) {
+    const eq = token.indexOf('=');
+    const key = asciiLower(token.slice(0, eq));
+    tags.set(key, [...(tags.get(key) ?? []), token.slice(eq + 1)]);
+  }
+  const d = tags.get('header.d');
+  const i = tags.get('header.i');
+  if ((d && d.length !== 1) || (i && i.length !== 1)) return undefined;
+  let candidate = d?.[0];
+  if (candidate === undefined && i?.[0] !== undefined) {
+    const at = i[0].indexOf('@');
+    // Exactly one '@': the domain is everything after it.
+    if (at < 0 || at !== i[0].lastIndexOf('@')) return undefined;
+    candidate = i[0].slice(at + 1);
+  }
+  const domain = candidate === undefined ? undefined : asciiLower(candidate);
+  return domain && DOMAIN.test(domain) ? domain : undefined;
+}
+
 /**
  * Domains that passed DKIM according to the **topmost** Authentication-Results header — the one the receiving
  * server (e.g. mx.google.com) prepends; headers further down may come from the sender and are not trusted.
@@ -41,8 +69,8 @@ export function dkimPassDomains(rawHeaders: string, authservId: string): string[
     const m = DKIM_CLAUSE.exec(clause);
     if (!m) break;
     if (asciiLower(m[1] ?? '') !== 'pass') continue;
-    const d = /\bheader\.(?:d=|i=[^@\s]*@)([a-z0-9.-]{1,253})(?=\s|$)/i.exec(clause)?.[1];
-    if (d) domains.push(asciiLower(d).replace(/^\.+|\.+$/g, ''));
+    const d = signingDomain(m[2] ?? '');
+    if (d) domains.push(d);
   }
   return domains;
 }

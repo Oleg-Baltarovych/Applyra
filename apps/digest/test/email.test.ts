@@ -183,6 +183,20 @@ describe('dkimPassDomains', () => {
     ].join('\r\n');
     expect(dkimPassDomains(injected, 'mx.google.com')).toEqual([]);
   });
+  it('takes the domain from one whole tag value, never from text inside another tag', () => {
+    const ar = (dkim: string) => `Authentication-Results: mx.google.com; ${dkim}`;
+    const g = (dkim: string) => dkimPassDomains(ar(dkim), 'mx.google.com');
+    expect(g('dkim=pass header.i=x.header.d=work.ua@evil.example header.s=s1')).toEqual([
+      'evil.example',
+    ]);
+    expect(g('dkim=pass header.s=x.header.d=work.ua header.i=@evil.example')).toEqual([
+      'evil.example',
+    ]);
+    expect(g('dkim=pass header.d=evil.example header.i=@work.ua')).toEqual(['evil.example']);
+    expect(g('dkim=pass header.d=work.ua header.d=evil.example')).toEqual([]);
+    expect(g('dkim=pass header.i=a@b@work.ua')).toEqual([]);
+    expect(g('dkim=pass header.i=work.ua')).toEqual([]);
+  });
   it('reads a realistic Gmail header (dkim first, then arc, spf, dmarc)', () => {
     const gmail = [
       'Authentication-Results: mx.google.com;',
