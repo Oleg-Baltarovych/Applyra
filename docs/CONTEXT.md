@@ -6,15 +6,15 @@
 ## 1. Status
 
 Pivot done (ADR 026): one package `apps/digest`. Pipeline, profile filter/score, dedup, Telegram format/send,
-state file, CLI and `digest.yml` cron work and are tested; **no real source adapter yet** (only `fake`,
-dry-run only). Next: DOU + Djinni RSS adapters (spec §2) with recorded fixtures.
+state file, CLI and `digest.yml` cron work and are tested; sources: DOU + Djinni RSS (Node.js + Fullstack feeds; repo variable `DIGEST_SOURCES=dou,djinni`). Next: email
+alerts (Work.ua, robota.ua, LinkedIn) via IMAP, cross-source dedup.
 Pre-pivot CRM (spec v2.1, ADRs 000–025, plans, api/web code) → git tag `archive/crm-plan-v0`.
 
 ## 2. Repo map
 
 - `apps/digest/` — `@applyra/digest`, Node 26 ESM TS run directly by Node (type stripping, no build)
   - `src/main.ts` pipeline `run()` + CLI · `types.ts` Vacancy/RawItem · `text.ts` keyword matcher, language, years
-  - `src/sources/source.ts` `Source` interface, `FakeSource`, `SAMPLE_ITEMS` · `normalize/` url + RawItem→Vacancy
+  - `src/sources/`: `source.ts` (`Source`, `FakeSource`), `feeds.ts` (site → one source per feed), `rss.ts`, `http.ts`, `dou.ts`, `djinni.ts` · `normalize/` url + RawItem→Vacancy
   - `src/dedup.ts` keys/state ops · `filter.ts` profile parse + evaluate/rank · `format.ts` Telegram HTML · `telegram.ts` · `state.ts`
   - `profile.json` (owner, committed, no personal data) · `profile.example.json` · `test/` (Vitest)
 - `packages/config/` — shared `tsconfig.base.json` + ESLint flat config (+ a test that the strict rules fire)
@@ -26,8 +26,8 @@ Pre-pivot CRM (spec v2.1, ADRs 000–025, plans, api/web code) → git tag `arch
 | Source | Status |
 |---|---|
 | fake | ✅ dry-run only (`--source=fake`) |
-| DOU RSS | ⏳ next — id from link, fields packed in the title |
-| Djinni RSS | ⏳ next — guard against unfiltered feed (100 items / mixed category) |
+| DOU RSS (`dou`) | ✅ Node.js + Fullstack, remote; fields parsed from the title |
+| Djinni RSS (`djinni`) | ✅ Node.js + Fullstack, remote, 2y+; feed rejected if any item lacks the keyword category |
 
 ## 4. Commands
 

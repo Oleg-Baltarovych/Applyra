@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyState, selectNew } from '../src/dedup.ts';
 import { parseProfile } from '../src/filter.ts';
-import { redact, run, type RunOptions } from '../src/main.ts';
+import { createSources, redact, run, type RunOptions } from '../src/main.ts';
 import { normalize } from '../src/normalize/normalize.ts';
 import { FakeSource, SAMPLE_ITEMS, type Source } from '../src/sources/source.ts';
 import { fileStore, loadState, type StateStore } from '../src/state.ts';
@@ -180,5 +180,24 @@ describe('redact', () => {
     expect(redact('x https://a:b@h.test/p?q=1#f y')).toBe('x https://h.test/p y');
     expect(redact('a\r\nb')).toBe('a b');
     expect(redact('z'.repeat(1000)).length).toBeLessThanOrEqual(300);
+  });
+});
+
+describe('createSources', () => {
+  it('expands site names into one source per feed', () => {
+    expect(createSources(['dou', 'djinni'], false).map((s) => s.name)).toEqual([
+      'dou/Node.js',
+      'dou/Fullstack',
+      'djinni/Node.js',
+      'djinni/Fullstack',
+    ]);
+  });
+  it('rejects unknown names and the fake source outside dry runs', () => {
+    expect(() => createSources(['workua'], false)).toThrow('Unknown source: workua');
+    expect(() => createSources(['fake'], false)).toThrow(/only with --dry-run/);
+    expect(createSources(['fake'], true).map((s) => s.name)).toEqual(['fake']);
+  });
+  it('builds each site once even when listed twice', () => {
+    expect(createSources(['dou', 'dou'], false)).toHaveLength(2);
   });
 });

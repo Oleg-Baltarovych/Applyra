@@ -17,10 +17,14 @@ robots rules, auth or CAPTCHA; never use a logged-in session.
 
 | Source | Feed | Id for dedup | Notes |
 |---|---|---|---|
-| DOU | RSS `jobs.dou.ua/vacancies/feeds/?category=Node.js&exp=1-3\|3-5\|5plus&remote` | numeric id in the link | `guid` has a changing `?timestamp` suffix; company, cities, remote and salary are packed into the title: "Role в Company, cities, віддалено, до $X" |
-| Djinni | RSS `djinni.co/jobs/rss/?primary_keyword=…&exp_level=…&employment=remote` | id in the link | an unknown keyword silently returns the **unfiltered** feed → reject a feed with 100 items or mixed `<category>` |
+| DOU (`dou`) | RSS `jobs.dou.ua/vacancies/feeds/?category=<C>&remote`, C = `Node.js`, `Fullstack` | numeric id in the link | `guid` has a changing `?timestamp` suffix; company, cities, remote and salary are packed into the (double-escaped) title: "Role в Company, cities, $X–Y, віддалено" — split at the last " в "; `exp` takes one value only, so experience is left to the profile; an unknown category returns an empty feed |
+| Djinni (`djinni`) | RSS `djinni.co/jobs/rss/?primary_keyword=<K>&exp_level=2y&exp_level=3y&exp_level=5y&employment=remote`, K = `Node.js`, `Fullstack` | number in the link | no company/salary/location fields: company from "Про компанію X" in the description, location = remote (request filter); an unknown keyword silently returns the **unfiltered** feed → the feed is rejected when any item lacks the requested `<category>` |
 
-Source-side pre-filtering (category, experience, remote) keeps feeds small; the profile filter still runs.
+Each feed (site × key) is its own source: one request per run; a broken feed only drops itself.
+Requests: User-Agent `ApplyraDigest/1.0 (personal daily job digest; RSS reader)`, 20 s timeout, body streamed
+with a 2 MB cap, redirects refused; a non-RSS response (e.g. an anti-bot page) fails the feed. The parser is linear
+(no backtracking regex over feed text) and reads at most 300 items; items whose link is not https on the site's own
+host are dropped. Source-side pre-filtering keeps feeds small; the profile filter still runs.
 Other sites (Work.ua, robota.ua, LinkedIn…) only after a spike confirms a public feed and permitted use.
 
 ## 3. Pipeline (`apps/digest/src`)
