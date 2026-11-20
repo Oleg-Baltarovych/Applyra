@@ -4,6 +4,7 @@ import { markSent, pruneState, selectNew } from './dedup.ts';
 import { parseProfile, rank, type Profile } from './filter.ts';
 import { formatDigest } from './format.ts';
 import { normalize } from './normalize/normalize.ts';
+import { feedSources } from './sources/feeds.ts';
 import { FakeSource, SAMPLE_ITEMS, type Source } from './sources/source.ts';
 import { DEFAULT_STATE_PATH, fileStore, type StateStore } from './state.ts';
 import { isRejectedMessage, readTelegramConfig, sendMessage } from './telegram.ts';
@@ -125,14 +126,17 @@ export async function run(o: RunOptions): Promise<RunSummary> {
 const flag = (args: string[], name: string) =>
   args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 
-/** Concrete adapters register here once the source spike lands. `fake` is dry-run only. */
-function createSources(names: string[], dryRun: boolean): Source[] {
-  return names.map((name) => {
+/** Site names → sources (sources/feeds.ts). `fake` is dry-run only. */
+export function createSources(names: string[], dryRun: boolean): Source[] {
+  // A Set: a repeated name must not fetch its feeds twice (one request per feed per run).
+  return [...new Set(names)].flatMap((name) => {
     if (name === 'fake') {
       if (!dryRun) throw new Error('Source "fake" is allowed only with --dry-run');
-      return new FakeSource(SAMPLE_ITEMS);
+      return [new FakeSource(SAMPLE_ITEMS)];
     }
-    throw new Error(`Unknown source: ${name}`);
+    const sources = feedSources(name);
+    if (!sources) throw new Error(`Unknown source: ${name}`);
+    return sources;
   });
 }
 
