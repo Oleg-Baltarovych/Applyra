@@ -152,10 +152,17 @@ describe('dkimPassDomains', () => {
   it('accepts header.d and returns nothing without the header', () => {
     expect(
       dkimPassDomains(
-        'Authentication-Results: mx.google.com; dkim=pass (2048-bit) header.d=LinkedIn.com',
+        'Authentication-Results: mx.google.com; dkim=pass header.d=LinkedIn.com header.s=s1',
         'mx.google.com',
       ),
     ).toEqual(['linkedin.com']);
+    // A comment makes the clause non-strict: it ends the trusted run.
+    expect(
+      dkimPassDomains(
+        'Authentication-Results: mx.google.com; dkim=pass (2048-bit) header.d=linkedin.com',
+        'mx.google.com',
+      ),
+    ).toEqual([]);
     expect(dkimPassDomains('Subject: hi\r\n', 'mx.google.com')).toEqual([]);
     expect(dkimPassDomains('', 'mx.google.com')).toEqual([]);
   });
@@ -166,6 +173,26 @@ describe('dkimPassDomains', () => {
       '       spf=neutral (google.com: x;dkim=pass header.d=work.ua) smtp.mailfrom="x;dkim=pass header.d=work.ua"@evil.example',
     ].join('\r\n');
     expect(dkimPassDomains(smuggled, 'mx.google.com')).toEqual([]);
+  });
+  it('ignores clauses injected by closing a reflected comment early', () => {
+    // The server copies the envelope sender into the SPF comment without escaping ")".
+    const injected = [
+      'Authentication-Results: mx.google.com;',
+      '       spf=neutral (google.com: domain of "a);dkim=pass header.d=work.ua;("@evil.example) smtp.mailfrom=x@evil.example;',
+      '       dkim=pass header.d=work.ua',
+    ].join('\r\n');
+    expect(dkimPassDomains(injected, 'mx.google.com')).toEqual([]);
+  });
+  it('reads a realistic Gmail header (dkim first, then arc, spf, dmarc)', () => {
+    const gmail = [
+      'Authentication-Results: mx.google.com;',
+      '       dkim=pass header.i=@work.ua header.s=mail header.b=AbCd1234;',
+      '       dkim=pass header.i=@sendgrid.example header.s=s1 header.b=Zz9;',
+      '       arc=pass (i=1 spf=pass spfdomain=work.ua dkim=pass dkdomain=work.ua);',
+      '       spf=pass (google.com: domain of bounce@work.ua designates 192.0.2.1 as permitted sender) smtp.mailfrom=bounce@work.ua;',
+      '       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=work.ua',
+    ].join('\r\n');
+    expect(dkimPassDomains(gmail, 'mx.google.com')).toEqual(['work.ua', 'sendgrid.example']);
   });
   it('trusts only the expected receiving server', () => {
     const other = 'Authentication-Results: attacker.example; dkim=pass header.d=work.ua';
