@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" width="640" height="640">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2B5BF0"/>
+      <stop offset="1" stop-color="#14B8A6"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.35" cy="0.25" r="0.8">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="round"><rect width="640" height="640" rx="144"/></clipPath>
+  </defs>
+  <g clip-path="url(#round)">
+    <rect width="640" height="640" fill="url(#bg)"/>
+    <rect width="640" height="640" fill="url(#glow)"/>
+  </g>
+  <g transform="translate(320 345)">
+    <path d="M-64 -100 v-26 a28 28 0 0 1 28 -28 h72 a28 28 0 0 1 28 28 v26"
+          fill="none" stroke="#fff" stroke-width="26" stroke-linejoin="round"/>
+    <rect x="-172" y="-104" width="344" height="236" rx="42" fill="#fff"/>
+    <circle cx="0" cy="14" r="66" fill="url(#bg)"/>
+    <path d="M-30 14 l21 22 l40 -44" fill="none" stroke="#fff" stroke-width="17"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
