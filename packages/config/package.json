@@ -1,0 +1,31 @@
+{
+  "name": "@applyra/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared tsconfig base and ESLint flat config.",
+  "exports": {
+    "./eslint": "./eslint.base.js",
+    "./tsconfig.base.json": "./tsconfig.base.json"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.14.0",
+    "typescript-eslint": "^8.73.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "eslint": "^10.15.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.12"
+  },
+  "peerDependencies": {
+    "eslint": "^10.0.0"
+  }
+}

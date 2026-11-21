@@ -1,0 +1,4 @@
+# osv-scanner ignores (CI job `deps (osv-scanner)`). Policy = pnpm audit (docs/CONTEXT.md "Supply chain"):
+# every entry has the advisory id, a reason and `effectiveUntil` (expiry); on expiry the ignore stops
+# applying and the gate fails again. Remove the entry as soon as a fix lands. Prefer `
+# No ignores at the moment.

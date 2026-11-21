@@ -1,0 +1,66 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Applyra dependency updates: weekly, grouped, minimumReleaseAge 3 days, Actions pinned by digest. Majors wait for approval on the Dependency Dashboard.",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    "helpers:pinGitHubActionDigests",
+    "docker:pinDigests"
+  ],
+  "timezone": "Europe/Kyiv",
+  "schedule": ["before 6am on monday"],
+  "minimumReleaseAge": "3 days",
+  "internalChecksFilter": "strict",
+  "rangeStrategy": "bump",
+  "postUpdateOptions": ["pnpmDedupe"],
+  "prConcurrentLimit": 5,
+  "labels": ["dependencies"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on the first day of the month"]
+  },
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "schedule": ["at any time"]
+  },
+  "packageRules": [
+    {
+      "description": "Majors need an explicit decision, never an automatic PR.",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "npm minor/patch in one weekly PR.",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "npm minor/patch"
+    },
+    {
+      "description": "GitHub Actions (SHA digests + version comments) in one PR.",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions"
+    },
+    {
+      "description": "CI tool images (gitleaks, osv-scanner, semgrep, actionlint) in one PR; tag + digest move together.",
+      "matchDatasources": ["docker"],
+      "groupName": "ci images"
+    },
+    {
+      "description": "Node runtime follows LTS lines only: even majors, via approval like any major.",
+      "matchDepNames": ["node", "@types/node"],
+      "allowedVersions": "/^v?\\d*[02468]\\./"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Images referenced as `<image>:<tag>@sha256:<digest>` in workflow `docker run` lines.",
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": [
+        "(?<depName>(?:[a-z0-9.-]+/)*[a-z0-9._-]+):(?<currentValue>v?[0-9][\\w.-]*)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ]
+}

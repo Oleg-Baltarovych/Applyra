@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build / tool output
+dist/
+coverage/
+*.tsbuildinfo
+
+# Digest state (sent ids): lives in the Actions cache, never in git
+.state/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.npmrc.local
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Claude Code (personal, not shared)
+.claude/settings.local.json
+CLAUDE.local.md
+.claude/agent-memory-local/
+
+# Packed tarballs
+*.tgz

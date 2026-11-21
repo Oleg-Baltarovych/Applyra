@@ -1,0 +1,25 @@
+name: Setup Node + pnpm
+description: Node from package.json engines, pnpm from packageManager (no corepack, Node 25+), pnpm store cache, frozen install.
+
+inputs:
+  install:
+    description: Run `pnpm install --frozen-lockfile` after setup.
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    # No `version` input: pnpm/action-setup reads `packageManager` from the root package.json (Node 25+ ships no
+    # corepack).
+    - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: package.json # engines.node
+        # No store cache without an install (audit job): nothing to restore or save.
+        cache: ${{ inputs.install == 'true' && 'pnpm' || '' }}
+
+    - if: inputs.install == 'true'
+      shell: bash
+      run: pnpm install --frozen-lockfile

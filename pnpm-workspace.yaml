@@ -1,0 +1,19 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Supply-chain control (deliberate): never install a version published less than 24 h ago (minutes; = pnpm 11 default).
+# Setting it explicitly also makes minimumReleaseAgeStrict default to true: a too-fresh version fails resolution
+# instead of being silently auto-excluded. Prefer pinning an older version; to exempt one temporarily, add
+# `minimumReleaseAgeExclude: ['<name>@<exact version>']` with a comment + removal date, and delete it afterwards.
+minimumReleaseAge: 1440
+
+# pnpm comes from a global `npm i -g pnpm` (Node 25+ has no corepack); a different global version self-switches to
+# `packageManager` (downloads it). Explicit so nobody flips it to `error`, which would force the exact pnpm globally.
+pmOnFail: download
+
+# pnpm 11: dependency build scripts are denied unless approved here; strictDepBuilds (default true) fails
+# `pnpm install` on any unreviewed build script.
+allowBuilds:
+  esbuild: true # postinstall verifies the platform binary; pulled by vite (vitest) and wrangler
+  workerd: true # Cloudflare's runtime binary (postinstall picks the platform build); pulled by wrangler (apps/bot)

@@ -1,0 +1,21 @@
+name: Bug
+description: The digest misbehaves (wrong match, missing/duplicate vacancy, failed run)
+labels: ['bug']
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens vs. what should happen
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / workflow run link
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (no tokens, chat ids or personal data)
+      render: text
