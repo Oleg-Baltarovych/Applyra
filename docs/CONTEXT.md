@@ -1,13 +1,13 @@
 # Applyra — Working Context
 
 > Living map for AI agents and humans. Terse and current; update in the same change that alters structure,
-> commands or decisions. Last updated: 2026-11-20 (DOU/Djinni RSS, e-mail alerts ADR 027, one-job CI)
+> commands or decisions. Last updated: 2026-11-21 (cross-site dedup ADR 029, silent vacancy messages, failure alerts, /hidden)
 
 ## 1. Status
 
 Pivot done (ADR 026): one package `apps/digest`. Pipeline, profile filter/score, dedup, Telegram format/send,
 state file, CLI and `digest.yml` cron work and are tested; sources: DOU + Djinni RSS (Node.js + Fullstack feeds; repo variable `DIGEST_SOURCES=dou,djinni`). Source `email`
-(job-alert mails over IMAP) is in, waiting for the mailbox. Next: check the alert parser on real mails, cross-source dedup.
+(job-alert mails over IMAP) is in, waiting for the mailbox. Next: check the alert parser on real mails.
 Pre-pivot CRM (spec v2.1, ADRs 000–025, plans, api/web code) → git tag `archive/crm-plan-v0`.
 
 ## 2. Repo map
@@ -46,6 +46,7 @@ Pre-pivot CRM (spec v2.1, ADRs 000–025, plans, api/web code) → git tag `arch
 ## 5. Key decisions
 
 - 026 Pivot to a daily Telegram vacancy digest on GitHub Actions cron, no hosting/DB; state in Actions cache.
+- 029 Cross-site repeats (DOU/Djinni) matched by the full title when one side has no company (≥ 4 words, 7 days).
 - 028 Status buttons: one message per vacancy + Cloudflare Worker webhook with D1 (`apps/bot`); amends 026 "no hosting/DB/tracking".
 - 027 Work.ua / robota.ua / LinkedIn via their job-alert e-mails over IMAP (read-only, template-agnostic link parsing); dep `imapflow`.
 

@@ -24,7 +24,7 @@ describe('state file', () => {
     const v = vacancy();
     await saveState(file, markSent(emptyState(), [v], new Date('2026-11-19T06:00:00Z')));
     const loaded = await loadState(file);
-    expect(selectNew([v], loaded)).toEqual([]);
+    expect(selectNew([v], loaded, new Date('2026-11-19T06:00:00Z'))).toEqual([]);
     expect(JSON.parse(await readFile(file, 'utf8'))).toEqual(loaded);
   });
 

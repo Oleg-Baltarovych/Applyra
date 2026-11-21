@@ -21,6 +21,8 @@ delays every press by up to an hour and eats ~720 of the 2,000 free minutes a mo
   D1** (one table `statuses`; title, second line and link copied from the message) and redraws the keyboard with a
   status row on top (`Статус: 🔄 В процесі · 20.11`); pressing the current status clears it. `/status` lists all
   marked vacancies grouped by status, with links; "not interested" only as a count.
+- Amended 2026-11-21: 🚫 Не цікаво deletes the vacancy message (if under 48 h old, else status row);
+  `/hidden` lists those vacancies with links. Vacancy messages are sent silently, only the header notifies.
 - Only the owner's chat is served (`OWNER_CHAT_ID`); every request must carry the webhook secret
   (`X-Telegram-Bot-Api-Secret-Token`, compared in constant time); updates are parsed defensively, links kept only if
   http(s), output HTML-escaped. Secrets live only as Worker secrets (`wrangler secret put`, set by

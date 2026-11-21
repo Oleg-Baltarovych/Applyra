@@ -40,19 +40,21 @@ items rank on the title (level/remote often "unclear"). Env: `IMAP_USER`, `IMAP_
 ## 3. Pipeline (`apps/digest/src`)
 
 1. **fetch** — `Source.fetch(): RawItem[]` per adapter (`sources/`), in parallel; a failing source is logged
-   and skipped; all failing → the run fails.
+   and skipped (and reported in an alert after the digest, §6); all failing → the run fails.
 2. **normalize** — `RawItem → Vacancy` (`normalize/`): canonical url (no fragment/tracking params, sorted
    query), salary (`$X–Y`, `від/from`, `до/up to`, USD/EUR/UAH), remote mode (remote/hybrid/office/unknown),
    cities, experience years. Items without a title or http(s) url are dropped.
 3. **dedup** (`dedup.ts`) — keys: canonical url + fuzzy `company|sorted title tokens` (no fuzzy key without a
-   company). Skips anything in the sent state and repeats within the batch (first wins).
+   company) + a full-title key for cross-site repeats when one side has no company (≥ 4 words, 7 days; ADR 029).
+   Skips anything in the sent state and repeats within the batch (posts with a company first, then first wins).
 4. **filter + score** (`filter.ts`) — hard rejects, then a score with reasons and caveats (§4).
 5. **format** (`format.ts`) — Telegram HTML, every field escaped, http(s) links only, field sizes capped
    in escaped characters (title 200, company 100, city 50 × 3, href 1000 else no link), a block that still
    does not fit becomes title-only. A short header (date, count), then **one message per vacancy** with status
    buttons (§8).
 6. **send** (`telegram.ts`) — Bot API `sendMessage` via `fetch`, `parse_mode: HTML`, previews off, inline keyboard,
-   messages ≥ 1.1 s apart, one retry on 429. The token never appears in logs or errors.
+   messages ≥ 1.1 s apart, one retry on 429. Only the header notifies; vacancy messages are silent
+   (`disable_notification`). The token never appears in logs or errors.
 7. **remember** — after each delivered message its vacancies are added to the state. A 400 content error
    (too long, can't parse entities, empty) quarantines that message's vacancies (remembered, counted as
    `rejected`) and the run continues; any other send error stops the run. The state is saved even after a
@@ -105,6 +107,12 @@ Stop-gap when Actions cannot run (minutes quota): `apps/digest/scripts/windows-t
 Windows Task Scheduler job (catch-up after sleep) that runs the same CLI with the repo-root `.env`; its state is
 local (`apps/digest/.state/`), so only one runner may be active at a time.
 
+**Alerts.** A failed source → after the digest (even an empty one) an audible message
+"⚠️ Applyra: не відповіли джерела…" with each source and its redacted error; a failed run (all sources down,
+state or config error) → "⚠️ Applyra: дайджест не надіслано" with the redacted error, sent by the CLI when Telegram
+is configured. An alert that cannot be delivered is logged and never fails the run or the state. A machine that
+never starts the run cannot alert: GitHub Actions mails failed runs.
+
 ## 7. Non-goals
 
 No web UI, no multi-user, no CRM beyond the status buttons (no notes, reminders, pipelines), no auto-apply, no scraping
@@ -115,8 +123,9 @@ behind login/CAPTCHA, no LLM in v1 (an optional LLM re-ranking step may come lat
 Each vacancy message carries ✅ Відгукнувся · 🔄 В процесі · ❌ Відмова · 🚫 Не цікаво (callback `s:<code>:<id>`,
 `apps/digest/src/status.ts`). The bot's webhook is a Cloudflare Worker (free plan): a press stores the status in D1
 (`statuses`: id, status, title, meta, url, updated_at; copied from the message), redraws the keyboard with
-`Статус: <label> · dd.mm` on top and confirms; pressing the current status clears it. `/status` lists marked
-vacancies by status (in progress, applied, rejected; "not interested" as a count), ≤ 4000 chars. Only the owner's
+`Статус: <label> · dd.mm` on top and confirms; pressing the current status clears it. 🚫 Не цікаво deletes the message from the chat (Telegram allows it for
+48 h; older messages get the status row instead). `/status` lists marked vacancies by status (in progress,
+applied, rejected; "not interested" as a count), `/hidden` lists the "not interested" ones; ≤ 4000 chars. Only the owner's
 chat is served; requests need the webhook secret header. Worker secrets: `TELEGRAM_BOT_TOKEN`, `OWNER_CHAT_ID`,
 `WEBHOOK_SECRET` (set by `apps/bot/scripts/setup.ts`, which also calls `setWebhook`). Deploy by hand:
 `pnpm --filter @applyra/bot deploy` (+ `db:migrate` for schema changes).

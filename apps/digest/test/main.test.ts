@@ -110,7 +110,51 @@ describe('run', () => {
     expect((await run(partial.opts)).sent).toBe(2);
     expect(partial.lines).toContain('source broken failed: 503');
 
-    await expect(run(options({ sources: [broken] }).opts)).rejects.toThrow('All sources failed');
+    await expect(run(options({ sources: [broken] }).opts)).rejects.toThrow(
+      'All sources failed (broken: 503)',
+    );
+  });
+
+  describe('source failure alert', () => {
+    const broken: Source = { name: 'broken', fetch: async () => Promise.reject(new Error('503')) };
+
+    it('follows the digest with an alert naming the failed source', async () => {
+      const { opts, send } = options({ sources: [broken, new FakeSource(SAMPLE_ITEMS)] });
+      await run(opts);
+      expect(send).toHaveBeenCalledTimes(4); // header + 2 vacancies + alert
+      const alert = send.mock.calls[3]?.[0];
+      expect(alert?.vacancies).toEqual([]);
+      expect(alert?.silent).toBeUndefined();
+      expect(alert?.text).toContain('broken: 503');
+    });
+
+    it('is sent even when there is nothing new', async () => {
+      await run(options().opts);
+      const { opts, send } = options({ sources: [broken, new FakeSource(SAMPLE_ITEMS)] });
+      await run(opts);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(send.mock.calls[0]?.[0].text).toContain('broken: 503');
+    });
+
+    it('a failing alert does not fail the run or lose the state', async () => {
+      const send = vi.fn(async (m: Message) => {
+        if (m.vacancies.length === 0 && m.text.includes('broken')) throw new Error('network down');
+      });
+      const { opts, lines } = options({ send, sources: [broken, new FakeSource(SAMPLE_ITEMS)] });
+      expect((await run(opts)).sent).toBe(2);
+      expect(lines).toContain('alert failed: network down');
+      expect(await run(options().opts)).toMatchObject({ sent: 0 });
+    });
+
+    it('is only logged in a dry run', async () => {
+      const { opts, send, lines } = options({
+        dryRun: true,
+        sources: [broken, new FakeSource(SAMPLE_ITEMS)],
+      });
+      await run(opts);
+      expect(send).not.toHaveBeenCalled();
+      expect(lines).toContain('source broken failed: 503');
+    });
   });
 
   it('redacts urls in source errors', async () => {
@@ -139,7 +183,7 @@ describe('run', () => {
     expect(summary.rejected + summary.sent).toBe(20);
     expect(lines.some((l) => l.includes('message 2 rejected by Telegram'))).toBe(true);
     // Both the delivered and the quarantined vacancies are remembered: nothing is retried forever.
-    expect(selectNew(manyItems.map(toVacancy), await loadState(statePath))).toEqual([]);
+    expect(selectNew(manyItems.map(toVacancy), await loadState(statePath), now)).toEqual([]);
   });
 
   it('fails fast on other send errors and persists only what was delivered', async () => {

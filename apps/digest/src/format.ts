@@ -22,6 +22,8 @@ export interface Message {
   vacancies: Vacancy[];
   /** Status buttons (ADR 028); absent on the header. */
   replyMarkup?: InlineKeyboard;
+  /** Delivered without a sound: only the header of a digest notifies. */
+  silent?: true;
 }
 
 export const escapeHtml = (s: string): string =>
@@ -82,6 +84,18 @@ function block(r: Ranked, max: number): string {
   return full.length <= max ? full : titleOnly(r, max);
 }
 
+const MAX_ALERT_LINES = 10;
+const MAX_ALERT_LINE = 300;
+
+/** A problem report for the owner (failed sources, failed run); audible, escaped, ≤ ~3.2k chars. */
+export function alertMessage(title: string, details: string[]): Message {
+  const lines = details.slice(0, MAX_ALERT_LINES).map((d) => `• ${escapeFit(d, MAX_ALERT_LINE)}`);
+  return {
+    text: [`⚠️ <b>Applyra: ${escapeFit(title, MAX_ALERT_LINE)}</b>`, ...lines].join('\n'),
+    vacancies: [],
+  };
+}
+
 /**
  * Ranked vacancies → Telegram messages: a short header, then one message per vacancy with status buttons
  * (ADR 028), so each vacancy can be marked on its own. Every message is ≤ limit.
@@ -100,6 +114,7 @@ export function formatDigest(items: Ranked[], opts: { date: Date; limit?: number
       return {
         text: block(item, limit),
         vacancies: [item.vacancy],
+        silent: true,
         ...(keyboard ? { replyMarkup: keyboard } : {}),
       };
     }),

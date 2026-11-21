@@ -39,6 +39,15 @@ describe('sendMessage', () => {
     expect(JSON.parse(String(init?.body)).reply_markup).toEqual(replyMarkup);
   });
 
+  it('sends silently when asked (disable_notification)', async () => {
+    const fetch = vi.fn<Fetch>(async () => json(200, { ok: true }));
+    await sendMessage(config, 'x', { fetch, silent: true });
+    await sendMessage(config, 'y', { fetch });
+    const bodies = fetch.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
+    expect(bodies[0]).toMatchObject({ disable_notification: true });
+    expect(bodies[1]).not.toHaveProperty('disable_notification');
+  });
+
   it('never puts the token into an error', async () => {
     const apiError = vi.fn<Fetch>(async () =>
       json(400, { ok: false, description: "Bad Request: can't parse entities" }),

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { markSent, pruneState, selectNew } from './dedup.ts';
 import { parseProfile, rank, type Profile } from './filter.ts';
-import { formatDigest, type Message } from './format.ts';
+import { alertMessage, formatDigest, type Message } from './format.ts';
 
 const SEND_GAP_MS = 1100;
 import { normalize } from './normalize/normalize.ts';
@@ -10,7 +10,12 @@ import { emailSource, imapMailbox, readImapConfig } from './sources/email.ts';
 import { feedSources } from './sources/feeds.ts';
 import { FakeSource, SAMPLE_ITEMS, type Source } from './sources/source.ts';
 import { DEFAULT_STATE_PATH, fileStore, type StateStore } from './state.ts';
-import { isRejectedMessage, readTelegramConfig, sendMessage } from './telegram.ts';
+import {
+  isRejectedMessage,
+  readTelegramConfig,
+  sendMessage,
+  type TelegramConfig,
+} from './telegram.ts';
 import type { RawItem, Vacancy } from './types.ts';
 
 export interface RunOptions {
@@ -57,20 +62,24 @@ const errorText = (err: unknown) => redact(err instanceof Error ? err.message : 
 export async function run(o: RunOptions): Promise<RunSummary> {
   const results = await Promise.allSettled(o.sources.map((s) => s.fetch()));
   const raw: RawItem[] = [];
+  const failed: string[] = [];
   results.forEach((r, i) => {
     const name = o.sources[i]?.name ?? `#${i}`;
     if (r.status === 'fulfilled') raw.push(...r.value);
-    else o.log(`source ${name} failed: ${errorText(r.reason)}`);
+    else {
+      o.log(`source ${name} failed: ${errorText(r.reason)}`);
+      failed.push(`${name}: ${errorText(r.reason)}`);
+    }
   });
-  if (o.sources.length > 0 && results.every((r) => r.status === 'rejected'))
-    throw new Error('All sources failed');
+  if (o.sources.length > 0 && failed.length === o.sources.length)
+    throw new Error(`All sources failed (${failed.join('; ')})`);
 
   const vacancies = raw
     .map((item) => normalize(item, o.now))
     .filter((v): v is Vacancy => v !== undefined);
   // A load failure throws here, before anything is sent or saved.
   let state = pruneState(await o.store.load(), o.now);
-  const fresh = selectNew(vacancies, state);
+  const fresh = selectNew(vacancies, state, o.now);
   const ranked = rank(fresh, o.profile);
   const messages = formatDigest(ranked, { date: o.now });
   const summary: RunSummary = {
@@ -120,6 +129,14 @@ export async function run(o: RunOptions): Promise<RunSummary> {
     o.log(`saving state failed: ${errorText(saveError)}`);
   }
   if (failure) throw failure.error;
+  if (failed.length > 0) {
+    // After the digest and the state save: an alert that cannot be delivered never costs a vacancy.
+    try {
+      await o.send(alertMessage('не відповіли джерела, дайджест — з решти', failed));
+    } catch (error) {
+      o.log(`alert failed: ${errorText(error)}`);
+    }
+  }
   o.log(`done: ${JSON.stringify(summary)}`);
   return summary;
 }
@@ -162,11 +179,31 @@ async function cli(args: string[], env: Record<string, string | undefined>): Pro
     console.log('No sources configured (DIGEST_SOURCES or --source=); nothing to do.');
     return;
   }
+  const telegram = dryRun ? undefined : readTelegramConfig(env);
+  try {
+    await digest(args, env, dryRun, names, telegram);
+  } catch (err) {
+    // Tell the owner, or a broken run goes unnoticed until someone misses the digest.
+    if (telegram)
+      await sendMessage(
+        telegram,
+        alertMessage('дайджест не надіслано', [errorText(err)]).text,
+      ).catch(() => console.error('failure alert could not be sent'));
+    throw err;
+  }
+}
+
+async function digest(
+  args: string[],
+  env: Record<string, string | undefined>,
+  dryRun: boolean,
+  names: string[],
+  telegram: TelegramConfig | undefined,
+): Promise<void> {
   const now = new Date();
   const sources = createSources(names, dryRun, env, now);
   const profilePath = flag(args, 'profile') ?? env.DIGEST_PROFILE_PATH ?? 'profile.json';
   const profile = parseProfile(JSON.parse(await readFile(profilePath, 'utf8')));
-  const telegram = dryRun ? undefined : readTelegramConfig(env);
   // One message per vacancy: stay under Telegram's ~1 message/second per chat.
   let lastSent = 0;
   await run({
@@ -180,7 +217,10 @@ async function cli(args: string[], env: Record<string, string | undefined>): Pro
       const wait = lastSent + SEND_GAP_MS - Date.now();
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       lastSent = Date.now();
-      await sendMessage(telegram, message.text, { replyMarkup: message.replyMarkup });
+      await sendMessage(telegram, message.text, {
+        replyMarkup: message.replyMarkup,
+        silent: message.silent,
+      });
     },
     log: (line) => console.log(line),
   });

@@ -81,6 +81,15 @@ async function onStatusButton(cq: Record<string, unknown>, deps: Deps): Promise<
       updatedAt: deps.now,
     });
   }
+  // "Not interested" removes the vacancy from the chat (it stays in /hidden). Telegram refuses to delete
+  // messages older than 48 h: those keep a status row instead.
+  if (current?.code === 'x') {
+    const deleted = await deps
+      .api('deleteMessage', { chat_id: msg.chatId, message_id: msg.messageId })
+      .then(() => true)
+      .catch(() => false);
+    if (deleted) return answer('Сховано. Список: /hidden');
+  }
   await deps.api('editMessageReplyMarkup', {
     chat_id: msg.chatId,
     message_id: msg.messageId,
@@ -95,12 +104,18 @@ const escapeHtml = (s: string): string =>
 const LIMIT = 4000;
 const GROUPS: StatusCode[] = ['p', 'a', 'r'];
 
-/** /status: vacancies grouped by status (in progress, applied, rejected); "not interested" as a count. */
-export function statusReport(records: StatusRecord[]): string {
-  if (records.length === 0)
-    return 'Поки що немає вакансій зі статусом. Натисни кнопку під вакансією в дайджесті.';
+/**
+ * Vacancies grouped by status, with links. /status: in progress, applied, rejected, and "not interested" as a
+ * count only; /hidden: the "not interested" ones (their messages were deleted from the chat).
+ */
+export function statusReport(records: StatusRecord[], groups: StatusCode[] = GROUPS): string {
+  const hiddenOnly = !groups.some((code) => code !== 'x');
+  if (!records.some((r) => groups.includes(r.status) || (!hiddenOnly && r.status === 'x')))
+    return hiddenOnly
+      ? 'Схованих вакансій немає.'
+      : 'Поки що немає вакансій зі статусом. Натисни кнопку під вакансією в дайджесті.';
   const parts: string[] = [];
-  for (const code of GROUPS) {
+  for (const code of groups) {
     const group = records.filter((r) => r.status === code);
     if (group.length === 0) continue;
     const lines = group.map((r) => {
@@ -112,7 +127,7 @@ export function statusReport(records: StatusRecord[]): string {
     parts.push(`<b>${STATUS_LABEL[code]} (${group.length})</b>\n${lines.join('\n')}`);
   }
   const skipped = records.filter((r) => r.status === 'x').length;
-  if (skipped) parts.push(`${STATUS_LABEL.x}: ${skipped}`);
+  if (skipped && !groups.includes('x')) parts.push(`${STATUS_LABEL.x}: ${skipped} (/hidden)`);
   let text = parts.join('\n\n');
   if (text.length > LIMIT) {
     // Cut at a line boundary so no tag or entity is split.
@@ -123,7 +138,7 @@ export function statusReport(records: StatusRecord[]): string {
 }
 
 const HELP =
-  'Під кожною вакансією в дайджесті є кнопки статусу. Натисни ще раз на поточний статус, щоб зняти його.\n/status — усі вакансії за статусами.';
+  'Під кожною вакансією в дайджесті є кнопки статусу. Натисни ще раз на поточний статус, щоб зняти його.\n/status — усі вакансії за статусами.\n/hidden — сховані («Не цікаво»): їх прибрано з чату, тут лишаються посилання.';
 
 async function onMessage(m: Record<string, unknown>, deps: Deps): Promise<void> {
   if (!isObj(m.chat) || num(m.chat.id) !== deps.ownerChatId) return;
@@ -136,6 +151,7 @@ async function onMessage(m: Record<string, unknown>, deps: Deps): Promise<void> 
       link_preview_options: { is_disabled: true },
     });
   if (command === '/status') return reply(statusReport(await deps.store.list()));
+  if (command === '/hidden') return reply(statusReport(await deps.store.list(), ['x']));
   if (command === '/start' || command === '/help') return reply(HELP);
 }
 

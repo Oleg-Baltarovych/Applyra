@@ -93,6 +93,28 @@ describe('status buttons', () => {
     expect(api.mock.calls.every(([m]) => m === 'answerCallbackQuery')).toBe(true);
   });
 
+  it('"not interested" stores the status and deletes the message from the chat', async () => {
+    const { store, api, deps } = setup();
+    await handleUpdate(press('s:x:dou:1'), deps);
+    expect(store.rows.get('dou:1')?.status).toBe('x');
+    expect(api.mock.calls.map(([m]) => m)).toEqual(['deleteMessage', 'answerCallbackQuery']);
+    expect(api.mock.calls[0]?.[1]).toEqual({ chat_id: OWNER, message_id: 7 });
+    expect(api.mock.calls[1]?.[1]).toMatchObject({ text: 'Сховано. Список: /hidden' });
+  });
+
+  it('keeps the message with a status row when Telegram refuses to delete it (older than 48 h)', async () => {
+    const { store, api, deps } = setup();
+    api.mockImplementation(async (method) => {
+      if (method === 'deleteMessage')
+        throw new Error('Telegram deleteMessage failed with HTTP 400');
+    });
+    await handleUpdate(press('s:x:dou:1'), deps);
+    expect(store.rows.get('dou:1')?.status).toBe('x');
+    const edit = api.mock.calls.find(([m]) => m === 'editMessageReplyMarkup')?.[1];
+    expect(JSON.stringify(edit)).toContain('Статус: 🚫 Не цікаво');
+    expect(api.mock.calls.at(-1)?.[1]).toMatchObject({ text: 'Статус: 🚫 Не цікаво' });
+  });
+
   it('keeps only http(s) links from the message', async () => {
     const { store, deps } = setup();
     const message = {
@@ -127,7 +149,8 @@ describe('/status', () => {
     );
     expect(text).toContain('<b>✅ Відгукнувся (1)</b>');
     expect(text).toContain('<b>❌ Відмова (1)</b>\n• Node.js Engineer · Manoris · remote · 20.11');
-    expect(text).toContain('🚫 Не цікаво: 1');
+    expect(text).toContain('🚫 Не цікаво: 1 (/hidden)');
+    expect(text).not.toContain('dou:4');
     expect(text.indexOf('В процесі')).toBeLessThan(text.indexOf('Відгукнувся'));
   });
 
@@ -138,6 +161,17 @@ describe('/status', () => {
     const text = statusReport(many);
     expect(text.length).toBeLessThanOrEqual(4096);
     expect(text).toContain('список скорочено');
+  });
+
+  it('/hidden lists the "not interested" vacancies with links, so a mistaken press does not lose the vacancy', () => {
+    const text = statusReport(
+      [record({ status: 'x', title: 'Hidden one' }), record({ vacancyId: 'dou:2', status: 'a' })],
+      ['x'],
+    );
+    expect(text).toBe(
+      '<b>🚫 Не цікаво (1)</b>\n• <a href="https://jobs.dou.ua/v/1">Hidden one</a> · Manoris · remote · 20.11',
+    );
+    expect(statusReport([], ['x'])).toBe('Схованих вакансій немає.');
   });
 
   it('answers /status only in the owner chat', async () => {

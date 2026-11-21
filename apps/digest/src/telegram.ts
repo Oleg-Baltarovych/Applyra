@@ -77,6 +77,8 @@ export async function sendMessage(
     fetch?: Fetch;
     sleep?: (ms: number) => Promise<void>;
     replyMarkup?: InlineKeyboard | undefined;
+    /** disable_notification: delivered without a sound. */
+    silent?: boolean | undefined;
   } = {},
 ): Promise<void> {
   const doFetch = deps.fetch ?? fetch;
@@ -91,6 +93,7 @@ export async function sendMessage(
         parse_mode: 'HTML',
         link_preview_options: { is_disabled: true },
         ...(deps.replyMarkup ? { reply_markup: deps.replyMarkup } : {}),
+        ...(deps.silent ? { disable_notification: true } : {}),
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     }).catch((err: unknown) => {

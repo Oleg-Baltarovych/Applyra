@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Ranked } from '../src/filter.ts';
-import { escapeHtml, formatDigest, TELEGRAM_LIMIT } from '../src/format.ts';
+import { alertMessage, escapeHtml, formatDigest, TELEGRAM_LIMIT } from '../src/format.ts';
 import type { Vacancy } from '../src/types.ts';
 import { vacancy } from './support/vacancy.ts';
 
@@ -10,6 +10,20 @@ const ranked = (overrides: Partial<Vacancy> = {}, reasons = ['node.js']): Ranked
   score: 1,
   reasons,
   caveats: [],
+});
+
+describe('alertMessage', () => {
+  it('is an escaped, bounded, audible message with no vacancies', () => {
+    const m = alertMessage('Дайджест не надіслано', [
+      'dou: <503>',
+      ...Array(20).fill('x'.repeat(500)),
+    ]);
+    expect(m.vacancies).toEqual([]);
+    expect(m.silent).toBeUndefined();
+    expect(m.text).toMatch(/^⚠️ <b>Applyra: Дайджест не надіслано<\/b>\n• dou: &lt;503&gt;\n/);
+    expect(m.text.split('\n').filter((l) => l.startsWith('• '))).toHaveLength(10);
+    expect(m.text.length).toBeLessThanOrEqual(TELEGRAM_LIMIT);
+  });
 });
 
 describe('escapeHtml', () => {
@@ -74,6 +88,12 @@ describe('formatDigest', () => {
       's:r:dou:101',
       's:x:dou:101',
     ]);
+  });
+
+  it('only the header makes a sound: vacancy messages are silent', () => {
+    const [header, ...messages] = formatDigest([ranked(), ranked()], { date });
+    expect(header?.silent).toBeUndefined();
+    expect(messages.map((m) => m.silent)).toEqual([true, true]);
   });
 
   it('truncates huge fields so a single item still fits', () => {

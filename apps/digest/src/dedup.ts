@@ -31,19 +31,48 @@ function fuzzyKey(v: Vacancy): string | undefined {
   return `tc:${company.join(' ')}|${title.join(' ')}`;
 }
 
-function dedupKeys(v: Vacancy): string[] {
-  const fuzzy = fuzzyKey(v);
-  return [`url:${canonicalUrl(v.url)}`, ...(fuzzy ? [fuzzy] : [])];
+// Cross-site repeats (ADR 029): Djinni rarely names the company, so the same post on DOU and Djinni has no
+// common fuzzy key. The full title (words in brackets included) then stands in for it — only when at least
+// one side has no company, the title has ≥ 4 words, and within 7 days.
+const MIN_TITLE_WORDS = 4;
+const TITLE_MATCH_DAYS = 7;
+
+/** Title key of a vacancy: `tk:` (company known) or `tu:` (unknown); undefined for short titles. */
+function titleKey(v: Vacancy): string | undefined {
+  const words = [...new Set(tokens(v.title.replace(/[()[\]]/g, ' ')).filter((t) => !NOISE.has(t)))];
+  if (words.length < MIN_TITLE_WORDS) return undefined;
+  return `${v.company.trim() ? 'tk' : 'tu'}:${words.sort().join(' ')}`;
 }
 
-/** Vacancies not sent before and not repeated within this batch (first occurrence wins). */
-export function selectNew(vacancies: Vacancy[], state: SentState): Vacancy[] {
-  const seen = new Set(Object.keys(state.sent));
+/** A vacancy with a company repeats only a company-less one (`tu:`); a company-less one repeats either. */
+const titleMatches = (key: string): string[] =>
+  key.startsWith('tk:') ? [`tu:${key.slice(3)}`] : [key, `tk:${key.slice(3)}`];
+
+function dedupKeys(v: Vacancy): string[] {
+  const fuzzy = fuzzyKey(v);
+  const title = titleKey(v);
+  return [`url:${canonicalUrl(v.url)}`, ...(fuzzy ? [fuzzy] : []), ...(title ? [title] : [])];
+}
+
+/**
+ * Vacancies not sent before and not repeated within this batch. Posts that name the company go first, so
+ * of a cross-site pair the one with the company is kept; otherwise the first occurrence wins.
+ */
+export function selectNew(vacancies: Vacancy[], state: SentState, now: Date): Vacancy[] {
+  const seen = new Map(Object.entries(state.sent).map(([k, at]) => [k, Date.parse(at)]));
+  const titleCutoff = now.getTime() - TITLE_MATCH_DAYS * 86_400_000;
+  const known = vacancies.filter((v) => v.company.trim());
+  const unknown = vacancies.filter((v) => !v.company.trim());
   const out: Vacancy[] = [];
-  for (const v of vacancies) {
+  for (const v of [...known, ...unknown]) {
     const keys = dedupKeys(v);
-    if (keys.some((k) => seen.has(k))) continue;
-    for (const k of keys) seen.add(k);
+    const repeated = keys.some((k) =>
+      /^t[ku]:/.test(k)
+        ? titleMatches(k).some((m) => (seen.get(m) ?? -Infinity) >= titleCutoff)
+        : seen.has(k),
+    );
+    if (repeated) continue;
+    for (const k of keys) seen.set(k, now.getTime());
     out.push(v);
   }
   return out;
