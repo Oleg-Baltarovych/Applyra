@@ -83,7 +83,7 @@ Two independent parts share only the callback-data protocol
 | Bot backend        | Cloudflare Workers + D1 (SQLite), deployed with Wrangler                                                        |
 | Telegram           | Bot API over global `fetch` (HTML messages, inline keyboards, webhook with a secret token)                      |
 | E-mail input       | `imapflow` (read-only IMAP), DKIM result checked from the receiving server's `Authentication-Results`           |
-| Testing            | Vitest — 175 tests, recorded and anonymised feed fixtures, no network                                           |
+| Testing            | Vitest — 181 tests, recorded and anonymised feed fixtures, no network                                           |
 | Quality & security | ESLint, Prettier, gitleaks, osv-scanner, `pnpm audit`, Semgrep, actionlint — one CI job; Renovate               |
 
 ## Engineering notes
