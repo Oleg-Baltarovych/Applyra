@@ -242,4 +242,14 @@ describe('rank', () => {
     expect(ranked).toHaveLength(1);
     expect(ranked[0]?.vacancy).toBe(items[2]);
   });
+
+  it('puts clean matches before those with caveats, even when the caveated one scores higher', () => {
+    const caveated = vacancy({
+      title: 'Senior Full-stack Node.js / TypeScript / NestJS Engineer (+ Go)',
+      description: 'NestJS, React, PostgreSQL, Redis, Docker, Kubernetes.',
+    });
+    const clean = vacancy({ title: 'Senior Node.js Developer', description: 'Node.js.' });
+    expect(kept(caveated).score).toBeGreaterThan(kept(clean).score);
+    expect(rank([caveated, clean], profile).map((r) => r.vacancy)).toEqual([clean, caveated]);
+  });
 });

@@ -49,8 +49,10 @@ items rank on the title (level/remote often "unclear"). Env: `IMAP_USER`, `IMAP_
 4. **filter + score** (`filter.ts`) — hard rejects, then a score with reasons and caveats (§4).
 5. **format** (`format.ts`) — Telegram HTML, every field escaped, http(s) links only, field sizes capped
    in escaped characters (title 200, company 100, city 50 × 3, href 1000 else no link), a block that still
-   does not fit becomes title-only. A short header (date, count), then **one message per vacancy** with status
-   buttons (§8).
+   does not fit becomes title-only. A short header (date, count; when both kinds are present also
+   "✅ точний збіг: N · ⚠️ із застереженнями: M"), then **one message per vacancy** with status buttons (§8):
+   clean matches first, then a silent divider and those with caveats (rank orders them so). Line 3 = reasons ·
+   age in Kyiv calendar days ("🕒 сьогодні / вчора / N днів тому"); lines 1–2 stay age-free (the bot stores them).
 6. **send** (`telegram.ts`) — Bot API `sendMessage` via `fetch`, `parse_mode: HTML`, previews off, inline keyboard,
    messages ≥ 1.1 s apart, one retry on 429. Only the header notifies; vacancy messages are silent
    (`disable_notification`). The token never appears in logs or errors.

@@ -42,12 +42,56 @@ describe('formatDigest', () => {
       [ranked({ title: 'Node <Dev> & Co', company: 'A"B', url: 'https://x.test/1?a=1&b="2"' })],
       { date },
     );
-    expect(header).toEqual({ text: '<b>Applyra · 2026-11-19 · 1 new</b>', vacancies: [] });
+    expect(header).toEqual({ text: '<b>Applyra · 2026-11-19 · 1 нова</b>', vacancies: [] });
     expect(msg?.text).toContain(
       '<a href="https://x.test/1?a=1&amp;b=&quot;2&quot;">Node &lt;Dev&gt; &amp; Co</a>',
     );
     expect(msg?.text).toContain('A&quot;B');
     expect(msg?.text).not.toContain('<Dev>');
+  });
+
+  it('shows how old the vacancy is (Kyiv calendar days), on the reasons line', () => {
+    const at = (iso: string) => {
+      const [, msg] = formatDigest([ranked({ publishedAt: new Date(iso) })], { date });
+      return msg?.text.split('\n')[2];
+    };
+    // date = 2026-11-19 08:00 Kyiv
+    expect(at('2026-11-19T05:00:00Z')).toBe('<i>node.js</i> · 🕒 сьогодні');
+    expect(at('2026-11-18T22:30:00Z')).toBe('<i>node.js</i> · 🕒 сьогодні'); // 00:30 Kyiv, the 19th
+    expect(at('2026-11-18T21:30:00Z')).toBe('<i>node.js</i> · 🕒 вчора'); // 23:30 Kyiv, the 18th
+    expect(at('2026-11-18T12:00:00Z')).toBe('<i>node.js</i> · 🕒 вчора');
+    expect(at('2026-11-16T12:00:00Z')).toBe('<i>node.js</i> · 🕒 3 дні тому');
+    expect(at('2026-11-13T12:00:00Z')).toBe('<i>node.js</i> · 🕒 6 днів тому');
+    expect(at('2026-10-29T12:00:00Z')).toBe('<i>node.js</i> · 🕒 21 день тому');
+    expect(at('2026-11-20T12:00:00Z')).toBe('<i>node.js</i> · 🕒 сьогодні'); // future (clock skew)
+  });
+
+  it('keeps the first two lines (title, meta) free of the age: the bot stores them', () => {
+    const [, msg] = formatDigest([ranked({ company: 'Acme' })], { date });
+    expect(msg?.text.split('\n').slice(0, 2).join('\n')).not.toContain('🕒');
+  });
+
+  it('groups matches: a header with counts, and a silent divider before those with caveats', () => {
+    const clean = [ranked(), ranked()];
+    const caveated = { ...ranked(), caveats: ['+ python'] };
+    const [header, a, b, divider, c] = formatDigest([...clean, caveated], { date });
+    expect(header?.text).toBe(
+      '<b>Applyra · 2026-11-19 · 3 нові</b>\n✅ точний збіг: 2 · ⚠️ із застереженнями: 1',
+    );
+    expect([a, b, c].map((m) => m?.vacancies.length)).toEqual([1, 1, 1]);
+    expect(divider).toEqual({
+      text: '<b>⚠️ Із застереженнями · 1</b>\n<i>інший стек, неясний рівень або формат роботи</i>',
+      vacancies: [],
+      silent: true,
+    });
+  });
+
+  it('has no divider or counts line when all matches are of one kind', () => {
+    const messages = formatDigest([ranked(), ranked()], { date });
+    expect(messages).toHaveLength(3);
+    expect(messages[0]?.text).toBe('<b>Applyra · 2026-11-19 · 2 нові</b>');
+    const onlyCaveated = formatDigest([{ ...ranked(), caveats: ['level unclear'] }], { date });
+    expect(onlyCaveated).toHaveLength(2);
   });
 
   it('shows the salary when present', () => {

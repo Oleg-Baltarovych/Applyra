@@ -56,11 +56,30 @@ const shownReasons = (r: Ranked): string[] => {
   return [...r.reasons.slice(0, MAX_REASONS - caveats.length), ...caveats];
 };
 
+/** Ukrainian plural: plural(3, ['день', 'дні', 'днів']) → 'дні'. */
+const plural = (n: number, [one, few, many]: readonly [string, string, string]): string => {
+  const d10 = n % 10;
+  const d100 = n % 100;
+  if (d10 === 1 && d100 !== 11) return one;
+  return d10 >= 2 && d10 <= 4 && (d100 < 12 || d100 > 14) ? few : many;
+};
+
+const kyivDay = (d: Date): number =>
+  Date.parse(d.toLocaleDateString('en-CA', { timeZone: 'Europe/Kyiv' }));
+
+/** Age in Kyiv calendar days: "сьогодні", "вчора", "3 дні тому" (a future date counts as today). */
+function age(published: Date, now: Date): string {
+  const days = Math.max(0, Math.round((kyivDay(now) - kyivDay(published)) / 86_400_000));
+  if (days === 0) return 'сьогодні';
+  if (days === 1) return 'вчора';
+  return `${days} ${plural(days, ['день', 'дні', 'днів'])} тому`;
+}
+
 const titleOnly = (r: Ranked, max: number): string =>
   `<b>${escapeFit(r.vacancy.title, Math.min(MAX_TITLE, Math.max(1, max - 7)))}</b>`;
 
 /** One vacancy; never longer than `max` (falls back to the bare title). */
-function block(r: Ranked, max: number): string {
+function block(r: Ranked, max: number, now: Date): string {
   const v = r.vacancy;
   const title = escapeFit(v.title, MAX_TITLE);
   const href = isHttpUrl(v.url) ? escapeHtml(v.url) : '';
@@ -78,9 +97,14 @@ function block(r: Ranked, max: number): string {
     .filter(Boolean)
     .join(' · ');
   const reasons = shownReasons(r).map((s) => escapeFit(s, MAX_REASON));
-  const full = [heading, meta, reasons.length ? `<i>${reasons.join(' · ')}</i>` : '']
+  // Line 3, not the meta line: the bot copies lines 1–2 into /status, where an age would go stale.
+  const details = [
+    reasons.length ? `<i>${reasons.join(' · ')}</i>` : '',
+    `🕒 ${age(v.publishedAt, now)}`,
+  ]
     .filter(Boolean)
-    .join('\n');
+    .join(' · ');
+  const full = [heading, meta, details].join('\n');
   return full.length <= max ? full : titleOnly(r, max);
 }
 
@@ -103,20 +127,34 @@ export function alertMessage(title: string, details: string[]): Message {
 export function formatDigest(items: Ranked[], opts: { date: Date; limit?: number }): Message[] {
   if (items.length === 0) return [];
   const limit = opts.limit ?? TELEGRAM_LIMIT;
-  const header: Message = {
-    text: `<b>Applyra · ${opts.date.toISOString().slice(0, 10)} · ${items.length} new</b>`,
-    vacancies: [],
-  };
-  return [
-    header,
-    ...items.map((item): Message => {
-      const keyboard = statusKeyboard(item.vacancy.id);
-      return {
-        text: block(item, limit),
-        vacancies: [item.vacancy],
-        silent: true,
-        ...(keyboard ? { replyMarkup: keyboard } : {}),
-      };
-    }),
+  // rank() puts clean matches first; a divider marks where those with caveats begin.
+  const clean = items.filter((i) => i.caveats.length === 0).length;
+  const caveated = items.length - clean;
+  const mixed = clean > 0 && caveated > 0;
+  const count = `${items.length} ${plural(items.length, ['нова', 'нові', 'нових'])}`;
+  const title = `<b>Applyra · ${opts.date.toISOString().slice(0, 10)} · ${count}</b>`;
+  const messages: Message[] = [
+    {
+      text: mixed
+        ? `${title}\n✅ точний збіг: ${clean} · ⚠️ із застереженнями: ${caveated}`
+        : title,
+      vacancies: [],
+    },
   ];
+  items.forEach((item, i) => {
+    if (mixed && i === clean)
+      messages.push({
+        text: `<b>⚠️ Із застереженнями · ${caveated}</b>\n<i>інший стек, неясний рівень або формат роботи</i>`,
+        vacancies: [],
+        silent: true,
+      });
+    const keyboard = statusKeyboard(item.vacancy.id);
+    messages.push({
+      text: block(item, limit, opts.date),
+      vacancies: [item.vacancy],
+      silent: true,
+      ...(keyboard ? { replyMarkup: keyboard } : {}),
+    });
+  });
+  return messages;
 }
