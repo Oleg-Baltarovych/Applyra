@@ -71,7 +71,8 @@ Unicode word boundaries ("ts" ≠ "tests", "java" ≠ "javascript"), the label i
 | `titleKeywords` | role/stack words; +3 each when in the title |
 | `required` | at least one in title or description, else reject; +2 in title / +1 in description |
 | `bonus` | +1 each anywhere (e.g. nestjs, postgresql, crypto) |
-| `excludeStacks` | reject when the **title** names one and has no `required` keyword ("Node.js + Go" stays) |
+| `excludeStacks` | other languages/frameworks: a **title** naming one is rejected only when no `required` keyword appears anywhere; otherwise kept with a caveat `+ <stack>` and −3 when the title itself has no `required` keyword ("Full Stack (React + Python)" with TypeScript in the text stays, ranked lower) |
+| `excludeRoles` | other roles (QA, DevOps, data/ML): rejected when the **title** names one and has no `required` keyword |
 | `excludeTitles` | management titles, always rejected ("head of", "team lead"; "tech lead" stays) |
 | `level.exclude` / `level.allow` | reject only if the title has an excluded level and no allowed one ("Junior/Middle" stays) |
 | `level.minExperienceYears` | title without a level: allowed level or ≥ N years in the description → +2; fewer years → caveat "N+ year exp"; nothing → caveat "level unclear" |
@@ -80,7 +81,7 @@ Unicode word boundaries ("ts" ≠ "tests", "java" ≠ "javascript"), the label i
 | `languages` | `uk`, `en`, `ru`; detected text language outside the list → reject (undetectable → keep) |
 | `salary.minUsdMonth` | floor in USD/month or `null`; only a known upper bound below the floor rejects ("від $X" never does); no upper cap |
 | `salary.uahPerUsd`, `salary.uahTolerance` | UAH conversion rate and tolerance (0.1 = reject only below 90 % of the floor) |
-| `maxItems` | digest size (top N by score, newer first on ties) |
+| `maxItems` | digest size (top N by score, newer first on ties); 50 in the committed profile — matches beyond it wait for the next run and may leave the feed unseen |
 
 Salary bonus when the best known value ≥ floor: `1 + (best − floor) / 1000`, capped at 4 — higher pay ranks
 first among equal posts but never outweighs a stack match. Missing salary: no penalty. Domains (gambling,

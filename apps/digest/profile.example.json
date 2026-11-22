@@ -3,6 +3,7 @@
   "required": ["javascript|js", "typescript|ts"],
   "bonus": ["react", "postgresql|postgres", "docker"],
   "excludeStacks": ["php", "java", "python"],
+  "excludeRoles": ["qa|aqa", "devops"],
   "excludeTitles": ["head of", "engineering manager"],
   "level": {
     "exclude": ["junior|jr", "intern|internship", "trainee", "стажер|стажист", "джуніор|джун"],
