@@ -33,10 +33,12 @@
     "flutter",
     "kotlin",
     "swift",
+    "1c"
+  ],
+  "excludeRoles": [
     "qa|aqa",
     "devops",
-    "data engineer|data scientist|data analyst|ml|machine learning",
-    "1c"
+    "data engineer|data scientist|data analyst|ml|machine learning"
   ],
   "excludeTitles": ["head of", "team lead|teamlead", "engineering manager"],
   "level": {
@@ -52,5 +54,5 @@
     "uahPerUsd": 41,
     "uahTolerance": 0.1
   },
-  "maxItems": 20
+  "maxItems": 50
 }

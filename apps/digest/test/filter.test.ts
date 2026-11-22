@@ -21,7 +21,7 @@ const rejected = (v: Vacancy, p: Profile = profile): string => {
 
 describe('parseProfile', () => {
   it('accepts the committed profile and the example', () => {
-    expect(profile.maxItems).toBe(20);
+    expect(profile.maxItems).toBe(50);
     expect(profile.salary.minUsdMonth).toBe(2500);
     expect(load('profile.example.json').salary.minUsdMonth).toBeNull();
   });
@@ -56,23 +56,38 @@ describe('stack', () => {
     kept(vacancy({ title: 'Backend Developer', description: 'Stack: TS, Postgres.' }));
   });
 
-  it('keeps a full-stack Node.js + Go post', () => {
-    kept(vacancy({ title: 'Full-stack Engineer (Node.js + Go)' }));
+  it('keeps a full-stack Node.js + Go post, noting the other stack without a penalty', () => {
+    const both = kept(vacancy({ title: 'Full-stack Engineer (Node.js + Go)' }));
+    const plain = kept(vacancy({ title: 'Full-stack Engineer (Node.js)' }));
+    expect(both.caveats).toContain('+ golang');
+    expect(both.score).toBe(plain.score);
   });
 
-  it('excludes a Java vacancy even if the description mentions Node.js', () => {
+  it('keeps another-stack title when Node.js/TS is in the description: caveat and a lower rank', () => {
+    const description = 'React, TypeScript, Python, PostgreSQL.';
+    const python = kept(vacancy({ title: 'Full Stack Developer (React + Python)', description }));
+    const own = kept(vacancy({ title: 'Full Stack Developer (React)', description }));
+    expect(python.caveats).toContain('+ python');
+    expect(python.score).toBeLessThan(own.score);
+    kept(vacancy({ title: 'Senior Java Developer', description: 'Some Node.js tooling.' }));
+  });
+
+  it('rejects another-stack title when Node.js/TS appears nowhere', () => {
     expect(
-      rejected(vacancy({ title: 'Senior Java Developer', description: 'Some Node.js tooling.' })),
-    ).toMatch(/java/);
+      rejected(vacancy({ title: 'Senior Java Developer', description: 'Spring Boot, Kafka.' })),
+    ).toBe('stack: java');
   });
 
   it('does not confuse JavaScript with Java', () => {
     kept(vacancy({ title: 'Senior JavaScript / Node.js Engineer' }));
   });
 
-  it('excludes QA/DevOps titles without a Node.js/TS keyword', () => {
-    rejected(vacancy({ title: 'Senior AQA Engineer', description: 'Selenium, TypeScript.' }));
+  it('excludes other roles (QA/DevOps) unless the title itself names Node.js/TS', () => {
+    expect(
+      rejected(vacancy({ title: 'Senior AQA Engineer', description: 'Selenium, TypeScript.' })),
+    ).toBe('role: qa');
     rejected(vacancy({ title: 'DevOps Engineer', description: 'Terraform, some Node.js.' }));
+    kept(vacancy({ title: 'Node.js Developer (DevOps culture)' }));
   });
 
   it('does not exclude gambling, betting or crypto domains; crypto is a bonus', () => {

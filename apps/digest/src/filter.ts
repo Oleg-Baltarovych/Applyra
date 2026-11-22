@@ -11,8 +11,13 @@ export interface Profile {
   required: string[];
   /** Extra score + reason when present anywhere. */
   bonus: string[];
-  /** Other primary stacks/roles: excluded when the title names one and no `required` keyword. */
+  /**
+   * Other languages/frameworks. A title naming one is excluded only when no `required` keyword appears
+   * anywhere; otherwise kept with a "+ <stack>" caveat (and ranked lower when the title has no `required`).
+   */
   excludeStacks: string[];
+  /** Other roles (QA, DevOps, data…): excluded when the title names one and no `required` keyword. */
+  excludeRoles: string[];
   /** Management titles, always excluded. */
   excludeTitles: string[];
   level: { exclude: string[]; allow: string[]; minExperienceYears: number };
@@ -69,6 +74,7 @@ export function parseProfile(input: unknown): Profile {
     required: strings(p.required, 'required', true),
     bonus: strings(p.bonus, 'bonus'),
     excludeStacks: strings(p.excludeStacks, 'excludeStacks'),
+    excludeRoles: strings(p.excludeRoles, 'excludeRoles'),
     excludeTitles: strings(p.excludeTitles, 'excludeTitles'),
     level: {
       exclude: strings(level.exclude, 'level.exclude'),
@@ -91,7 +97,15 @@ export function parseProfile(input: unknown): Profile {
 // ── evaluation ───────────────────────────────────────────────────────────────────────────────────
 
 /** Score weights. A stack match must always outweigh the salary bonus (capped at SALARY_MAX). */
-const W = { title: 3, requiredTitle: 2, requiredText: 1, bonus: 1, remote: 2, level: 2 };
+const W = {
+  title: 3,
+  requiredTitle: 2,
+  requiredText: 1,
+  bonus: 1,
+  remote: 2,
+  level: 2,
+  otherStack: -3,
+};
 const SALARY_BASE = 1;
 const SALARY_MAX = 4;
 const SALARY_STEP_USD = 1000;
@@ -101,6 +115,7 @@ interface Compiled {
   required: Keyword[];
   bonus: Keyword[];
   excludeStacks: Keyword[];
+  excludeRoles: Keyword[];
   excludeTitles: Keyword[];
   levelExclude: Keyword[];
   levelAllow: Keyword[];
@@ -114,6 +129,7 @@ const compile = (p: Profile): Compiled => {
       required: keywords(p.required),
       bonus: keywords(p.bonus),
       excludeStacks: keywords(p.excludeStacks),
+      excludeRoles: keywords(p.excludeRoles),
       excludeTitles: keywords(p.excludeTitles),
       levelExclude: keywords(p.level.exclude),
       levelAllow: keywords(p.level.allow),
@@ -139,12 +155,15 @@ export function evaluate(v: Vacancy, profile: Profile): Evaluation {
   const text = `${v.title}\n${v.description ?? ''}`;
   const reject = (reason: string): Reject => ({ kind: 'reject', reasons: [reason] });
 
-  // Stack: another primary stack in the title only counts when the title has no Node/TS keyword
-  // ("Full-stack Node.js + Go" stays, "Senior Java Developer" goes).
+  // Roles: another role in the title only counts when the title has no Node/TS keyword.
+  // Stacks: another language/framework in the title is fine while Node/TS appears anywhere
+  // ("Full Stack (React + Python)" with TypeScript in the text stays, ranked lower).
   const requiredInTitle = k.required.filter((kw) => kw.test(title));
-  const otherStack = k.excludeStacks.find((kw) => kw.test(title));
-  if (otherStack && requiredInTitle.length === 0) return reject(`stack: ${otherStack.label}`);
   const requiredInText = k.required.filter((kw) => kw.test(text));
+  const otherRole = k.excludeRoles.find((kw) => kw.test(title));
+  if (otherRole && requiredInTitle.length === 0) return reject(`role: ${otherRole.label}`);
+  const otherStack = k.excludeStacks.find((kw) => kw.test(title));
+  if (otherStack && requiredInText.length === 0) return reject(`stack: ${otherStack.label}`);
   if (requiredInText.length === 0)
     return reject(`needs ${k.required.map((kw) => kw.label).join(' or ')}`);
   const management = k.excludeTitles.find((kw) => kw.test(title));
@@ -154,6 +173,11 @@ export function evaluate(v: Vacancy, profile: Profile): Evaluation {
   const add = (label: string, w: number) =>
     weights.set(label, Math.max(weights.get(label) ?? 0, w));
   const caveats: string[] = [];
+  let penalty = 0;
+  if (otherStack) {
+    caveats.push(`+ ${otherStack.label}`);
+    if (requiredInTitle.length === 0) penalty = W.otherStack;
+  }
 
   for (const kw of k.titleKeywords) if (kw.test(title)) add(kw.label, W.title);
   for (const kw of requiredInText)
@@ -205,7 +229,7 @@ export function evaluate(v: Vacancy, profile: Profile): Evaluation {
   const sorted = [...weights].sort((a, b) => b[1] - a[1]);
   return {
     kind: 'match',
-    score: sorted.reduce((sum, [, w]) => sum + w, 0),
+    score: sorted.reduce((sum, [, w]) => sum + w, penalty),
     reasons: sorted.map(([label]) => label),
     caveats,
   };
