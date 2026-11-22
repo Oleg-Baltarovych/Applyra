@@ -235,7 +235,10 @@ export function evaluate(v: Vacancy, profile: Profile): Evaluation {
   };
 }
 
-/** Matches only, best score first (newer first on ties), at most `profile.maxItems`. */
+/**
+ * Matches only: clean ones (no caveats) first, then those with caveats; within each, best score first
+ * (newer first on ties). At most `profile.maxItems`.
+ */
 export function rank(vacancies: Vacancy[], profile: Profile): Ranked[] {
   const ranked: Ranked[] = [];
   for (const vacancy of vacancies) {
@@ -246,7 +249,9 @@ export function rank(vacancies: Vacancy[], profile: Profile): Ranked[] {
   return ranked
     .sort(
       (a, b) =>
-        b.score - a.score || b.vacancy.publishedAt.getTime() - a.vacancy.publishedAt.getTime(),
+        Number(a.caveats.length > 0) - Number(b.caveats.length > 0) ||
+        b.score - a.score ||
+        b.vacancy.publishedAt.getTime() - a.vacancy.publishedAt.getTime(),
     )
     .slice(0, profile.maxItems);
 }
