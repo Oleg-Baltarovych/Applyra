@@ -96,7 +96,7 @@ once. If that becomes a problem: a state branch or a gist (new ADR).
 
 ## 6. Schedule & config
 
-`.github/workflows/digest.yml`: daily 06:00 UTC (08:00/09:00 Kyiv) + manual run (optional dry run);
+`.github/workflows/digest.yml`: daily 05:17 UTC (07:17/08:17 Kyiv; off the full hour, when GitHub delays schedules most) + manual run (optional dry run);
 `permissions: contents: read`; concurrency group `digest`, never cancelled.
 Job `environment: digest` (restricted to main). Env: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (environment
 secrets), `DIGEST_SOURCES` (variable),

@@ -133,7 +133,7 @@ docs/            spec.md, CONTEXT.md, adr/
    Worker secrets and the bot webhook.
 6. **Edit your profile**: [`apps/digest/profile.json`](apps/digest/profile.json) — preferences only, it is
    committed. Format: [docs/spec.md](docs/spec.md#profile).
-7. The [Digest workflow](.github/workflows/digest.yml) runs daily at 06:00 UTC; start it by hand from the Actions
+7. The [Digest workflow](.github/workflows/digest.yml) runs daily at 05:17 UTC; start it by hand from the Actions
    tab (optionally as a dry run).
 
 </details>
