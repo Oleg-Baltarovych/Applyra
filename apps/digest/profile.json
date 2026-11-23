@@ -49,6 +49,7 @@
   "remote": ["remote"],
   "remoteUnknown": "keep",
   "languages": ["uk", "en"],
+  "englishLevel": "B2",
   "salary": {
     "minUsdMonth": 2500,
     "uahPerUsd": 41,

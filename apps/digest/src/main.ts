@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { appendFile, readFile } from 'node:fs/promises';
 import { markSent, pruneState, selectNew } from './dedup.ts';
+import { explainAll, statsReport, type ExplainOptions, type LlmClient } from './explain.ts';
 import { parseProfile, rank, type Profile } from './filter.ts';
 import { alertMessage, formatDigest, type Message } from './format.ts';
 
@@ -17,6 +18,7 @@ import {
   type TelegramConfig,
 } from './telegram.ts';
 import type { RawItem, Vacancy } from './types.ts';
+import { readWorkersAiConfig, workersAi } from './workers-ai.ts';
 
 export interface RunOptions {
   sources: Source[];
@@ -27,6 +29,13 @@ export interface RunOptions {
   now: Date;
   send: (message: Message) => Promise<void>;
   log: (line: string) => void;
+  /** Fit explanations (ADR 005); off when absent. */
+  llm?: LlmClient | undefined;
+  explainOptions?: ExplainOptions;
+  /** Receives the explanation stats (e.g. for the Actions step summary); its failure is only logged. */
+  report?: ((lines: string[]) => Promise<void>) | undefined;
+  /** Why explanations are off although configured (e.g. one of the two variables missing) → alert line. */
+  llmConfigError?: string | undefined;
 }
 
 export interface RunSummary {
@@ -81,7 +90,23 @@ export async function run(o: RunOptions): Promise<RunSummary> {
   let state = pruneState(await o.store.load(), o.now);
   const fresh = selectNew(vacancies, state, o.now);
   const ranked = rank(fresh, o.profile);
-  const messages = formatDigest(ranked, { date: o.now });
+  let items = ranked;
+  let explainProblem = o.llmConfigError;
+  if (o.llm && ranked.length > 0) {
+    const explained = await explainAll(ranked, o.profile, o.llm, o.explainOptions);
+    items = explained.items;
+    const lines = statsReport(explained.stats).map(redact);
+    for (const line of lines) o.log(line);
+    if (o.report)
+      await o.report(lines).catch((err: unknown) => o.log(`report failed: ${errorText(err)}`));
+    // Alert when nothing was explained, or a limit/budget cut the run short; a few odd answers are only logged.
+    const { ok, failed: broken, stopped, firstError } = explained.stats;
+    if (broken > 0 && (ok === 0 || stopped))
+      explainProblem = redact(
+        `${ranked.length - ok} з ${ranked.length} без пояснення (${firstError ?? 'error'})`,
+      );
+  }
+  const messages = formatDigest(items, { date: o.now });
   const summary: RunSummary = {
     fetched: raw.length,
     fresh: fresh.length,
@@ -129,10 +154,13 @@ export async function run(o: RunOptions): Promise<RunSummary> {
     o.log(`saving state failed: ${errorText(saveError)}`);
   }
   if (failure) throw failure.error;
-  if (failed.length > 0) {
+  const problems = [...failed, ...(explainProblem ? [`пояснення: ${explainProblem}`] : [])];
+  if (problems.length > 0) {
     // After the digest and the state save: an alert that cannot be delivered never costs a vacancy.
+    const title =
+      failed.length > 0 ? 'не відповіли джерела, дайджест — з решти' : 'дайджест без пояснень';
     try {
-      await o.send(alertMessage('не відповіли джерела, дайджест — з решти', failed));
+      await o.send(alertMessage(title, problems));
     } catch (error) {
       o.log(`alert failed: ${errorText(error)}`);
     }
@@ -204,6 +232,17 @@ async function digest(
   const sources = createSources(names, dryRun, env, now);
   const profilePath = flag(args, 'profile') ?? env.DIGEST_PROFILE_PATH ?? 'profile.json';
   const profile = parseProfile(JSON.parse(await readFile(profilePath, 'utf8')));
+  // Explanations are optional: a misconfiguration turns them off, never the digest.
+  let llm: LlmClient | undefined;
+  let llmConfigError: string | undefined;
+  try {
+    const ai = readWorkersAiConfig(env);
+    llm = ai ? workersAi(ai) : undefined;
+  } catch (err) {
+    llmConfigError = errorText(err);
+    console.log(`explanations off: ${llmConfigError}`);
+  }
+  const summaryPath = env.GITHUB_STEP_SUMMARY;
   // One message per vacancy: stay under Telegram's ~1 message/second per chat.
   let lastSent = 0;
   await run({
@@ -223,6 +262,22 @@ async function digest(
       });
     },
     log: (line) => console.log(line),
+    llm,
+    llmConfigError,
+    report: summaryPath
+      ? (lines) =>
+          appendFile(
+            summaryPath,
+            [
+              '### Fit explanations',
+              '',
+              '```text',
+              ...lines.map((l) => l.replaceAll('`', "'")),
+              '```',
+              '',
+            ].join('\n'),
+          )
+      : undefined,
   });
 }
 

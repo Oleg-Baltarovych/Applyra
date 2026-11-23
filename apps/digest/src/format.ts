@@ -14,6 +14,7 @@ const MAX_CITIES = 3;
 const MAX_REASON = 60;
 const MAX_HREF = 1000;
 const MAX_REASONS = 3;
+const MAX_EXPLAIN = 300;
 
 export interface Message {
   /** Telegram HTML (parse_mode: HTML). */
@@ -104,8 +105,14 @@ function block(r: Ranked, max: number, now: Date): string {
   ]
     .filter(Boolean)
     .join(' · ');
-  const full = [heading, meta, details].join('\n');
-  return full.length <= max ? full : titleOnly(r, max);
+  const base = [heading, meta, details].join('\n');
+  const e = r.explanation;
+  // Line 4 (ADR 005) is the first thing to go when the block does not fit.
+  const full = e
+    ? `${base}\n💡 ${escapeFit(e.fit, MAX_EXPLAIN)}${e.risk ? ` · ⚠️ ${escapeFit(e.risk, MAX_EXPLAIN)}` : ''}`
+    : base;
+  if (full.length <= max) return full;
+  return base.length <= max ? base : titleOnly(r, max);
 }
 
 const MAX_ALERT_LINES = 10;

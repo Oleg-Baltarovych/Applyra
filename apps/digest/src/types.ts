@@ -28,6 +28,14 @@ export interface Vacancy {
   description?: string;
 }
 
+/** Why a vacancy fits, written by the LLM (ADR 005); sanitized plain text, Ukrainian. */
+export interface Explanation {
+  /** ≤ 160 chars. */
+  fit: string;
+  /** ≤ 100 chars; absent when the model saw no notable risk. */
+  risk?: string;
+}
+
 /** What a source adapter returns: loosely typed text fields, validated by normalize(). */
 export interface RawItem {
   source: string;

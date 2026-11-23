@@ -29,7 +29,7 @@ Packages: `@applyra/digest` (`apps/digest`), `@applyra/config` (tsconfig + ESLin
 - Secrets (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, LLM keys) only via env / GitHub secrets; never logged, never in errors, fixtures or the profile. Never read or edit `.env*` (except `.env.example`).
 - No personal data in the repo (`profile.json` = preferences only).
 - Tests for every parser, normalizer, filter rule, dedup and format change — test-first; fixtures are trimmed, anonymised recorded feeds. No network in tests.
-- Pure logic (normalize, dedup, filter, format) has no I/O; I/O only in `sources/`, `state.ts`, `telegram.ts`, `main.ts`.
+- Pure logic (normalize, dedup, filter, format) has no I/O; I/O only in `sources/`, `state.ts`, `telegram.ts`, `workers-ai.ts`, `main.ts`.
 - Idempotent runs: mark a vacancy sent only after its message was delivered.
 - No `any`, `@ts-ignore`, `as unknown as`, or non-null `!` without a one-line justification comment.
 - Smallest change; prefer deleting to adding. No new dependency without stating why.
