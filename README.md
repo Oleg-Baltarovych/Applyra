@@ -37,6 +37,9 @@ what is **new** and **fits your profile** — and lets you track every applicati
 - **AI fit notes** — under each vacancy, Llama 3.3 70B (Cloudflare Workers AI) says what the job actually is and
   names the concrete obstacle from its text: `💡 Payment infrastructure for fintech · ⚠️ Go required`. Only
   requirements above your level count (e.g. English C1 when you are B2). Optional, free plan, never blocks the digest.
+
+  <img src="docs/images/fit-notes.png" alt="A vacancy message with an AI fit note: the product and an English requirement above the owner's level" width="360">
+
 - **Profile-based ranking** — a committed `profile.json`: stack keywords, required skills, excluded stacks and
   titles, level, remote/hybrid, salary floor (UAH → USD), languages. Hard rejects first, then a score with reasons.
 - **No duplicates** — canonical URLs, a fuzzy `company + title` key, and cross-site matching for DOU/Djinni
