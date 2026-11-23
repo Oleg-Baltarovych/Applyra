@@ -1,7 +1,9 @@
 import { detectLanguage, experienceYears, keywords, type Keyword, type Language } from './text.ts';
-import type { RemoteMode, Salary, Vacancy } from './types.ts';
+import type { Explanation, RemoteMode, Salary, Vacancy } from './types.ts';
 
 type WorkMode = Exclude<RemoteMode, 'unknown'>;
+const ENGLISH_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const;
+export type EnglishLevel = (typeof ENGLISH_LEVELS)[number];
 
 /** The owner's preferences (apps/digest/profile.json). Keyword lists use `label|alt|alt` specs (text.ts). */
 export interface Profile {
@@ -24,6 +26,8 @@ export interface Profile {
   remote: WorkMode[];
   remoteUnknown: 'keep' | 'drop';
   languages: Language[];
+  /** Owner's English (CEFR); the LLM explanation flags only higher requirements (ADR 005). */
+  englishLevel?: EnglishLevel;
   /** Monthly floor in USD (null = no salary rule); UAH converted with `uahPerUsd`, minus `uahTolerance`. */
   salary: { minUsdMonth: number | null; uahPerUsd: number; uahTolerance: number };
   maxItems: number;
@@ -42,7 +46,7 @@ export interface Reject {
   reasons: string[];
 }
 export type Evaluation = Match | Reject;
-export type Ranked = Omit<Match, 'kind'> & { vacancy: Vacancy };
+export type Ranked = Omit<Match, 'kind'> & { vacancy: Vacancy; explanation?: Explanation };
 
 // ── profile validation (boundary: profile.json is external input) ────────────────────────────────
 
@@ -84,6 +88,9 @@ export function parseProfile(input: unknown): Profile {
     remote: list(p.remote, 'remote', ['remote', 'hybrid', 'office'] as const),
     remoteUnknown: oneOf(p.remoteUnknown, 'remoteUnknown', ['keep', 'drop'] as const),
     languages: list(p.languages, 'languages', ['uk', 'en', 'ru'] as const),
+    ...(p.englishLevel === undefined
+      ? {}
+      : { englishLevel: oneOf(p.englishLevel, 'englishLevel', ENGLISH_LEVELS) }),
     salary: {
       minUsdMonth:
         salary.minUsdMonth === null ? null : num(salary.minUsdMonth, 'salary.minUsdMonth', 1),

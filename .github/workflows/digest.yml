@@ -53,6 +53,9 @@ jobs:
           # Source `email` (job-alert mailbox, read-only); unused unless DIGEST_SOURCES lists it.
           IMAP_USER: ${{ secrets.IMAP_USER }}
           IMAP_PASSWORD: ${{ secrets.IMAP_PASSWORD }}
+          # Fit explanations (ADR 005, Workers AI free plan); off unless both are set. Token: Workers AI only.
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_AI_TOKEN: ${{ secrets.CLOUDFLARE_AI_TOKEN }}
           DIGEST_SOURCES: ${{ vars.DIGEST_SOURCES }}
           DRY_RUN: ${{ inputs.dry-run && 'true' || 'false' }}
         run: |

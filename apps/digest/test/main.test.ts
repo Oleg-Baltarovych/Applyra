@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyState, selectNew } from '../src/dedup.ts';
+import { LlmError, type LlmClient } from '../src/explain.ts';
 import { parseProfile } from '../src/filter.ts';
 import type { Message } from '../src/format.ts';
 import { createSources, redact, run, type RunOptions } from '../src/main.ts';
@@ -154,6 +155,103 @@ describe('run', () => {
       await run(opts);
       expect(send).not.toHaveBeenCalled();
       expect(lines).toContain('source broken failed: 503');
+    });
+  });
+
+  describe('fit explanations', () => {
+    const llm = (complete: LlmClient['complete']): LlmClient => ({ model: 'fake-llm', complete });
+
+    it('explains each vacancy (line 4) and reports the stats', async () => {
+      const reports: string[][] = [];
+      const { opts, send, lines } = options({
+        llm: llm(async () => ({ value: { fit: 'Node.js і NestJS', risk: 'рівень неясний' } })),
+        report: async (r) => {
+          reports.push(r);
+        },
+      });
+      expect((await run(opts)).sent).toBe(2);
+      const vacancyTexts = send.mock.calls.map((c) => c[0]).filter((m) => m.vacancies.length);
+      expect(
+        vacancyTexts.every((m) => m.text.includes('💡 Node.js і NestJS · ⚠️ рівень неясний')),
+      ).toBe(true);
+      expect(lines.some((l) => l.includes('explain: fake-llm · ok 2 · failed 0'))).toBe(true);
+      expect(reports.flat().join('\n')).toContain('fake-llm');
+    });
+
+    it('a broken explainer still sends the digest, without line 4, and alerts once', async () => {
+      const { opts, send } = options({
+        llm: llm(async () => {
+          throw new LlmError('auth', 'Workers AI failed with HTTP 401');
+        }),
+      });
+      expect((await run(opts)).sent).toBe(2);
+      const messages = send.mock.calls.map((c) => c[0]);
+      expect(messages.some((m) => m.text.includes('💡'))).toBe(false);
+      const alert = messages.at(-1);
+      expect(alert?.vacancies).toEqual([]);
+      expect(alert?.text).toContain('без пояснень');
+      expect(alert?.text).toContain('Workers AI failed with HTTP 401');
+    });
+
+    it('a failed source and a broken explainer share one alert', async () => {
+      const broken: Source = {
+        name: 'broken',
+        fetch: async () => Promise.reject(new Error('503')),
+      };
+      const { opts, send } = options({
+        sources: [broken, new FakeSource(SAMPLE_ITEMS)],
+        llm: llm(async () => ({ value: 'garbage' })),
+      });
+      await run(opts);
+      const alerts = send.mock.calls.map((c) => c[0]).filter((m) => m.text.includes('⚠️ <b>'));
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]?.text).toContain('broken: 503');
+      expect(alerts[0]?.text).toContain('пояснення: 2 з 2 без пояснення (invalid answer)');
+    });
+
+    it('a few odd answers are only logged; a limit cutting the run short alerts', async () => {
+      let calls = 0;
+      const odd = options({
+        llm: llm(async () => (++calls === 1 ? { value: 'garbage' } : { value: { fit: 'ok' } })),
+        explainOptions: { concurrency: 1 },
+      });
+      await run(odd.opts);
+      expect(odd.send.mock.calls.map((c) => c[0].text).some((t) => t.includes('⚠️ <b>'))).toBe(
+        false,
+      );
+
+      await rm(statePath, { force: true });
+      let n = 0;
+      const limited = options({
+        llm: llm(async () => {
+          if (++n === 2) throw new LlmError('limit', 'Workers AI limit reached (HTTP 429)');
+          return { value: { fit: 'ok' } };
+        }),
+        explainOptions: { concurrency: 1 },
+      });
+      await run(limited.opts);
+      expect(limited.send.mock.calls.at(-1)?.[0].text).toContain(
+        'пояснення: 1 з 2 без пояснення (Workers AI limit reached (HTTP 429))',
+      );
+    });
+
+    it('a half-configured explainer is reported in the alert', async () => {
+      const { opts, send } = options({
+        llmConfigError: 'Missing environment variables: CLOUDFLARE_AI_TOKEN',
+      });
+      expect((await run(opts)).sent).toBe(2);
+      expect(send.mock.calls.at(-1)?.[0].text).toContain(
+        'пояснення: Missing environment variables: CLOUDFLARE_AI_TOKEN',
+      );
+    });
+
+    it('a failing report does not fail the run', async () => {
+      const { opts, lines } = options({
+        llm: llm(async () => ({ value: { fit: 'ok' } })),
+        report: async () => Promise.reject(new Error('disk full')),
+      });
+      expect((await run(opts)).sent).toBe(2);
+      expect(lines).toContain('report failed: disk full');
     });
   });
 

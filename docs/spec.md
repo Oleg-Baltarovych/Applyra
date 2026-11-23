@@ -47,12 +47,23 @@ items rank on the title (level/remote often "unclear"). Env: `IMAP_USER`, `IMAP_
    company) + a full-title key for cross-site repeats when one side has no company (≥ 4 words, 7 days; ADR 004).
    Skips anything in the sent state and repeats within the batch (posts with a company first, then first wins).
 4. **filter + score** (`filter.ts`) — hard rejects, then a score with reasons and caveats (§4).
+   **explain** (optional, ADR 005; `explain.ts` pure, `workers-ai.ts` I/O) — when `CLOUDFLARE_ACCOUNT_ID` and
+   `CLOUDFLARE_AI_TOKEN` are set, one Workers AI call per ranked vacancy (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`,
+   JSON schema) returns `fit` (≤ 160 chars) and an optional `risk` (≤ 100), in Ukrainian. Input: profile preferences
+   + title, company, salary, location, description cut to 3 000 chars, as data in a delimited user message. Output
+   is schema-checked, stripped of urls/markup and capped; anything else = no explanation. 30 s per call, 3 at a
+   time, 3 min for the step; a 429/limit or 401/403 stops further calls. Never changes filtering or order, never
+   fails the run (only one of the two variables set → explanations off + alert line). Nothing explained, or a
+   limit/budget cutting the step short, adds "пояснення: N з M без пояснення (…)" to the alert (§6); a few
+   invalid answers are only logged. A dry run with the variables set calls the model too (spends Neurons). Logged: calls ok/failed/skipped, tokens,
+   latency p50/p95/max, Neurons and their $ equivalent (stdout + `$GITHUB_STEP_SUMMARY`).
 5. **format** (`format.ts`) — Telegram HTML, every field escaped, http(s) links only, field sizes capped
    in escaped characters (title 200, company 100, city 50 × 3, href 1000 else no link), a block that still
    does not fit becomes title-only. A short header (date, count; when both kinds are present also
    "✅ точний збіг: N · ⚠️ із застереженнями: M"), then **one message per vacancy** with status buttons (§8):
    clean matches first, then a silent divider and those with caveats (rank orders them so). Line 3 = reasons ·
    age in Kyiv calendar days ("🕒 сьогодні / вчора / N днів тому"); lines 1–2 stay age-free (the bot stores them).
+   Line 4, when explained: `💡 <fit>` + ` · ⚠️ <risk>` (escaped; dropped first if the block does not fit).
 6. **send** (`telegram.ts`) — Bot API `sendMessage` via `fetch`, `parse_mode: HTML`, previews off, inline keyboard,
    messages ≥ 1.1 s apart, one retry on 429. Only the header notifies; vacancy messages are silent
    (`disable_notification`). The token never appears in logs or errors.
@@ -81,6 +92,7 @@ Unicode word boundaries ("ts" ≠ "tests", "java" ≠ "javascript"), the label i
 | `remote` | allowed work modes (`remote`, `hybrid`, `office`); a known other mode → reject; +2 when allowed |
 | `remoteUnknown` | `keep` (caveat "remote unclear", no bonus) or `drop` |
 | `languages` | `uk`, `en`, `ru`; detected text language outside the list → reject (undetectable → keep) |
+| `englishLevel` | optional CEFR `A1`–`C2`; the LLM explanation (§3) flags English only when a vacancy asks for more |
 | `salary.minUsdMonth` | floor in USD/month or `null`; only a known upper bound below the floor rejects ("від $X" never does); no upper cap |
 | `salary.uahPerUsd`, `salary.uahTolerance` | UAH conversion rate and tolerance (0.1 = reject only below 90 % of the floor) |
 | `maxItems` | digest size (top N by score, newer first on ties); 50 in the committed profile — matches beyond it wait for the next run and may leave the feed unseen |
@@ -102,7 +114,8 @@ once. If that becomes a problem: a state branch or a gist (new ADR).
 `.github/workflows/digest.yml`: daily 05:17 UTC (07:17/08:17 Kyiv; off the full hour, when GitHub delays schedules most) + manual run (optional dry run);
 `permissions: contents: read`; concurrency group `digest`, never cancelled.
 Job `environment: digest` (restricted to main). Env: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (environment
-secrets), `DIGEST_SOURCES` (variable),
+secrets), `DIGEST_SOURCES` (variable), `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_AI_TOKEN` (environment secrets,
+optional: explanations; token with Workers AI permissions only),
 `DIGEST_PROFILE_PATH`, `DIGEST_STATE_PATH` (optional). CLI: `--dry-run`, `--source=a,b`, `--profile=path`.
 
 **Alerts.** A failed source → after the digest (even an empty one) an audible message
@@ -114,7 +127,7 @@ never starts the run cannot alert: GitHub Actions mails failed runs.
 ## 7. Non-goals
 
 No web UI, no multi-user, no CRM beyond the status buttons (no notes, reminders, pipelines), no auto-apply, no scraping
-behind login/CAPTCHA, no LLM in v1 (an optional LLM re-ranking step may come later behind its own ADR).
+behind login/CAPTCHA, no LLM filtering or re-ranking (the LLM only explains, ADR 005), no paid LLM API.
 
 ## 8. Status buttons (`apps/bot`, ADR 003)
 

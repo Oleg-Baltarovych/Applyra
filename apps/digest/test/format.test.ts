@@ -94,6 +94,28 @@ describe('formatDigest', () => {
     expect(onlyCaveated).toHaveLength(2);
   });
 
+  it('adds the fit explanation as line 4, escaped', () => {
+    const item: Ranked = { ...ranked(), explanation: { fit: 'NestJS & <Kafka>', risk: 'Go' } };
+    const [, msg] = formatDigest([item], { date });
+    expect(msg?.text.split('\n')[3]).toBe('💡 NestJS &amp; &lt;Kafka&gt; · ⚠️ Go');
+    const [, noRisk] = formatDigest([{ ...ranked(), explanation: { fit: 'Node.js' } }], { date });
+    expect(noRisk?.text.split('\n')[3]).toBe('💡 Node.js');
+    const [, none] = formatDigest([ranked()], { date });
+    expect(none?.text.split('\n')).toHaveLength(3);
+  });
+
+  it('drops the explanation first when the block does not fit', () => {
+    const item: Ranked = {
+      ...ranked({ title: 'Node.js Developer', company: 'Acme' }),
+      explanation: { fit: 'f'.repeat(160) },
+    };
+    const [, full] = formatDigest([item], { date });
+    const limit = (full?.text.length ?? 0) - 10;
+    const [, msg] = formatDigest([item], { date, limit });
+    expect(msg?.text).not.toContain('💡');
+    expect(msg?.text).toContain('Acme');
+  });
+
   it('shows the salary when present', () => {
     const [, msg] = formatDigest([ranked({ salary: { min: 3000, max: 4000, currency: 'USD' } })], {
       date,

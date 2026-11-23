@@ -1,7 +1,7 @@
 # Applyra — Working Context
 
 > Living map for AI agents and humans. Terse and current; update in the same change that alters structure,
-> commands or decisions. Last updated: 2026-11-21 (cross-site dedup ADR 004, silent vacancy messages, failure alerts, /hidden)
+> commands or decisions. Last updated: 2026-11-23 (ADR 005 fit explanations via Workers AI)
 
 ## 1. Status
 
@@ -14,12 +14,12 @@ state file, CLI and `digest.yml` cron work and are tested; sources: DOU + Djinni
 - `apps/digest/` — `@applyra/digest`, Node 26 ESM TS run directly by Node (type stripping, no build)
   - `src/main.ts` pipeline `run()` + CLI · `types.ts` Vacancy/RawItem · `text.ts` keyword matcher, language, years
   - `src/sources/`: `source.ts` (`Source`, `FakeSource`), `feeds.ts` (site → one source per feed), `rss.ts`, `http.ts`, `dou.ts`, `djinni.ts` · `normalize/` url + RawItem→Vacancy
-  - `src/dedup.ts` keys/state ops · `filter.ts` profile parse + evaluate/rank · `format.ts` Telegram HTML · `telegram.ts` · `state.ts`
+  - `src/dedup.ts` keys/state ops · `filter.ts` profile parse + evaluate/rank · `explain.ts` fit explanations (pure, `LlmClient`) · `workers-ai.ts` adapter · `format.ts` Telegram HTML · `telegram.ts` · `state.ts`
   - `profile.json` (owner, committed, no personal data) · `profile.example.json` · `test/` (Vitest)
 - `apps/bot/` — `@applyra/bot`, Cloudflare Worker for the status buttons + `/status` (D1 table `statuses`, `wrangler.toml`, `migrations/`, `scripts/setup.ts`); imports the button protocol from `@applyra/digest/status` (ADR 003)
 - `packages/config/` — shared `tsconfig.base.json` + ESLint flat config (+ a test that the strict rules fire)
 - `.github/workflows/` — `ci.yml` (one job, PRs + weekly: lint, format, typecheck, unit, audit, gitleaks, osv-scanner, Semgrep, actionlint), `digest.yml` (daily cron)
-- `docs/spec.md` (source of truth) · `docs/adr/` (026+)
+- `docs/spec.md` (source of truth) · `docs/adr/` (001–005)
 
 ## 3. Sources
 
@@ -47,6 +47,7 @@ state file, CLI and `digest.yml` cron work and are tested; sources: DOU + Djinni
 - 002 Work.ua / robota.ua / LinkedIn via their job-alert e-mails over IMAP (read-only, template-agnostic link parsing); dep `imapflow`.
 - 003 Status buttons: one message per vacancy + Cloudflare Worker webhook with D1 (`apps/bot`); amends 001 "no hosting/DB/tracking".
 - 004 Cross-site repeats (DOU/Djinni) matched by the full title when one side has no company (≥ 4 words, 7 days).
+- 005 Optional fit explanations (line 4 "💡 …") by Llama 3.3 70B on Cloudflare Workers AI free plan, behind an `LlmClient` interface; never filters/reorders, never fails the run.
 
 ## 6. Supply chain
 

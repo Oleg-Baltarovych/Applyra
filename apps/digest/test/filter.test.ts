@@ -33,6 +33,12 @@ describe('parseProfile', () => {
     ).toThrow(/salary\.minUsdMonth/);
     expect(() => parseProfile({ ...profile, required: [] })).toThrow(/required/);
     expect(() => parseProfile(null)).toThrow(/profile/);
+    expect(() => parseProfile({ ...profile, englishLevel: 'B3' })).toThrow(/englishLevel/);
+  });
+
+  it('englishLevel is optional (CEFR A1–C2)', () => {
+    expect(profile.englishLevel).toBe('B2');
+    expect(parseProfile({ ...profile, englishLevel: undefined }).englishLevel).toBeUndefined();
   });
 });
 
