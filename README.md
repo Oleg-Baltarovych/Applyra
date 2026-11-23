@@ -93,7 +93,7 @@ Two independent parts share only the callback-data protocol
 | Telegram           | Bot API over global `fetch` (HTML messages, inline keyboards, webhook with a secret token)                            |
 | LLM                | Cloudflare Workers AI (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`), JSON-schema output, provider-agnostic `LlmClient` |
 | E-mail input       | `imapflow` (read-only IMAP), DKIM result checked from the receiving server's `Authentication-Results`                 |
-| Testing            | Vitest — 213 tests, recorded and anonymised feed fixtures, no network                                                 |
+| Testing            | Vitest — 214 tests, recorded and anonymised feed fixtures, no network                                                 |
 | Quality & security | ESLint, Prettier, gitleaks, osv-scanner, `pnpm audit`, Semgrep, actionlint — one CI job; Renovate                     |
 
 ## Engineering notes

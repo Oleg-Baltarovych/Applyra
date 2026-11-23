@@ -105,6 +105,25 @@ describe('parseExplanation', () => {
     expect(parseExplanation('{"fit":"Node.js"}')).toEqual({ fit: 'Node.js' });
   });
 
+  it('drops a guessed risk (not stated, maybe, probably) but keeps the fit', () => {
+    for (const risk of [
+      'Інший програмний мов не вказано, але можливе використання інших мов',
+      'Вимоги до англійської не зазначені',
+      'Можливо, знадобиться Python',
+      'Можливе використання Java',
+      'Ймовірно, офіс у Києві',
+      'Рівень невідомий',
+    ])
+      expect(parseExplanation({ fit: 'AI-інструменти', risk })).toEqual({ fit: 'AI-інструменти' });
+    for (const risk of [
+      'Можливості релокації немає',
+      'Можливі відрядження до Польщі',
+      'Потрібен Go',
+      'Англійська Advanced',
+    ])
+      expect(parseExplanation({ fit: 'AI-інструменти', risk })?.risk).toBe(risk);
+  });
+
   it('rejects anything that is not the schema', () => {
     for (const bad of [undefined, null, 'not json', 42, [], {}, { fit: 3 }, { fit: '   ' }])
       expect(parseExplanation(bad)).toBeUndefined();
