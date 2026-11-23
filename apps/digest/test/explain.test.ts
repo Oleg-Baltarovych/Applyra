@@ -114,6 +114,8 @@ describe('parseExplanation', () => {
     for (const bad of [
       'Пиши hr@evil.example.io',
       'Деталі на evil.io/apply',
+      'Купуй на evil.shop',
+      'Пиши в apply.store сьогодні',
       'Подзвони +380 67 123 45 67',
       'Подзвони 067 123 45 67',
       'tg://resolve?domain=x',
@@ -124,6 +126,11 @@ describe('parseExplanation', () => {
     ).toEqual({
       fit: 'Node.js, 4000-5500 USD, 3–5 років',
     });
+  });
+
+  it('keeps tech names with a dot: Node.js, Next.js, Vue.js, TS', () => {
+    const fit = 'Платформа на Node.js, Next.js і Vue.js, файли .ts та config.yaml';
+    expect(parseExplanation({ fit })?.fit).toBe(fit);
   });
 
   it('strips invisible format characters (bidi overrides, zero-width)', () => {

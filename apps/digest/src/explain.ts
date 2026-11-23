@@ -125,11 +125,37 @@ export function buildPrompt(r: Ranked, profile: Profile): { system: string; user
  */
 const LINKISH = [
   /[\p{L}\p{N}._%+-]@[\p{L}\p{N}-]+\.\p{L}/u,
-  /[\p{L}\p{N}-]\.(?:com|net|org|io|me|ua|ru|info|xyz|app|dev|co|biz|site|online|link|top|ai|gg|cc|ly|to|eu|us)(?![\p{L}\p{N}])/iu,
   /\+\d[\d ().-]{7,}\d/,
   /(?<!\d)\d{3}[ .-]?\d{3}[ .-]?\d{2}[ .-]?\d{2}(?!\d)/,
   /tg:/i,
 ];
+
+/** File/tech suffixes that are not domains ("Node.js", "config.yaml"); any other `word.xx` counts as one. */
+const TECH_SUFFIXES = new Set([
+  'js',
+  'ts',
+  'jsx',
+  'tsx',
+  'mjs',
+  'cjs',
+  'py',
+  'rb',
+  'rs',
+  'go',
+  'sql',
+  'json',
+  'yaml',
+  'yml',
+  'md',
+  'html',
+  'css',
+  'scss',
+  'sh',
+]);
+const hasDomain = (text: string) =>
+  Array.from(text.matchAll(/[\p{L}\p{N}-]\.(\p{L}{2,})(?![\p{L}\p{N}])/gu)).some(
+    (m) => !TECH_SUFFIXES.has((m[1] ?? '').toLowerCase()),
+  );
 
 /** Plain, link-free, one-line text of at most `max` characters ('' when nothing safe is left). */
 function clean(s: string, max: number): string {
@@ -141,7 +167,7 @@ function clean(s: string, max: number): string {
     .replace(/(?<![\p{L}\p{N}])@[\p{L}\p{N}_]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  if (LINKISH.some((re) => re.test(text))) return '';
+  if (LINKISH.some((re) => re.test(text)) || hasDomain(text)) return '';
   const chars = Array.from(text);
   return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : text;
 }
