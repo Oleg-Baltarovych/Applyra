@@ -130,7 +130,10 @@ const LINKISH = [
   /tg:/i,
 ];
 
-/** File/tech suffixes that are not domains ("Node.js", "config.yaml"); any other `word.xx` counts as one. */
+/**
+ * File/tech suffixes that are not domains and not TLDs ("Node.js", "config.yaml"). Real TLDs such as
+ * .py .rs .md .sh are deliberately absent: Telegram links them.
+ */
 const TECH_SUFFIXES = new Set([
   'js',
   'ts',
@@ -138,24 +141,22 @@ const TECH_SUFFIXES = new Set([
   'tsx',
   'mjs',
   'cjs',
-  'py',
   'rb',
-  'rs',
   'go',
   'sql',
   'json',
   'yaml',
   'yml',
-  'md',
   'html',
   'css',
   'scss',
-  'sh',
 ]);
+/** A dotted token whose last label looks like a TLD (letters or punycode) and is not a tech suffix. */
 const hasDomain = (text: string) =>
-  Array.from(text.matchAll(/[\p{L}\p{N}-]\.(\p{L}{2,})(?![\p{L}\p{N}])/gu)).some(
-    (m) => !TECH_SUFFIXES.has((m[1] ?? '').toLowerCase()),
-  );
+  Array.from(text.matchAll(/[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)+/gu)).some((m) => {
+    const last = m[0].slice(m[0].lastIndexOf('.') + 1).toLowerCase();
+    return /^(?:xn--[\p{L}\p{N}-]+|\p{L}{2,})$/u.test(last) && !TECH_SUFFIXES.has(last);
+  });
 
 /** Plain, link-free, one-line text of at most `max` characters ('' when nothing safe is left). */
 function clean(s: string, max: number): string {
