@@ -51,7 +51,8 @@ items rank on the title (level/remote often "unclear"). Env: `IMAP_USER`, `IMAP_
    `CLOUDFLARE_AI_TOKEN` are set, one Workers AI call per ranked vacancy (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`,
    JSON schema) returns `fit` (≤ 160 chars) and an optional `risk` (≤ 100), in Ukrainian. Input: profile preferences
    + title, company, salary, location, description cut to 3 000 chars, as data in a delimited user message. Output
-   is schema-checked, stripped of urls/markup and capped; anything else = no explanation. 30 s per call, 3 at a
+   is schema-checked, stripped of urls/markup and capped; anything else = no explanation. A guessed `risk`
+   ("не вказано", "можливо", "ймовірно" …) is dropped, the `fit` stays. 30 s per call, 3 at a
    time, 3 min for the step; a 429/limit or 401/403 stops further calls. Never changes filtering or order, never
    fails the run (only one of the two variables set → explanations off + alert line). Nothing explained, or a
    limit/budget cutting the step short, adds "пояснення: N з M без пояснення (…)" to the alert (§6); a few
